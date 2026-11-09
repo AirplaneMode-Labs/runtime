@@ -1,0 +1,59 @@
+{
+  "name": "@airplanemode/runtime",
+  "version": "0.1.0-dev",
+  "description": "Offline-first browser runtime: capability profile, verified asset manager, open contracts (manifest, capability profile, event, storage API, backend adapter).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AirplaneMode-Labs/runtime"
+  },
+  "homepage": "https://github.com/AirplaneMode-Labs/runtime#readme",
+  "bugs": "https://github.com/AirplaneMode-Labs/runtime/issues",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./spec": {
+      "types": "./dist/spec/index.d.ts",
+      "import": "./dist/spec/index.js"
+    },
+    "./spec/*.json": "./spec/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "spec",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:browser": "playwright test -c test/browser/playwright.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p demo/tsconfig.json && tsc --noEmit -p test/browser/tsconfig.json",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "deps:scripts": "npm query ':attr(scripts,[postinstall]),:attr(scripts,[preinstall]),:attr(scripts,[install])'",
+    "demo:build": "vite build --config demo/vite.config.ts",
+    "spec:vectors": "node test/tools/make-vectors.mjs",
+    "spec:sign-example": "node test/tools/sign-example.mjs",
+    "ci": "npm run fmt:check && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "playwright": "1.65.0",
+    "prettier": "3.9.10",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "4.1.12"
+  }
+}

@@ -1,0 +1,21 @@
+node_modules/
+dist/
+demo/dist/
+target/
+.venv/
+__pycache__/
+*.whl
+bench/data/
+bench/results/
+.DS_Store
+playwright-report/
+test-results/
+coverage/
+*.part
+*.part.json
+*.secret
+.env*
+
+# browser test caches and local scratch
+.playwright/
+.scratch/

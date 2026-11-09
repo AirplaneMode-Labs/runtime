@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install (install scripts disabled by .npmrc)
+        run: npm ci
+      - name: Packages with install scripts (informational)
+        run: npm run -s deps:scripts || true
+      - name: Format, typecheck, unit tests, build
+        run: npm run ci
+      - name: Pack contents
+        run: npm pack --dry-run
+      - name: Install Chrome for Playwright (Linux only)
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chrome
+      - name: Browser tests (Linux only)
+        if: runner.os == 'Linux'
+        run: npm run test:browser
