@@ -1,7 +1,12 @@
 /**
- * Event contract 0.1.0 (airplanemode.event/0.1).
+ * Event contract 0.1.1 (airplanemode.event/0.1; the wire string never changes on a patch).
  *
- * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.0).
+ * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.1).
+ *
+ * 0.1.1 (wire-compatible): asset.quota documents usageSource, and the backend and model names
+ * backend.select, backend.refused, backend.egress.refused, model.load, model.load.failed and
+ * model.generate are reserved with their attrs. No event ever carries prompt text, output text or
+ * an engine error message or stack (backend-adapter.md R5).
  *
  * One JSON event shape for logs, timings, memory, model-load and asset records. Every library
  * emits through an EventSink; no library ever has a network sink. The runtime's `newEvent()`
@@ -80,9 +85,11 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
   /** attrs: entryId, sha256, bytes, reason: quota | explicit */
   'asset.evict',
   /**
-   * attrs: usage, quota, needed. `quota` is the browser's navigator.storage.estimate().quota (or
-   * the quotaBytes test override), not the limit the browser enforces: Chrome does not reflect a
-   * per-origin quota override in estimate() and under-reports IndexedDB usage, so this number is
+   * attrs: usage, quota, needed, usageSource. `usage` = max(estimate().usage, the manager's
+   * accounted bytes of index rows plus in-flight parts) and `usageSource` names where that figure
+   * came from: 'estimate' | 'accounted'. `quota` is the browser's navigator.storage.estimate().quota
+   * (or the quotaBytes test override), not the limit the browser enforces: Chrome does not reflect
+   * a per-origin quota override in estimate() and under-reports IndexedDB usage, so this number is
    * a planning estimate and the reactive QuotaExceededError path is the real guard.
    */
   'asset.quota',
@@ -94,6 +101,35 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
   'manifest.verify.ok',
   /** attrs: manifestId, reason */
   'manifest.verify.failed',
+  /**
+   * kind log; level info (selected) or warn (anything else).
+   * attrs: rung 'webgpu' | 'wasm' | 'builtin'; adapter (adapter id); model (descriptor entry id,
+   * or '' when none); outcome 'selected' | 'skipped' | 'failed' | 'declined'; reason
+   * 'ok' | 'no_webgpu' | 'tier_too_low' | 'profile' | 'unavailable' | 'load_failed' | 'declined'
+   * | 'forced' | 'not_allowed'.
+   */
+  'backend.select',
+  /** kind error. attrs: attempts (integer), reasons (comma-joined reason codes, never engine text) */
+  'backend.refused',
+  /**
+   * kind error. attrs: adapter, origin. `origin` is scheme://host[:port] for hierarchical URLs,
+   * '<scheme>:' alone for data:, blob:, file: and other schemes, or '' when unparsable; never a
+   * path or a query.
+   */
+  'backend.egress.refused',
+  /**
+   * kind model-load. attrs: adapter, model, device, dtype, files (integer), tier, verified
+   * (boolean: true only for adapters that obey backend-adapter.md R2, false for
+   * chrome-prompt-api); top-level bytes and durationMs. MockAdapter keeps an entryId attr.
+   */
+  'model.load',
+  /** kind model-load; level error. attrs: adapter, model, device, code (AdapterErrorCode) */
+  'model.load.failed',
+  /**
+   * kind timing. attrs: adapter, device, finishReason, inTokens, outTokens, tokensPerSecond,
+   * prefillMs, decodeMs; top-level durationMs. Never the prompt or the output.
+   */
+  'model.generate',
 ] as const);
 
 export type RuntimeEventName = (typeof RUNTIME_EVENT_NAMES)[number];

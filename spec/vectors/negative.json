@@ -58,5 +58,10 @@
     "file": "neg-unknown-alg-only.json",
     "reason": "no_valid_signature",
     "stage": "verify"
+  },
+  {
+    "file": "neg-bad-alg-token.json",
+    "reason": "schema",
+    "stage": "parse"
   }
 ]

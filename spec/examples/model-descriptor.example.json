@@ -1,0 +1,24 @@
+{
+  "spec": "airplanemode.model/0.1",
+  "id": "smollm2-135m-instruct",
+  "engine": "transformers-js",
+  "task": "text-generation",
+  "devices": ["wasm", "webgpu"],
+  "dtype": "q4",
+  "files": [
+    { "path": "config.json", "entryId": "smollm2-135m-instruct.config" },
+    { "path": "generation_config.json", "entryId": "smollm2-135m-instruct.generation-config" },
+    { "path": "onnx/model_q4.onnx", "entryId": "smollm2-135m-instruct.onnx-q4" },
+    { "path": "runtime/ort-wasm-simd-threaded.asyncify.wasm", "entryId": "ort.wasm" },
+    { "path": "tokenizer.json", "entryId": "smollm2-135m-instruct.tokenizer" },
+    { "path": "tokenizer_config.json", "entryId": "smollm2-135m-instruct.tokenizer-config" }
+  ],
+  "runtimeWasm": "runtime/ort-wasm-simd-threaded.asyncify.wasm",
+  "contextLength": 8192,
+  "generation": { "maxNewTokens": 256 },
+  "source": {
+    "repo": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac"
+  },
+  "licence": "Apache-2.0"
+}

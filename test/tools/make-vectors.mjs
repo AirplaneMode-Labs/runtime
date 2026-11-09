@@ -144,6 +144,17 @@ const negative = {
       return negRaw({ ...m, signatures: [{ ...sig, alg: 'future-pq' }] });
     })(),
   },
+  // Schema-invalid at parse stage: the unsigned example plus one signature whose bytes are a
+  // correct Ed25519 signature under the RFC 8032 seed but whose alg is the upper-case spelling
+  // 'ED25519', which is not a token (^[a-z0-9][a-z0-9-]{0,31}$). Both implementations reject the
+  // manifest with reason schema before any signature is looked at (S1-011 follow-up, T3 note).
+  'neg-bad-alg-token': {
+    reason: 'schema',
+    text: (() => {
+      const sig = signManifest(unsigned, RFC8032_SEED_HEX, SIGNED_AT);
+      return negRaw({ ...unsigned, signatures: [{ ...sig, alg: 'ED25519' }] });
+    })(),
+  },
 };
 
 const files = new Map();

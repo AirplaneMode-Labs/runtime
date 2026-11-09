@@ -33,6 +33,7 @@ the stage named in `negative.json` (`stage` is `parse` or `verify`):
 | neg-bad-spec.json         | `bad_spec`           | parse  |
 | neg-bad-date.json         | `schema`             | parse  |
 | neg-unknown-alg-only.json | `no_valid_signature` | verify |
+| neg-bad-alg-token.json    | `schema`             | parse  |
 
 Parse-level reasons (`digit_key`, `float`, `bigint`, `lone_surrogate`) take precedence over schema
 reasons, which take precedence over the ordering checks. `neg-bad-date` carries
@@ -41,3 +42,10 @@ reasons, which take precedence over the ordering checks. `neg-bad-date` carries
 parses, and its single signature is a correct Ed25519 signature under the RFC 8032 seed labelled
 `future-pq`; a verifier must ignore it (never verify it as ed25519) and reject the manifest at verify
 stage with `no_valid_signature` when the trust set holds the RFC 8032 key (`allowTestKeys`).
+
+`neg-bad-alg-token` is the unsigned example plus one signature whose bytes are a **correct** Ed25519
+signature under the RFC 8032 seed (with its `keyId` and `publicKey`, `signedAt` `2026-11-09T00:00:00Z`)
+but whose `alg` is the upper-case spelling `ED25519`. That is not a token (`^[a-z0-9][a-z0-9-]{0,31}$`),
+so both implementations reject the manifest with reason `schema` at parse stage, before any signature
+is examined (contrast `neg-unknown-alg-only`, whose `future-pq` is a valid token and is rejected only at
+verify stage). Added in spec release 0.2.0.

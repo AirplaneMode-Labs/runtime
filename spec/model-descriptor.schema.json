@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:airplanemode:spec:model-descriptor:0.1.0",
+  "title": "ModelDescriptor",
+  "description": "A small JSON file, itself an entry of a signed manifest (kind model, mediaType application/vnd.airplanemode.model+json, at most 65536 bytes), that lists the other manifest entries an engine needs (weights, tokenizer, configs, WASM runtime) and how to run them. Never carries a URL; nothing in it is fetched. Files MUST be sorted by path in byte order with unique paths and devices MUST be sorted (both verified outside JSON Schema by validateModelDescriptor / the descriptor loader). Wire format: airplanemode.model/0.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "id",
+    "engine",
+    "task",
+    "devices",
+    "dtype",
+    "files",
+    "contextLength",
+    "source",
+    "licence"
+  ],
+  "properties": {
+    "spec": {
+      "const": "airplanemode.model/0.1",
+      "description": "Wire-format discriminator (major.minor). Consumers reject unknown values."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "description": "Logical model id. Two descriptors (for example one per device) may share it; the manifest entry id is what keys files in the runtime."
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["transformers-js", "webllm"],
+      "description": "webllm is reserved and unused until Sprint 3."
+    },
+    "task": { "type": "string", "enum": ["text-generation", "feature-extraction"] },
+    "devices": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["wasm", "webgpu"] },
+      "description": "Execution devices this descriptor supports, unique and sorted ('wasm' before 'webgpu')."
+    },
+    "dtype": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,16}$",
+      "description": "Quantisation label, for example q4, q8 or q4f16."
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/ModelFile" },
+      "description": "Sorted by path in byte order; paths unique (verified outside JSON Schema)."
+    },
+    "runtimeWasm": {
+      "$ref": "#/$defs/Path",
+      "description": "Path, listed in files, of the engine's WASM runtime. Required for transformers-js; the entry behind it has kind wasm."
+    },
+    "modelLib": {
+      "$ref": "#/$defs/Path",
+      "description": "Path, listed in files, of the compiled model library. Required for webllm; the entry behind it has kind wasm."
+    },
+    "contextLength": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxNewTokens": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "chatTemplateKwargs": {
+          "type": "object",
+          "description": "Extra variables for the chat template, for example enable_thinking false for Qwen3. Keys match the canonical key pattern; values are strings, integers or booleans.",
+          "maxProperties": 16,
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string", "maxLength": 256 },
+              { "type": "integer" },
+              { "type": "boolean" }
+            ]
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "revision"],
+      "description": "Provenance only: never fetched, never trusted.",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+        },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "licence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "SPDX licence expression of the model weights."
+    }
+  },
+  "anyOf": [
+    {
+      "required": ["runtimeWasm"],
+      "properties": { "engine": { "const": "transformers-js" } }
+    },
+    {
+      "required": ["modelLib"],
+      "properties": { "engine": { "const": "webllm" } }
+    }
+  ],
+  "$defs": {
+    "Path": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}(/[A-Za-z0-9_][A-Za-z0-9._-]{0,127}){0,7}$",
+      "description": "Relative path, '/'-separated, no leading dot, no '..', no empty segment, no backslash."
+    },
+    "ModelFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "entryId"],
+      "properties": {
+        "path": { "$ref": "#/$defs/Path" },
+        "entryId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "description": "Id of a manifest entry of the same manifest as the descriptor."
+        }
+      }
+    }
+  }
+}

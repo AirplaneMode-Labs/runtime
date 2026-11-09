@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:event:0.1.0",
+  "$id": "urn:airplanemode:spec:event:0.1.1",
   "title": "Event",
   "description": "One JSON event shape for logs, timings, memory, model-load and asset records, emitted by every library through the runtime. Consumed locally (ring buffer, DevTools panel); never sent over the network by any library. Wire format: airplanemode.event/0.1.",
   "type": "object",
