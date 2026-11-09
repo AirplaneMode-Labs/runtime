@@ -1,0 +1,18 @@
+{
+  "spec": "airplanemode.event/0.1",
+  "id": "3f2b1c4e-9a7d-4b1e-8c2f-5d6e7f8a9b0c",
+  "ts": 1794009600000,
+  "mono": 1532.7,
+  "session": "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+  "source": "runtime",
+  "kind": "asset",
+  "name": "asset.download.progress",
+  "level": "debug",
+  "bytes": 8388608,
+  "attrs": {
+    "entryId": "hello-data",
+    "received": 8388608,
+    "total": 1048576,
+    "resumedFrom": 0
+  }
+}

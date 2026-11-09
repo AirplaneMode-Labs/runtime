@@ -1,0 +1,18 @@
+{
+  "spec": "airplanemode.capability/0.1",
+  "gpu": "none",
+  "ramGb": 8,
+  "storageFreeGb": 41.27,
+  "cores": 8,
+  "backendTier": "wasm-simd",
+  "features": {
+    "webgpu": false,
+    "shaderF16": false,
+    "wasmSimd": true,
+    "wasmThreads": false,
+    "opfs": true,
+    "indexedDb": true,
+    "persistentStorage": false
+  },
+  "measuredAt": "2026-11-09T00:00:00Z"
+}

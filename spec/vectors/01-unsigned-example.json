@@ -1,0 +1,21 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "dev.airplanemode.examples.tiny",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs (example)",
+  "createdAt": "2026-11-09T00:00:00Z",
+  "entries": [
+    {
+      "id": "hello-data",
+      "kind": "data",
+      "url": "assets/hello-data",
+      "sha256": "c5352b5910522f73c25b0ce559ae09154a2db7d61058e88fcc9deefa186ba51a",
+      "size": 1048576,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "chunkSize": 1048576
+    }
+  ],
+  "signatures": []
+}

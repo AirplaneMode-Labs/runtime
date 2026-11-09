@@ -1,0 +1,2 @@
+airplanemode-manifest-v1
+{"createdAt":"2026-11-09T00:00:00Z","entries":[{"id":"a","kind":"data","licence":"Apache-2.0","minProfile":{"backendTier":"webgpu-f32","cores":4,"gpu":"webgpu","ramGb":8,"storageFreeGb":2},"sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":0,"url":"assets/a","version":"0.1.0"}],"id":"dev.airplanemode.vectors","publisher":"Airplane Mode Labs (vectors)","spec":"airplanemode.manifest/0.1","version":"0.1.0"}

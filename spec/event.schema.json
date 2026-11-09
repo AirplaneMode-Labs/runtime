@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:airplanemode:spec:event:0.1.0",
+  "title": "Event",
+  "description": "One JSON event shape for logs, timings, memory, model-load and asset records, emitted by every library through the runtime. Consumed locally (ring buffer, DevTools panel); never sent over the network by any library. Wire format: airplanemode.event/0.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "id", "ts", "session", "source", "kind", "name", "level", "attrs"],
+  "properties": {
+    "spec": { "const": "airplanemode.event/0.1" },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUID v4."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds."
+    },
+    "mono": {
+      "type": "number",
+      "minimum": 0,
+      "description": "performance.now() at emission, when available."
+    },
+    "session": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Random id per page load; never persisted, never derived from the user."
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$",
+      "description": "Emitting library or app id: runtime, localdata, glyphsift, pagetriage, dockit or an app id."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["log", "timing", "memory", "model-load", "asset", "error"]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)*$",
+      "description": "Dotted event name, for example asset.download.progress. Reserved runtime names and their attrs are listed in event.ts (RUNTIME_EVENT_NAMES) and README.md; note that asset.quota's attrs.quota is the browser's storage estimate (or a quotaBytes test override), not the limit the browser enforces."
+    },
+    "level": {
+      "type": "string",
+      "enum": ["debug", "info", "warn", "error"]
+    },
+    "durationMs": { "type": "number", "minimum": 0 },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "attrs": {
+      "type": "object",
+      "description": "Flat attributes, at most 32 keys. String values are at most 1024 UTF-16 units. Never URLs with query strings, document text, prompts or user identifiers; the runtime's newEvent() enforces this in code.",
+      "maxProperties": 32,
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$" },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string", "maxLength": 1024 },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    }
+  }
+}

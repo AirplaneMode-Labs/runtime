@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:airplanemode:spec:capability-profile:0.1.0",
+  "title": "CapabilityProfile",
+  "description": "What one device can do, measured once per page load by the runtime. Used by manifests (minimum requirements), by the backend fallback chain and later by control-plane policy. Wire format: airplanemode.capability/0.1. Never contains navigator.userAgent, userAgentData, adapter description or device strings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "gpu",
+    "ramGb",
+    "storageFreeGb",
+    "cores",
+    "backendTier",
+    "features",
+    "measuredAt"
+  ],
+  "properties": {
+    "spec": { "const": "airplanemode.capability/0.1" },
+    "gpu": {
+      "type": "string",
+      "enum": ["webgpu", "none"],
+      "description": "webgpu iff navigator.gpu.requestAdapter() returned an adapter."
+    },
+    "ramGb": {
+      "type": "number",
+      "minimum": 0,
+      "description": "navigator.deviceMemory in GiB (browsers cap it at 8). 0 = unknown."
+    },
+    "storageFreeGb": {
+      "type": "number",
+      "minimum": 0,
+      "description": "(quota - usage) / 2^30 rounded to 2 decimals from navigator.storage.estimate(). 0 if unknown."
+    },
+    "cores": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "navigator.hardwareConcurrency; 1 if unknown."
+    },
+    "backendTier": {
+      "type": "string",
+      "enum": ["webgpu-f16", "webgpu-f32", "wasm-simd", "wasm", "none"],
+      "description": "webgpu-f16 if the adapter has shader-f16; webgpu-f32 if an adapter exists; wasm-simd if WebAssembly.validate accepts the SIMD probe; wasm if WebAssembly exists; else none."
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "webgpu",
+        "shaderF16",
+        "wasmSimd",
+        "wasmThreads",
+        "opfs",
+        "indexedDb",
+        "persistentStorage"
+      ],
+      "properties": {
+        "webgpu": { "type": "boolean" },
+        "shaderF16": { "type": "boolean" },
+        "wasmSimd": { "type": "boolean" },
+        "wasmThreads": {
+          "type": "boolean",
+          "description": "crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined'."
+        },
+        "opfs": { "type": "boolean", "description": "navigator.storage.getDirectory exists." },
+        "indexedDb": { "type": "boolean" },
+        "persistentStorage": {
+          "type": "boolean",
+          "description": "await navigator.storage.persisted()."
+        }
+      }
+    },
+    "measuredAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "RFC 3339 UTC timestamp of the measurement."
+    },
+    "details": {
+      "type": "object",
+      "description": "Flat, allow-listed adapter details only: vendor and architecture (from adapter.info) and the numeric limits maxBufferSize, maxStorageBufferBindingSize, maxComputeWorkgroupStorageSize, maxComputeInvocationsPerWorkgroup. Adapter description and device strings are dropped (driver-version fingerprint). No personal data.",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+        "enum": [
+          "vendor",
+          "architecture",
+          "maxBufferSize",
+          "maxStorageBufferBindingSize",
+          "maxComputeWorkgroupStorageSize",
+          "maxComputeInvocationsPerWorkgroup"
+        ]
+      },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
+    }
+  }
+}

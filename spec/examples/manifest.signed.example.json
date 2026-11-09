@@ -1,0 +1,29 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "dev.airplanemode.examples.tiny",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs (example)",
+  "createdAt": "2026-11-09T00:00:00Z",
+  "entries": [
+    {
+      "id": "hello-data",
+      "kind": "data",
+      "url": "assets/hello-data",
+      "sha256": "c5352b5910522f73c25b0ce559ae09154a2db7d61058e88fcc9deefa186ba51a",
+      "size": 1048576,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "chunkSize": 1048576
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "sig": "L7rMMYgtumVlLZFXW1fvs0ArbGmg/r00Cl/Z2C6J4V3WZP1iJ8ds/CxvfpCOSj3HdgCEBG6iolpChYjRDsOCDg==",
+      "signedAt": "2026-11-09T00:00:00Z"
+    }
+  ]
+}

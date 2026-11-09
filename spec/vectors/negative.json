@@ -1,0 +1,62 @@
+[
+  {
+    "file": "neg-digit-key.json",
+    "reason": "digit_key",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-float.json",
+    "reason": "float",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bigint.json",
+    "reason": "bigint",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-lone-surrogate.json",
+    "reason": "lone_surrogate",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-unsorted-entries.json",
+    "reason": "unsorted_entries",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-dup-entries.json",
+    "reason": "duplicate_entries",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bad-url-http.json",
+    "reason": "bad_url",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bad-url-data.json",
+    "reason": "bad_url",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bad-url-blob.json",
+    "reason": "bad_url",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bad-spec.json",
+    "reason": "bad_spec",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-bad-date.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-unknown-alg-only.json",
+    "reason": "no_valid_signature",
+    "stage": "verify"
+  }
+]

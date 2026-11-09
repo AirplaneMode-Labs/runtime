@@ -1,0 +1,2 @@
+airplanemode-manifest-v1
+{"createdAt":"2026-11-09T00:00:00Z","entries":[{"id":"a","kind":"data","licence":"अपाचे-2.0","minProfile":{},"sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":0,"url":"assets/a","version":"0.1.0"}],"id":"dev.airplanemode.vectors","publisher":"एयरप्लेन मोड लैब्स","spec":"airplanemode.manifest/0.1","version":"0.1.0"}

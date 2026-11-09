@@ -1,0 +1,20 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "dev.airplanemode.vectors",
+  "version": "0.1.0",
+  "publisher": "एयरप्लेन मोड लैब्स",
+  "createdAt": "2026-11-09T00:00:00Z",
+  "entries": [
+    {
+      "id": "a",
+      "kind": "data",
+      "url": "assets/a",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "अपाचे-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": []
+}

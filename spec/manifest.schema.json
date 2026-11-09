@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:airplanemode:spec:manifest:0.1.0",
+  "title": "Manifest",
+  "description": "A signed list of model or data files. Each entry carries the SHA-256, size, version, licence and minimum capability profile of one file. The manifest body (every member except `signatures`) is canonicalised per the restricted RFC 8785 profile described in spec/README.md and signed with Ed25519. Wire format: airplanemode.manifest/0.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "id", "version", "publisher", "createdAt", "entries", "signatures"],
+  "properties": {
+    "spec": {
+      "const": "airplanemode.manifest/0.1",
+      "description": "Wire-format discriminator (major.minor). Consumers reject unknown values."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{2,127}$",
+      "description": "Stable identifier of this manifest across versions; the downgrade-protection state is keyed by it."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+      "description": "SemVer 2.0 version of the manifest (no build metadata). Compared with the precise SemVer rule for downgrade protection."
+    },
+    "publisher": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Human-readable publisher name. Informational; trust comes from the signing key, never from this string."
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "RFC 3339 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ). Must be calendar-valid (verifiers reject 2026-99-99T00:00:00Z and any value that does not round-trip through a date parser; reason schema). Authenticated (covered by the signature). Used as the tie-breaker of the downgrade rule."
+    },
+    "expiresAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "RFC 3339 UTC timestamp, calendar-valid. A verifier rejects the manifest once this instant has passed. A manifest without expiresAt never expires; publishers SHOULD set it and cp-sign does by default. Authenticated (covered by the signature)."
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ManifestEntry" },
+      "description": "Files described by this manifest. Entry ids MUST be unique and the array MUST be sorted by id in byte order (verified outside JSON Schema)."
+    },
+    "signatures": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/$defs/Signature" },
+      "description": "Zero signatures is an unsigned draft. A verifier requires at least one valid signature from a key in its trust set."
+    }
+  },
+  "$defs": {
+    "BackendTier": {
+      "type": "string",
+      "enum": ["webgpu-f16", "webgpu-f32", "wasm-simd", "wasm", "none"],
+      "description": "Ranked: webgpu-f16 (4) > webgpu-f32 (3) > wasm-simd (2) > wasm (1) > none (0)."
+    },
+    "MinProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Minimum capability profile an entry needs. An empty object means any device. Integers only. satisfies(profile, min) iff (min.gpu absent or 'none' or profile.gpu == 'webgpu') and profile.ramGb >= min.ramGb and profile.storageFreeGb >= min.storageFreeGb and profile.cores >= min.cores and rank(profile.backendTier) >= rank(min.backendTier).",
+      "properties": {
+        "gpu": { "type": "string", "enum": ["webgpu", "none"] },
+        "ramGb": { "type": "integer", "minimum": 0 },
+        "storageFreeGb": { "type": "integer", "minimum": 0 },
+        "cores": { "type": "integer", "minimum": 1 },
+        "backendTier": { "$ref": "#/$defs/BackendTier" }
+      }
+    },
+    "ManifestEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "url", "sha256", "size", "version", "licence", "minProfile"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "description": "Unique within the manifest."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["model", "tokenizer", "data", "wasm", "other"]
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^(https://[^\\s?#]+|http://(127\\.0\\.0\\.1|\\[::1\\]|localhost)(:[0-9]{1,5})?/[^\\s?#]*|(?![a-zA-Z][a-zA-Z0-9+.-]*:)[^\\s?#]+)$",
+          "description": "Either an absolute https:// URL, an absolute http:// URL whose host is exactly 127.0.0.1, [::1] or localhost (tests only), or a relative reference without a scheme that is resolved against the manifest URL. No query string, no fragment. data:, blob:, file:, javascript: and every other scheme are invalid."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 of the complete file."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Exact size in bytes (0..2^53-1)."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+        },
+        "licence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SPDX licence expression of the file."
+        },
+        "minProfile": { "$ref": "#/$defs/MinProfile" },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "IANA media type, when known."
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 67108864,
+          "default": 8388608,
+          "description": "Download chunk size in bytes (1 MiB..64 MiB). Default 8 MiB."
+        },
+        "pin": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pinned entries are never evicted by the LRU policy."
+        }
+      }
+    },
+    "Signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "keyId", "sig", "signedAt"],
+      "properties": {
+        "alg": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+          "description": "Signature algorithm token. ed25519 is the only value a 0.1 verifier verifies; any other token is schema-valid so that manifests can carry future algorithms, but verifiers IGNORE such signatures and reject the manifest if none of the remaining signatures verifies. The value 'none' is never valid (it is ignored like any unknown token and can never count as a valid signature)."
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 of the raw 32-byte Ed25519 public key."
+        },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$",
+          "description": "Standard padded base64 of the raw 32-byte public key. Informational only, never a source of trust; a verifier compares it with the trusted key for keyId and treats a mismatch as an invalid signature."
+        },
+        "sig": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$",
+          "description": "Standard padded base64 of the 64-byte Ed25519 signature over signedBytes."
+        },
+        "signedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "description": "RFC 3339 UTC timestamp of signing, calendar-valid. UNAUTHENTICATED FIELDS: signedAt, alg, keyId and publicKey are NOT covered by the signature, because the signatures member is removed before canonicalisation; a verifier MUST NOT use signedAt for any decision; createdAt and expiresAt in the body are the only authenticated timestamps."
+        }
+      }
+    }
+  }
+}

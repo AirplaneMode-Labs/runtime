@@ -1,0 +1,28 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "dev.airplanemode.vectors",
+  "version": "0.1.0",
+  "publisher": "Airplane Mode Labs (vectors)",
+  "createdAt": "2026-11-09T00:00:00Z",
+  "entries": [
+    {
+      "id": "a",
+      "kind": "data",
+      "url": "assets/a",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "future-pq",
+      "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "sig": "djuU7l95xhD5mL1yZo/ozkXgKpP+kIY7Ud4Jd+xRzzcHK5fcCkwiKjK/bf8WULQLFGRvUyiTb0k8Xox6i3A8CQ==",
+      "signedAt": "2026-11-09T00:00:00Z"
+    }
+  ]
+}

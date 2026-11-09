@@ -1,0 +1,2 @@
+airplanemode-manifest-v1
+{"createdAt":"2026-11-09T00:00:00Z","entries":[{"chunkSize":1048576,"id":"hello-data","kind":"data","licence":"Apache-2.0","minProfile":{},"sha256":"c5352b5910522f73c25b0ce559ae09154a2db7d61058e88fcc9deefa186ba51a","size":1048576,"url":"assets/hello-data","version":"1.0.0"}],"id":"dev.airplanemode.examples.tiny","publisher":"Airplane Mode Labs (example)","spec":"airplanemode.manifest/0.1","version":"1.0.0"}
