@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["main.ts", "../src/**/*.ts", "../spec/**/*.ts"]
+  "include": ["main.ts", "env.d.ts", "../src/**/*.ts", "../spec/**/*.ts"]
 }

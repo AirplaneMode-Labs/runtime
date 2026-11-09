@@ -125,6 +125,9 @@ export async function openDemo(
   const url = new URL(base);
   url.pathname = '/';
   url.searchParams.set('store', store);
+  // The hosted page defaults to its bundled, build-signed fixture; the specs drive the range test
+  // server's manifest (RFC 8032 test key, allowTestKeys). Honoured on loopback only.
+  url.searchParams.set('manifest', 'range');
   if (query.quota !== undefined) url.searchParams.set('quota', String(query.quota));
   if (query.progressMs !== undefined) url.searchParams.set('progressMs', String(query.progressMs));
   await page.goto(url.toString());
@@ -304,12 +307,13 @@ export function isAllowedPagePath(pathname: string): boolean {
     pathname === '/' ||
     pathname === '/index.html' ||
     pathname.startsWith('/app/') ||
+    pathname.startsWith('/fixture/') ||
     pathname === '/manifest.json' ||
     pathname.startsWith('/assets/')
   );
 }
 
-/** Every URL must be on the demo origin and under the demo files, /manifest.json or /assets/*. */
+/** Every URL must be on the demo origin and under the demo files (/app/*, /fixture/*), /manifest.json or /assets/*. */
 export function assertEgress(urls: string[], base: string): void {
   const origin = new URL(base).origin;
   const bad = urls.filter((u) => {

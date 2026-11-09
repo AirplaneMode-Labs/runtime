@@ -42,7 +42,7 @@
     "fmt": "prettier --write .",
     "fmt:check": "prettier --check .",
     "deps:scripts": "npm query ':attr(scripts,[postinstall]),:attr(scripts,[preinstall]),:attr(scripts,[install])'",
-    "demo:build": "vite build --config demo/vite.config.ts",
+    "demo:build": "node demo/tools/make-fixture.mjs && vite build --config demo/vite.config.ts",
     "spec:vectors": "node test/tools/make-vectors.mjs",
     "spec:sign-example": "node test/tools/sign-example.mjs",
     "ci": "npm run fmt:check && npm run typecheck && npm run test && npm run build"

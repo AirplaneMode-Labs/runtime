@@ -5,84 +5,285 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="Airplane Mode Labs runtime demo: capability profile, signed-manifest verification and a resumable, hash-verified asset cache, all inside the browser tab."
     />
     <title>runtime demo</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main>
-      <h1>@airplanemode/runtime demo</h1>
-      <p class="muted">
-        Asset manager and capability profile against the local range test server. Nothing leaves
-        this origin. Store: <code id="store-label">?</code>. Quota source:
-        <code id="quota-source">?</code>. Test hooks (<code>window.__runtime</code>) are exposed
-        only on 127.0.0.1 / localhost.
+    <header>
+      <h1>runtime demo</h1>
+      <p class="lede">
+        Everything runs in this tab. Nothing is uploaded; the only network requests are for this
+        page's own files and for a manifest URL you paste yourself.
       </p>
+      <p class="muted build-line">
+        Built from <code>main</code> at <code id="build-id">?</code> by
+        <code>.github/workflows/pages.yml</code>. Store: <code id="store-label">?</code>. Manifest
+        source: <code id="source-label">?</code>. Quota source: <code id="quota-source">?</code>.
+      </p>
+      <p id="range-note" class="note hidden">
+        The <code>?manifest=range</code> parameter is honoured only on 127.0.0.1 or localhost (it
+        points the page at the repository's range test server). On this host it is ignored and the
+        bundled fixture stays the manifest source.
+      </p>
+    </header>
+
+    <main>
+      <div class="boxes">
+        <section id="requirements" class="box">
+          <h2>Browser requirements</h2>
+          <ul class="req-list">
+            <li data-req="wasm"><span class="mark">?</span> WebAssembly</li>
+            <li data-req="opfs">
+              <span class="mark">?</span> OPFS (<code>navigator.storage.getDirectory</code>, secure
+              context)
+            </li>
+            <li data-req="idb"><span class="mark">?</span> IndexedDB</li>
+            <li data-req="locks">
+              <span class="mark">?</span> Web Locks (<code>navigator.locks</code>)
+            </li>
+            <li data-req="ed25519">
+              <span class="mark">?</span> WebCrypto Ed25519 (<code>crypto.subtle</code> present;
+              <span id="ed25519-detail"
+                >actual Ed25519 support is reported from the first verify</span
+              >)
+            </li>
+            <li data-req="webgpu">
+              <span class="mark">?</span> WebGPU (optional, used by the capability profile only)
+            </li>
+          </ul>
+          <p class="small">
+            All Airplane Mode Labs demos share one browser origin (airplanemode-labs.github.io):
+            storage, quota, estimate() and persist() are shared between them. This demo writes only
+            under airplanemode-runtime.
+          </p>
+          <p class="small">
+            Tested in Google Chrome. Firefox and Safari are not tested this sprint.
+          </p>
+        </section>
+
+        <section id="not-yet" class="box box-warn">
+          <h2>What this demo does not do yet</h2>
+          <ul>
+            <li>
+              No model is downloaded. The three assets are synthetic xorshift64* byte streams of 12,
+              8 and 6 MiB, generated at build time; they prove download, resume, hashing and
+              eviction, not inference.
+            </li>
+            <li>
+              No backend adapter: WebGPU and WASM inference with the fallback chain arrives in
+              Sprint 2. Only the interface and a mock adapter exist today.
+            </li>
+            <li>
+              The fixture manifest carries no <code>expiresAt</code> and is signed by a key
+              generated for this build only, so it proves the verification path, not a publisher
+              identity.
+            </li>
+            <li>No key revocation, transparency log or Sigstore (security finding S1-001).</li>
+            <li>
+              Chrome's real IndexedDB quota is unmeasured here; use the test quota field to see
+              eviction. Chrome under-reports IndexedDB usage in <code>estimate()</code>.
+            </li>
+            <li>
+              Resume after an interrupted download was verified on a local server that answers Range
+              requests; it is unverified on GitHub Pages until the first deploy. If Pages answers
+              200 instead of 206, the download restarts from zero and is still hash-verified.
+            </li>
+            <li>
+              No service worker: offline after the first load is best effort (Chrome's HTTP cache),
+              not guaranteed.
+            </li>
+          </ul>
+        </section>
+      </div>
 
       <section>
-        <h2>Capabilities</h2>
+        <h2>Settings</h2>
+        <div class="row">
+          <label>
+            Store
+            <select id="sel-store">
+              <option value="opfs">opfs</option>
+              <option value="indexeddb">indexeddb</option>
+            </select>
+          </label>
+          <span class="muted small"
+            >Changing the store reloads the page with <code>?store=</code>.</span
+          >
+        </div>
+        <p class="small muted">
+          Test hooks (<code>window.__runtime</code>) exist only on 127.0.0.1 / localhost; a hosted
+          page never exposes them.
+        </p>
+      </section>
+
+      <section>
+        <h2>Capability profile</h2>
+        <p class="small">
+          <code>detectCapabilities()</code>: allow-listed device facts (cores, memory tier, storage
+          estimate, WebGPU adapter vendor and limits, WASM features). Never reads
+          <code>navigator.userAgent</code>.
+        </p>
         <button id="btn-detect" type="button">Detect capabilities</button>
         <pre id="out-capabilities" class="out" aria-live="polite"></pre>
       </section>
 
       <section>
-        <h2>Manifest</h2>
-        <label>
-          Manifest URL
-          <input id="in-manifest" type="text" size="48" />
+        <h2>Manifest verification</h2>
+        <p class="small">
+          Manifest URL: <code id="manifest-url">?</code>. Trust root for this build:
+          <code id="trust-root-keyid">?</code> (keyId = sha256 of the raw Ed25519 public key).
+        </p>
+        <div class="row">
+          <button id="btn-load" type="button">Load and verify the bundled fixture</button>
+          <button id="btn-rfc" type="button">
+            Load the RFC 8032 test-signed example (expected: refused, key not trusted)
+          </button>
+          <button id="btn-tamper" type="button">
+            Tamper: flip one hex digit of a sha256 and re-verify (expected: signature invalid)
+          </button>
+        </div>
+        <label class="check">
+          <input id="chk-testkey" type="checkbox" />
+          Also add the RFC 8032 test key to the trust set (expected: still refused because
+          allowTestKeys is false)
         </label>
-        <label>
-          quotaBytes override (tests only; empty = navigator.storage.estimate())
-          <input id="in-quota" type="number" min="0" step="1048576" />
-        </label>
-        <button id="btn-load" type="button">Load and verify manifest</button>
         <pre id="out-manifest" class="out"></pre>
       </section>
 
       <section>
-        <h2>Assets</h2>
-        <label>
-          Entry id
-          <input id="in-entry" type="text" size="24" value="small" />
-        </label>
+        <h2>Download, resume, verify</h2>
+        <p class="small">
+          Each row drives one manifest entry through the asset manager:
+          <code>ensure()</code> downloads in 1 MiB chunks into a partial file, hashes while
+          streaming and commits only when the SHA-256 matches; <code>getBlob()</code> returns the
+          verified bytes.
+        </p>
         <div class="row">
-          <button id="btn-ensure" type="button">ensure()</button>
-          <button id="btn-cancel" type="button">cancel</button>
-          <button id="btn-blob" type="button">getBlob()</button>
-          <button id="btn-rehash" type="button">getBlob({rehash})</button>
-          <button id="btn-acquire" type="button">acquire()</button>
-          <button id="btn-release" type="button">release()</button>
-          <button id="btn-pin" type="button">pin()</button>
-          <button id="btn-unpin" type="button">unpin()</button>
-          <button id="btn-evict" type="button">evict()</button>
-          <button id="btn-list" type="button">list()</button>
-          <button id="btn-reconcile" type="button">reconcile()</button>
-          <button id="btn-truncate" type="button" class="danger">
-            truncate committed .bin by 1 byte
-          </button>
+          <label>
+            Simulated network drop after
+            <input id="in-drop" type="number" min="1" step="1" size="4" />
+            MiB on the next download
+          </label>
+          <span id="drop-state" class="muted small">off</span>
         </div>
-        <progress id="progress" max="1" value="0"></progress>
-        <div id="progress-label" class="muted">idle</div>
+        <p class="small muted">
+          This is a simulation: the page wraps <code>fetch</code> and cuts the response body after N
+          bytes of the first attempt, so <code>ensure()</code> fails with a network error. The next
+          <code>ensure()</code> reads the partial file and asks the server for the rest with a
+          <code>Range</code> header, which this page shows. A real refresh in the middle of a
+          download resumes the same way.
+        </p>
+        <table class="entries">
+          <thead>
+            <tr>
+              <th>Entry</th>
+              <th>Size</th>
+              <th>Progress</th>
+              <th>Resumed from</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="entries-body">
+            <tr>
+              <td colspan="5" class="muted">Load and verify a manifest first.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p id="range-seen" class="small muted">No Range header sent yet.</p>
         <pre id="out-assets" class="out"></pre>
       </section>
 
       <section>
         <h2>Storage</h2>
+        <p class="small">
+          Only this demo's prefix is listed or touched: the OPFS directory
+          <code>airplanemode-runtime/</code> and the IndexedDB database
+          <code>airplanemode-runtime</code>.
+        </p>
         <div class="row">
           <button id="btn-estimate" type="button">navigator.storage.estimate()</button>
-          <button id="btn-files" type="button">list store files</button>
+          <button id="btn-list" type="button">list()</button>
+          <button id="btn-files" type="button">List store files</button>
+          <button id="btn-reconcile" type="button">reconcile()</button>
         </div>
         <pre id="out-storage" class="out"></pre>
       </section>
 
       <section>
+        <h2>Quota and eviction</h2>
+        <p class="small">
+          Without a test quota the manager plans against <code>navigator.storage.estimate()</code>
+          with the production headroom of 67108864 bytes (64 MiB). The walkthrough sets a 24 MiB
+          test quota and 1 MiB headroom, downloads demo-a (12 MiB) and demo-b (8 MiB), then demo-c
+          (6 MiB): 20 + 6 + 1 exceeds 24, so the least recently used entry is evicted.
+        </p>
+        <div class="row">
+          <label>
+            Test quota (bytes)
+            <input id="in-quota" type="number" min="0" step="1048576" />
+          </label>
+          <label>
+            Headroom (bytes)
+            <input id="in-headroom" type="number" min="0" step="1048576" placeholder="67108864" />
+          </label>
+          <button id="btn-apply" type="button">Apply (rebuild manager)</button>
+          <button id="btn-walkthrough" type="button">Eviction walkthrough</button>
+        </div>
+        <pre id="out-quota" class="out"></pre>
+      </section>
+
+      <section>
+        <h2>Paste your own manifest URL</h2>
+        <p class="small">
+          The page checks the URL's origin against the list below before any request is made; a URL
+          from another origin is refused with <code>AssetError</code> code <code>policy</code> and
+          nothing is fetched. Only https origins can be added (http is accepted for 127.0.0.1 and
+          localhost while running locally). The manifest must verify against one of the trust roots.
+        </p>
+        <label>
+          Manifest URL
+          <input id="in-paste" type="text" size="60" />
+        </label>
+        <label>
+          Allowed origins (one per line, https only)
+          <textarea id="ta-origins" rows="3" cols="60"></textarea>
+        </label>
+        <ul id="origins-feedback" class="feedback"></ul>
+        <label>
+          Trust roots (public key hex, one per line)
+          <textarea id="ta-roots" rows="3" cols="60"></textarea>
+        </label>
+        <ul id="roots-feedback" class="feedback"></ul>
+        <button id="btn-paste-load" type="button">Load and verify the pasted manifest</button>
+        <pre id="out-paste" class="out"></pre>
+      </section>
+
+      <section>
         <h2>Events</h2>
+        <p class="small">
+          <code>airplanemode.event/0.1</code> records from the manager's in-memory ring buffer. They
+          never leave the page.
+        </p>
         <button id="btn-clear-events" type="button">clear</button>
         <pre id="out-events" class="out events"></pre>
       </section>
     </main>
+
+    <footer>
+      <p>
+        <a href="https://github.com/AirplaneMode-Labs/runtime"
+          >AirplaneMode-Labs/runtime on GitHub</a
+        >
+        · <a href="https://airplanemode-labs.github.io/site/">Airplane Mode Labs</a> · Apache-2.0
+      </p>
+    </footer>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

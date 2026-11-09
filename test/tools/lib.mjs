@@ -3,7 +3,14 @@
 // the TypeScript sources in src/, so the generated vectors are an independent oracle that
 // test/canonical.test.ts checks the library against.
 
-import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  sign,
+  verify,
+} from 'node:crypto';
 
 export const PREFIX = 'airplanemode-manifest-v1\n';
 export const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -92,6 +99,37 @@ export function signManifest(manifest, seedHex, signedAt) {
     publicKey: pub.toString('base64'),
     sig: sig.toString('base64'),
     signedAt,
+  };
+}
+
+/**
+ * Signs with an in-memory KeyObject instead of a seed (demo/tools/make-fixture.mjs: a key pair from
+ * generateKeyPairSync that is never exported). Same wire format as signManifest.
+ */
+export function signManifestWithKey(manifest, privateKeyObject, signedAt) {
+  const pub = rawPublicKey(privateKeyObject);
+  const sig = sign(null, signedBytes(manifest), privateKeyObject);
+  return {
+    alg: 'ed25519',
+    keyId: keyIdOf(pub),
+    publicKey: pub.toString('base64'),
+    sig: sig.toString('base64'),
+    signedAt,
+  };
+}
+
+/**
+ * A fresh Ed25519 key pair (crypto.generateKeyPairSync) whose signing half lives only inside this
+ * closure: callers get the public bytes and a sign() function, never the KeyObject. Used by
+ * demo/tools/make-fixture.mjs so each demo build is signed by a key that exists for that build only.
+ */
+export function ephemeralSigner() {
+  const pair = generateKeyPairSync('ed25519');
+  const pub = rawPublicKey(pair.privateKey);
+  return {
+    publicKeyHex: pub.toString('hex'),
+    keyId: keyIdOf(pub),
+    sign: (manifest, signedAt) => signManifestWithKey(manifest, pair.privateKey, signedAt),
   };
 }
 
