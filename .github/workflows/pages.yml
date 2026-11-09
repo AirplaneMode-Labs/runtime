@@ -1,8 +1,11 @@
 name: pages
 
 # Builds the demo and deploys it to GitHub Pages at https://airplanemode-labs.github.io/runtime/.
-# `npm run demo:build` generates the synthetic fixture, signs its manifest with a key pair that
-# exists only inside this job (the public half is embedded in the page), then runs the Vite build.
+# `DEMO_MODELS=1 npm run demo:build` generates the synthetic fixture, bundles the Apache-2.0 test model
+# SmolLM2-135M-Instruct (fetched from a pinned revision into the cached .cache/models, every file
+# re-hashed against test/tools/models.json: any mismatch fails the build), signs both manifests with a
+# key pair that exists only inside this job (the public half is embedded in the pages), then runs the
+# Vite build. Nothing built is committed.
 on:
   push:
     branches: [main]
@@ -34,7 +37,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run demo:build
+      - name: Restore the model cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/models
+          key: models-${{ hashFiles('test/tools/models.json') }}
+      - name: Fetch the test model (https only, no token; re-hashes every cached file, refuses any mismatch)
+        run: node test/tools/fetch-model.mjs smollm2-135m-instruct
+      - name: Build the demo with the test model bundled
+        run: DEMO_MODELS=1 npm run demo:build
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

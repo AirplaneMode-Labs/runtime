@@ -44,9 +44,41 @@ jobs:
         run: npm run demo:build
       - name: Pack contents
         run: npm pack --dry-run
-      - name: Install Chrome for Playwright (Linux only)
+      # No Chrome is installed here: the ubuntu-latest image already has Google Chrome, and the
+      # Playwright config selects it with channel "chrome". A missing Chrome fails the job.
+      - name: Check the preinstalled Google Chrome (Linux only)
         if: runner.os == 'Linux'
-        run: npx playwright install --with-deps chrome
+        run: google-chrome --version || { echo "Google Chrome is not installed on this runner" >&2; exit 1; }
       - name: Browser tests (Linux only)
         if: runner.os == 'Linux'
         run: npm run test:browser
+
+  # Not part of the required "check (<os>)" jobs: it needs Hugging Face to be reachable, so an outage
+  # there never turns the required checks red. This job is configured, not yet executed: it has not
+  # run on GitHub (the owner has not pushed Sprint 2); the same command was run locally.
+  model-wasm:
+    name: model-wasm (ubuntu-latest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore the model cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/models
+          key: models-${{ hashFiles('test/tools/models.json') }}
+      - name: Fetch the test model (re-hashes every cached file)
+        run: node test/tools/fetch-model.mjs smollm2-135m-instruct
+      # Same as above: the preinstalled Google Chrome through Playwright channel "chrome".
+      - name: Check the preinstalled Google Chrome
+        run: google-chrome --version || { echo "Google Chrome is not installed on this runner" >&2; exit 1; }
+      - name: WebAssembly leg behind the aborting network gate
+        run: RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model
