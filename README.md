@@ -13,6 +13,21 @@ profile, the asset manager (download, resume, cache, evict) and the five contrac
 [`spec/`](spec/README.md). The backend adapters, the WebGPU to WASM fallback chain and the
 observability panel are later sprints; see Limitations.
 
+## Demo
+
+Live demo: <https://airplanemode-labs.github.io/runtime/>. Built from `main` by
+`.github/workflows/pages.yml` on every push; it shows only what works today and has a box titled
+"What this demo does not do yet". It runs entirely in the browser: no upload, no analytics, no
+third-party scripts or fonts.
+
+What it shows: the capability profile; verification of a manifest signed at build time (a key pair
+generated inside the workflow signs a manifest describing three synthetic 12, 8 and 6 MiB streams,
+and only the public half is embedded in the page as the trust root); the RFC 8032 test-signed
+example refused and a tampered manifest refused; download with progress, a simulated network drop
+with resume from the partial file, in-page SHA-256 of the result, eviction under a test quota; and a
+"paste your own manifest URL" field that fetches nothing unless the URL's origin is in the allowed
+origins list. The assets are synthetic byte streams, never a model.
+
 ## Install
 
 Not published yet. From a clone:
@@ -175,6 +190,11 @@ through CDP `Storage.overrideQuotaForOrigin` (no `quotaBytes` injection); raw ou
 - Nothing has been measured on the 8 GB Windows laptop yet; Benchmarks reads "not measured".
 - Real backend adapters (WebLLM, Transformers.js, Chrome Prompt API) are Sprint 2; only the
   interface and a `MockAdapter` ship now.
+- The demo's fixture manifest is signed by a key generated for that build only and carries no
+  `expiresAt`; its bytes are synthetic streams. It proves the verification and download paths, not
+  a publisher identity. Resume after an interrupted download is verified on the local range server;
+  whether GitHub Pages answers `Range` requests with 206 is unverified until the first deploy (a 200
+  restarts the download from zero, still hash-verified).
 
 ## Security and privacy
 
@@ -205,6 +225,8 @@ npm run test:browser   # Playwright on the installed Chrome (channel "chrome"); 
 npm run spec:vectors   # regenerate spec/vectors from test/tools/make-vectors.mjs
 npm run spec:sign-example
 npm run deps:scripts   # which packages carry install scripts (none are run)
+npm run demo:build     # demo/dist: generates and signs the fixture, then vite build (what pages.yml runs)
+node demo/tools/make-fixture.mjs                      # fixture only: demo/public/fixture (git-ignored)
 node test/tools/asset-digest.mjs hello-data 1048576   # sha256 of a synthetic asset
 ```
 

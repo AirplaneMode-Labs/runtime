@@ -9,6 +9,13 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
 
 ### Added
 
+- Public demo at <https://airplanemode-labs.github.io/runtime/> with a build-time-signed synthetic
+  fixture: `demo/tools/make-fixture.mjs` writes three xorshift64* streams and a manifest signed by a
+  key pair generated for that build (public half embedded as the trust root), `.github/workflows/pages.yml`
+  builds and deploys `demo/dist`, and CI runs the same `npm run demo:build`. The page states its
+  browser requirements by feature detection, confines storage listing to `airplanemode-runtime`,
+  checks a pasted manifest URL's origin against an allowed list before any request, and carries a
+  "What this demo does not do yet" box.
 - Open contracts 0.1.0 under `spec/`: Manifest, Capability profile, Event, Storage API and Backend
   adapter as JSON Schema 2020-12 plus TypeScript, with examples, the RFC 8032 test key note and
   the shared canonicalisation vectors (`npm run spec:vectors`).
