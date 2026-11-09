@@ -314,7 +314,7 @@ describe('the workflows', () => {
     }
   });
 
-  it('the model job is separate from check (<os>), labelled not-yet-executed, and uses the pinned cache action', () => {
+  it('the model job is separate from check (<os>), records its first GitHub run, and uses the pinned cache action', () => {
     const text = ci();
     expect(text).toContain('name: model-wasm (ubuntu-latest)');
     expect(text).toContain(CACHE_PIN);
@@ -327,7 +327,8 @@ describe('the workflows', () => {
     expect(modelJob).toContain('node test/tools/fetch-model.mjs smollm2-135m-instruct');
     expect(modelJob).toContain('RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model');
     expect(modelJob).toContain('runs-on: ubuntu-latest');
-    expect(text).toContain('configured, not yet executed');
+    expect(text).toContain('First ran on GitHub on 9 Nov 2026');
+    expect(text).not.toContain('configured, not yet executed');
   });
 
   it('pages.yml restores the cache, fetches (re-hashing) and builds with DEMO_MODELS=1', () => {

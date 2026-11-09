@@ -312,8 +312,9 @@ evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/spri
   already `available`; it was exercised with a fake `LanguageModel`, never against a real Gemini Nano
   install.
 - The `model-wasm (ubuntu-latest)` CI job (cached fetch, then the WebAssembly leg behind the aborting
-  gate) is configured, not yet executed: it has not run on GitHub. CI never runs the WebGPU leg (hosted
-  runners have no GPU adapter). Windows CI legs are likewise configured, not yet executed.
+  gate) and the Windows CI legs first ran on GitHub on 9 Nov 2026, green ([run](https://github.com/AirplaneMode-Labs/runtime/actions/runs/42636261556)). CI never runs
+  the WebGPU leg (hosted runners have no GPU adapter); the WebGPU leg was run locally and on the live
+  demo, in Chrome on an Apple-silicon Mac.
 - When a model's descriptor is not yet in the store, the consent byte count the chain passes to
   `beforeDownload` is an upper bound (every manifest entry not yet verified): the chain cannot read a
   descriptor it has not downloaded.
@@ -437,10 +438,10 @@ Vitest is pinned at 4.1.12. With npm 10.9.8, adding or upgrading a package repor
 CI runs the same `npm run ci` on Ubuntu, macOS and Windows; browser tests run on Linux with the
 Google Chrome preinstalled on ubuntu-latest (Playwright channel "chrome"; the job logs
 `google-chrome --version` and fails when Chrome is missing, and no Chrome is installed from a
-package repository). This is configured, not yet executed. A separate, non-required job
+package repository). This first ran on GitHub on 9 Nov 2026. A separate, non-required job
 `model-wasm (ubuntu-latest)` fetches the test model (cached, every file re-hashed) and runs the
-WebAssembly leg of `test:model` behind the aborting network gate; it is configured, not yet
-executed. A Hugging Face outage never turns `check (<os>)` red. New npm dependencies must have been
+WebAssembly leg of `test:model` behind the aborting network gate; it first ran on GitHub on 9 Nov
+2026, green. A Hugging Face outage never turns `check (<os>)` red. New npm dependencies must have been
 published at least 14 days before they are installed (younger transitives are pinned through
 `overrides`), come from registry.npmjs.org with sha512 integrity, and pass `npm audit signatures`.
 

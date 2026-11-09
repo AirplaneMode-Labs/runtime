@@ -282,8 +282,9 @@ describe('fix round 1: honest wording', () => {
     for (const m of ci.matchAll(/uses:\s*(\S+)/g)) expect(m[1], m[1]).toMatch(/@[0-9a-f]{40}$/);
     expect(flat(read('README.md'))).not.toContain('npx playwright install --with-deps chrome');
     expect(flat(read('README.md'))).toMatch(
-      /preinstalled on ubuntu-latest.{0,200}configured, not yet executed/,
+      /preinstalled on ubuntu-latest.{0,200}first ran on GitHub on 9 Nov 2026/,
     );
+    expect(flat(read('README.md'))).not.toContain('configured, not yet executed');
   });
 
   it('CHANGELOG.md has a bullet for each fix, ending with the id, and the S1-053 bullet names the Sprint 3 cacheOnly option', () => {

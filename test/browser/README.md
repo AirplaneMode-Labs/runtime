@@ -15,7 +15,7 @@ RUNTIME_BENCH_OUT=/path/to/out npm run test:browser   # also write the report JS
 endpoints, 8788 `--corrupt-hash`, 8789 `--ignore-range`). Channel `chrome` uses the installed
 Google Chrome; no browser download. CI runs the suite on Linux only, with the Google Chrome
 preinstalled on ubuntu-latest (the job logs `google-chrome --version` and fails if it is missing);
-configured, not yet executed.
+it first ran on GitHub on 9 Nov 2026.
 
 The 700 MB version (`big.spec.ts`) runs only with `RUNTIME_BIG=1` against a server started by
 hand; the exact commands are in the header of `big.spec.ts`.

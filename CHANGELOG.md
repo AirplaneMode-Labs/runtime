@@ -70,6 +70,9 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   `identity`: GitHub Pages gzips JSON on the fly, so the header counted compressed bytes and every
   descriptor download on the hosted backend demo failed with `content-length`. The streaming size cap and
   the SHA-256 check still decide (found on the live demo after the Sprint 2 push).
+- README, `test/browser/README.md` and the `ci.yml` comment no longer call the Windows legs and the
+  `model-wasm` job "configured, not yet executed": both first ran on GitHub on 9 Nov 2026, green; the
+  docs and demo-DOM tests pin the new wording.
 - IndexedDB `fileSize()` sums the stored chunk Blob sizes, so a truncated or replaced chunk makes
   `getBlob()` reject `not_verified` without `rehash` and the row is removed (S1-018).
 - `reconcile()` no longer deletes a committed file whose `asset:<sha>` lock is held, that is held under

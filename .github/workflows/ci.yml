@@ -54,8 +54,7 @@ jobs:
         run: npm run test:browser
 
   # Not part of the required "check (<os>)" jobs: it needs Hugging Face to be reachable, so an outage
-  # there never turns the required checks red. This job is configured, not yet executed: it has not
-  # run on GitHub (the owner has not pushed Sprint 2); the same command was run locally.
+  # there never turns the required checks red. First ran on GitHub on 9 Nov 2026 (green).
   model-wasm:
     name: model-wasm (ubuntu-latest)
     runs-on: ubuntu-latest
