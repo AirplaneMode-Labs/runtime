@@ -821,7 +821,11 @@ export class AssetManager implements AssetSource {
       }
 
       const status = res.status;
-      const contentLength = res.headers.get('content-length');
+      // With a Content-Encoding (GitHub Pages gzips JSON on the fly), Content-Length counts the
+      // encoded bytes while fetch() yields decoded ones, so it says nothing about the entry size.
+      // The streaming size cap and the sha256 check below still decide.
+      const encoding = (res.headers.get('content-encoding') ?? 'identity').trim().toLowerCase();
+      const contentLength = encoding === 'identity' ? res.headers.get('content-length') : null;
       const declaredLength = contentLength === null ? undefined : Number(contentLength);
 
       if (status === 416) {

@@ -24,6 +24,8 @@ export interface FakeServerOptions {
   endless?: boolean | undefined;
   /** Override Content-Length with a wrong value. */
   contentLengthOverride?: number | undefined;
+  /** Send this Content-Encoding header, as a host that compresses on the fly would; Content-Length then counts encoded bytes. */
+  contentEncoding?: string | undefined;
   /** Simulate a redirect: throws TypeError when init.redirect === 'error', else 302. */
   redirect?: boolean | undefined;
   /** Error the body stream after this many bytes of the response. */
@@ -190,6 +192,7 @@ export class FakeServer {
     if (!(o.omitContentLength || o.endless)) {
       h['content-length'] = String(o.contentLengthOverride ?? body.length);
     }
+    if (o.contentEncoding) h['content-encoding'] = o.contentEncoding;
     rec.status = status;
     return new Response(this.stream(body, rec), { status, headers: h });
   }

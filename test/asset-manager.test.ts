@@ -530,6 +530,25 @@ describe('AssetManager: hostile host and validation', () => {
     expect(find(events, 'asset.verify.ok')).toEqual([]);
   });
 
+  it('200 with Content-Encoding: Content-Length counts encoded bytes, so it is ignored and the sha256 still decides', async () => {
+    // GitHub Pages gzips JSON on the fly: Content-Length is the compressed size, fetch() hands over decoded bytes.
+    const { mgr, events } = await setup({
+      assets: { a: SMALL },
+      server: { contentLengthOverride: Math.floor(SMALL.length / 3), contentEncoding: 'gzip' },
+    });
+    await mgr.ensure('a');
+    expectBytes(await blobBytes(await mgr.getBlob('a')), SMALL);
+    expect(find(events, 'asset.verify.ok').length).toBe(1);
+  });
+
+  it('200 with Content-Encoding: identity still checks Content-Length', async () => {
+    const { mgr } = await setup({
+      assets: { a: SMALL },
+      server: { contentLengthOverride: SMALL.length + 5, contentEncoding: 'identity' },
+    });
+    await rejectsWith(mgr.ensure('a'), 'network', 'content-length');
+  });
+
   it('body longer than size => network error (oversize), no .bin, index consistent', async () => {
     const { mgr, store, server } = await setup({
       assets: { a: SMALL },
