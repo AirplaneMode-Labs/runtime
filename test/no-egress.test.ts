@@ -1,7 +1,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative as nativeRelative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoDir } from './helpers';
+
+// Repo-relative paths with POSIX separators, so the checks below behave the same on Windows.
+const relative = (from: string, to: string): string =>
+  nativeRelative(from, to).split(sep).join('/');
 
 const srcDir = resolve(repoDir, 'src');
 const specDir = resolve(repoDir, 'spec');

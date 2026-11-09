@@ -11,7 +11,10 @@
 //   node test/tools/dist-url-inventory.mjs <demo/dist> [<out.txt>]
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+
+// POSIX separators in the report on every OS, so the output is identical on Windows.
+const posix = (p) => p.split(sep).join('/');
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,7 +93,7 @@ for (const file of walk(dist).sort()) {
     seen.add(url);
     const a = attribute(url, file);
     if (!a) unattributed++;
-    rows.push({ kind: 'url', chunk: relative(dist, file), url, a });
+    rows.push({ kind: 'url', chunk: posix(relative(dist, file)), url, a });
   }
   const seenBare = new Set();
   for (const m of text.matchAll(BARE_RE)) {
@@ -102,11 +105,11 @@ for (const file of walk(dist).sort()) {
     seenBare.add(context);
     // nothing is attributed as a bare name: an endpoint that was neutralised is not in the build at all
     unattributed++;
-    rows.push({ kind: 'bare', chunk: relative(dist, file), url: context, a: null });
+    rows.push({ kind: 'bare', chunk: posix(relative(dist, file)), url: context, a: null });
   }
 }
 const lines = [
-  `# URL inventory of ${relative(root, dist)} (host patterns, as https:// strings and as bare names: huggingface.co, hf.co, jsdelivr, unpkg, cdnjs, github, githubusercontent, googleapis, gstatic)`,
+  `# URL inventory of ${posix(relative(root, dist))} (host patterns, as https:// strings and as bare names: huggingface.co, hf.co, jsdelivr, unpkg, cdnjs, github, githubusercontent, googleapis, gstatic)`,
   '',
 ];
 for (const r of rows) {
