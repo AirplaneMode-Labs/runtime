@@ -40,6 +40,8 @@ jobs:
         run: npm run -s deps:scripts || true
       - name: Format, typecheck, unit tests, build
         run: npm run ci
+      - name: Build the demo (same command as pages.yml)
+        run: npm run demo:build
       - name: Pack contents
         run: npm pack --dry-run
       - name: Install Chrome for Playwright (Linux only)
