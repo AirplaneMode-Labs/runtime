@@ -1,6 +1,6 @@
 # Threat model: Airplane Mode Labs runtime and the Sprint 1 surface
 
-Version 0.2 (Sprint 1, 9 to 22 November 2026; updated after fix round 1 on 9 November). Written by the security consultant (lane S1).
+Version 0.3 (Sprint 1, 9 to 22 November 2026, updated after fix round 1 on 9 November; Sprint 2 update of 9 November 2026 in section 7). Written by the security consultant (lane S1).
 Scope: `@airplanemode/runtime` (manifest verification, asset manager, capability profile, events),
 the open contracts in `runtime/spec`, `cp-manifest` and `cp-sign` in control-plane, the dockit
 PWA skeleton, `@airplanemode/localdata`, and the shared supply chain. Out of scope this sprint:
@@ -183,3 +183,129 @@ S1-021, S1-031), S1-036 to Sprint 3, and two measurements that only the 8 GB Win
 code, read documents or serve an unverified byte; all of them are availability, defence in depth or
 key-management maturity. See `PRE-PILOT-CHECKLIST.md` for what the owner must do before a customer
 laptop runs this code, and `README.md` in this directory for the publication and tagging verdict.
+
+## 7. Sprint 2 update: engines, descriptors, the fallback chain and model hosting
+
+Sprint 2 adds the first real inference path: backend adapter 0.2.0 with the model descriptor 0.1.0,
+a Transformers.js adapter on two execution devices (WebGPU, WebAssembly), an opt-in Chrome
+built-in model adapter, the fallback chain `loadWithFallback`, the runtime demo page `models.html`,
+and the tooling that fetches, pins and serves models (`fetch-model.mjs`, `models.json`,
+`ort-pins.ts`, `range-server.mjs`). Findings S1-051 to S1-063 are in `FINDINGS.md`, section
+"Sprint 2 review". What does not change: the only bytes that feed an engine are bytes a trusted
+manifest names, hashed in full after download and again just before hand-off.
+
+### 7.1 New assets and trust boundaries
+
+| Asset or boundary                                     | Why it matters                                                                                                                                                                                                       |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model weights, tokenizer, configs, chat template      | They decide what the model says. A swapped tokenizer or chat template changes behaviour as surely as swapped weights; the chat template is executed by `@huggingface/jinja`. All are manifest entries with a sha256. |
+| The ONNX Runtime wasm and its JS factory              | Native-speed code in the page. The wasm is a manifest entry of kind `wasm` pinned again by `ort-pins.ts`; the factory is application code imported from the page origin and pinned at build time (S1-059).           |
+| The model descriptor                                  | A small signed entry that names every other file the engine gets. It is the new trust pivot: a descriptor that could name an entry from another manifest, or a URL, would bypass the per-file binding.               |
+| The engine library (Transformers.js, onnxruntime-web) | Third-party code that, by default, fetches weights from Hugging Face, binaries from a CDN and caches them in Cache Storage. Boundary: the library is trusted to compute, not to choose what it loads or where from.  |
+| The page's process-global engine settings (`env`)     | One object shared by every adapter instance in the page; a later write by any code changes where the engine looks.                                                                                                   |
+| The Chrome built-in model                             | Google-controlled weights outside the signed manifest; `create()` in a non-ready state starts a third-party download.                                                                                                |
+| The user's consent to download                        | Hundreds of megabytes to gigabytes on a metered or offline-first laptop; consent is part of the governance promise.                                                                                                  |
+| The shared Pages origin `airplanemode-labs.github.io` | Six demos share one origin, so OPFS, IndexedDB, Cache Storage, Web Locks and quota are shared; the runtime demo now stores about 211 MB there after the download click.                                              |
+
+### 7.2 STRIDE: engines and the verified-file shim (`src/backends/transformers.ts`, `verified-files.ts`, `ort-pins.ts`)
+
+| Threat | Scenario                                                                                                    | Control                                                                                                                                                                                                                                                                                                   | Gap / finding                                                              |
+| ------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| S      | Engine fetches weights, tokenizer or config from Hugging Face, or the wasm from a CDN                       | `configureEnv` right after `import()`: `allowRemoteModels=false`, `remoteHost` sink, `localModelPath` = verified prefix, `env.fetch` = shim, `wasmPaths = {mjs}` without `wasm`, `wasmBinary` from the verified Blob; demo build rewrites the library's default endpoints; aborting network gate in tests | S1-060 flag-gated direct `fetch` inside the library                        |
+| S      | A request the engine makes resolves to another origin, a `data:`/`blob:` URL or a path outside the file set | Shim: http(s) only, `origin === location.origin`, GET/HEAD, no `?`/`#`, exact `Map` lookup on the normalised pathname, 404 under the prefix, otherwise `egress_refused` and `backend.egress.refused` (origin only)                                                                                        | none                                                                       |
+| S      | Cross-origin or query-carrying `ortFactoryUrl`                                                              | Resolved against the page, refused unless same-origin with no query or fragment, before the engine is imported                                                                                                                                                                                            | none                                                                       |
+| T      | Stored file changed between verification and use (co-tenant, second tab, storage fault)                     | `acquire()` then `getBlob(id, {rehash: true})`; that same Blob goes to the shim; OPFS `File` snapshots become unreadable after modification (S1 Chrome probe); IndexedDB and memory Blobs are immutable                                                                                                   | S1-062 (verified); S1-009 now Mitigated for engine loads                   |
+| T      | A different ORT wasm than the one tested is listed in a manifest                                            | `runtimeWasm` entry sha256 must equal `ORT_PINS[device].wasmSha256`, else `bad_descriptor` before any download; `gen-ort-pins --check` and `test/ort-pins.test.ts` against `node_modules`                                                                                                                 | S1-055 nightly build without provenance                                    |
+| T      | Code in the page rewrites `env` between load and generate                                                   | `assertEnv` before every `pipeline()`, `generate()` and `embed()`: any drift is `backend` and nothing runs                                                                                                                                                                                                | Same-origin script is still trusted (S1-006)                               |
+| T      | Two descriptors share a logical model id and the engine serves one's files for the other                    | Registry key is the descriptor ENTRY id; a conflicting sha256 under one key throws `bad_descriptor`; one transformers-js `load()` at a time                                                                                                                                                               | none                                                                       |
+| I      | Engine error text (which can echo the prompt or a document) reaches events, UI or logs                      | R5: `AdapterError` messages are fixed strings; the engine's error only in `Error.cause`; events built from enums; `newEvent()` refuses prompt-like keys; demo `describeFailure` shows codes only                                                                                                          | Local-only `__models.diagnose()` returns engine text on loopback by design |
+| D      | A model too large for the 4 GB wasm heap or the laptop's memory                                             | `minProfile` (`ramGb: 8`, tier) checked before download; descriptor size cap 64 KiB; `sessionOptions.graphOptimizationLevel` for Qwen3-1.7B                                                                                                                                                               | S1-061; 8 GB peak unmeasured (checklist row 20)                            |
+| E      | The engine's native Node packages (onnxruntime-node, protobufjs) execute during install                     | `ignore-scripts=true`; browser build uses `transformers.web.js`; unit tests never value-import the engine                                                                                                                                                                                                 | S1-056 integrators without `ignore-scripts`                                |
+
+### 7.3 STRIDE: descriptors (`src/backends/descriptor.ts`, `spec/model-descriptor.*`)
+
+| Threat | Scenario                                                                         | Control                                                                                                                                                                                                                   | Gap / finding |
+| ------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| S      | A forged entry object (not the one in the loaded manifest) is passed to `load()` | `getEntry(entry.id)` on this AssetManager's single manifest must match sha256, size, kind and mediaType                                                                                                                   | none          |
+| T      | Descriptor names a file from another manifest, a URL, or another descriptor      | `files[].entryId` must exist in the same manifest and must not be a descriptor; paths match the ModelFile pattern; `runtimeWasm`/`modelLib` must be listed and of kind `wasm`; `source` is provenance only, never fetched | none          |
+| T      | Descriptor for another engine or device                                          | `engine === adapter.id`, `devices` includes `adapter.device`                                                                                                                                                              | none          |
+| D      | Oversized descriptor (memory) or deep JSON                                       | Entry size <= 65536 checked before `acquire()`; blob size re-checked; strict canonical parse (no floats, bad keys, lone surrogates) and schema with `additionalProperties: false`                                         | none          |
+| E      | A descriptor raises the device's profile requirements silently                   | `satisfies(profile, minProfile)` for the descriptor entry and every file entry, before any file download                                                                                                                  | none          |
+
+### 7.4 The fallback chain and consent (`src/backends/chain.ts`)
+
+Rungs run WebGPU, then WebAssembly, then (only with `allowBuiltin: true`) the Chrome built-in
+model, then refuse with `BackendRefusedError`, whose `userMessage` is built from the rung and reason
+enums only and says "Nothing was downloaded" only when no `asset.download.start` was observed
+(since fix round 1; before it, only when no download was approved). Consent is asked
+per rung with that rung's byte count; with no `beforeDownload` the chain is cache-only. Threats:
+a download without consent (S1-053, Mitigated in fix round 1: the plan now counts a file only when
+its verified row and a stored file of the manifest size both exist, so a vanished or truncated file
+is asked for or declined. `acquire()` can still fetch a file that disappears between the plan and
+the load, until `AcquireOptions.cacheOnly` lands in Sprint 3); a
+misleading byte count (an upper bound until the descriptor is cached, S1-061: it over-asks, never
+under-asks); an abort that silently falls through to a lower rung (aborts propagate, tested); a
+failing rung that leaves files pinned (every handle is released; files become evictable, not
+deleted).
+
+### 7.5 The Chrome built-in model (`src/backends/chrome-prompt.ts`)
+
+Outside the governance chain by design: its bytes are not in a manifest and are never hashed, its
+quality and its telemetry are Google's, and `create()` in the `downloadable` or `downloading` state
+would start a download from Google. Controls: off by default (`allowBuiltin` false), and while off
+neither `availability()` nor `create()` is called (the demo's plan does not call `available()` on
+that rung either); when on, `create()` only after `availability() === 'available'`; `model.load`
+carries `verified: false` so audit trails can tell the two apart. Residual: once a user enables it,
+prompts go to a model the lab does not govern; a pilot policy must decide whether regulated
+deployments may enable it at all (checklist row 22).
+
+### 7.6 Model hosting and the shared Pages origin
+
+The runtime demo bundles the Apache-2.0 test model SmolLM2-135M-Instruct (about 182 MB of ONNX plus
+tokenizer and configs) and the pinned ORT wasm under `models/`, signed per build with a key that
+exists only inside the Pages job; the public half is compiled into the page. Nothing is fetched
+before the download click; after it only same-origin `models/*` requests happen. Threats and
+controls: a tampered Pages artefact or CDN cache (every file is hashed against the signed manifest;
+a mismatch is refused, and the trust root and the files are served together, so this proves the
+verification path, not publisher identity, as S1-040 already records); a co-tenant demo on the same
+origin that is compromised by script injection could delete or overwrite the stored model files
+(the rehash on hand-off turns tampering into a refusal; deletion is availability only) or exhaust
+the shared quota (S1-041); GitHub Pages limits on a 182 MB file, its bandwidth cap and its Range
+behaviour are unverified until the first deploy (checklist row 19). The planned production model
+Qwen3-1.7B (1.43 GB WebGPU, 1.74 GB WASM) is never hosted on Pages or in any demo; it was loaded
+once in the local D1-09 smoke run from the loopback range server behind the aborting network gate.
+A pilot bundle needs its own licence package (checklist row 17).
+
+### 7.7 WebLLM staging rules for Sprint 3 (informative, carried from the Sprint 2 plan)
+
+WebLLM loads weights through the Cache API and fetches model libraries itself, so the shim
+approach does not apply unchanged. Before any WebLLM code lands: staged Cache API keys are exactly
+`${location.origin}${BASE_URL}__airplanemode/verified/<descriptor entry id>/resolve/main/<path>`,
+written from verified Blobs only; only those exact keys are deleted (`cache.delete(url)`), never
+`caches.delete(name)`, because the origin is shared; `appConfig` is built from scratch, never from
+`prebuiltAppConfig`, and contains no Hugging Face or GitHub URL; `cacheBackend` is `'cache'` and
+cross-origin storage is off; the model library (`modelLib`) is a manifest entry of kind `wasm`
+pinned like the ORT wasm; zero network requests may reach the staging prefix (the aborting gate
+proves it); and the staged keys are removed after load. The real Qwen3-1.7B q4f16 MLC library needs
+about 2 GB of VRAM (`vram_required` 2036.66 MB), which is a Sprint 5 measurement.
+
+### 7.8 Prompt injection through documents (row only; Sprint 5)
+
+Not reachable this sprint: dockit has no inference, and the runtime demo sends only what the user
+types. When dockit gains retrieval and inference (Sprint 5), a document becomes untrusted input to
+the model (OWASP LLM01), and model output becomes untrusted input to the page (LLM02: rendered with
+`textContent` only, never executed, never used as a URL or a storage key without validation). There
+are no tools or function calls; adding any requires its own review (checklist row 16).
+
+### 7.9 Residual risk after Sprint 2
+
+No new Critical, High or Medium. Fix round 1 closed the glyphsift input cap (S1-051), the build id
+check (S1-052), the fail-open hold query (S1-054, now fail closed with an `asset.hold.unknown`
+warning), the install-script note (S1-056), the control-plane vector sync (S1-057) and the runtime
+Chrome install in CI (S1-058). Still open: consent enforcement at the asset layer (S1-053,
+Mitigated, Sprint 3) and the onnxruntime-web nightly without provenance (S1-055, Sprint 3), plus
+the Info item S1-066. Fix round 2 closed the Chrome install in localdata and dockit CI (S1-064),
+the glyphsift installer drift (S1-065) and the install-script wording (S1-067).
+Each has an owner and a target; none
+lets an attacker who controls the network, a model host or the engine library put unverified
+bytes in front of an engine or reach a third-party origin from the runtime demo.
