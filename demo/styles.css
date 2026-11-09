@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  line-height: 1.4;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin-top: 1.5rem;
+}
+
+section {
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  padding-top: 0.5rem;
+}
+
+label {
+  display: block;
+  margin: 0.4rem 0;
+}
+
+input {
+  font: inherit;
+  margin-left: 0.5rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+button {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+}
+
+button.danger {
+  border-color: #b00020;
+}
+
+progress {
+  width: 100%;
+  height: 1rem;
+}
+
+.muted {
+  opacity: 0.75;
+}
+
+.out {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  padding: 0.5rem;
+  min-height: 1.5rem;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.85rem;
+}
+
+.events {
+  max-height: 24rem;
+}

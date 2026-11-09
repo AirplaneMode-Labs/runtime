@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>runtime demo</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>@airplanemode/runtime demo</h1>
+      <p class="muted">
+        Asset manager and capability profile against the local range test server. Nothing leaves
+        this origin. Store: <code id="store-label">?</code>. Quota source:
+        <code id="quota-source">?</code>. Test hooks (<code>window.__runtime</code>) are exposed
+        only on 127.0.0.1 / localhost.
+      </p>
+
+      <section>
+        <h2>Capabilities</h2>
+        <button id="btn-detect" type="button">Detect capabilities</button>
+        <pre id="out-capabilities" class="out" aria-live="polite"></pre>
+      </section>
+
+      <section>
+        <h2>Manifest</h2>
+        <label>
+          Manifest URL
+          <input id="in-manifest" type="text" size="48" />
+        </label>
+        <label>
+          quotaBytes override (tests only; empty = navigator.storage.estimate())
+          <input id="in-quota" type="number" min="0" step="1048576" />
+        </label>
+        <button id="btn-load" type="button">Load and verify manifest</button>
+        <pre id="out-manifest" class="out"></pre>
+      </section>
+
+      <section>
+        <h2>Assets</h2>
+        <label>
+          Entry id
+          <input id="in-entry" type="text" size="24" value="small" />
+        </label>
+        <div class="row">
+          <button id="btn-ensure" type="button">ensure()</button>
+          <button id="btn-cancel" type="button">cancel</button>
+          <button id="btn-blob" type="button">getBlob()</button>
+          <button id="btn-rehash" type="button">getBlob({rehash})</button>
+          <button id="btn-acquire" type="button">acquire()</button>
+          <button id="btn-release" type="button">release()</button>
+          <button id="btn-pin" type="button">pin()</button>
+          <button id="btn-unpin" type="button">unpin()</button>
+          <button id="btn-evict" type="button">evict()</button>
+          <button id="btn-list" type="button">list()</button>
+          <button id="btn-reconcile" type="button">reconcile()</button>
+          <button id="btn-truncate" type="button" class="danger">
+            truncate committed .bin by 1 byte
+          </button>
+        </div>
+        <progress id="progress" max="1" value="0"></progress>
+        <div id="progress-label" class="muted">idle</div>
+        <pre id="out-assets" class="out"></pre>
+      </section>
+
+      <section>
+        <h2>Storage</h2>
+        <div class="row">
+          <button id="btn-estimate" type="button">navigator.storage.estimate()</button>
+          <button id="btn-files" type="button">list store files</button>
+        </div>
+        <pre id="out-storage" class="out"></pre>
+      </section>
+
+      <section>
+        <h2>Events</h2>
+        <button id="btn-clear-events" type="button">clear</button>
+        <pre id="out-events" class="out events"></pre>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
