@@ -24,7 +24,8 @@
       </p>
       <p class="muted build-line">
         Built from <code>main</code> at <code id="build-id">?</code> by
-        <code>.github/workflows/pages.yml</code>. Store: <code id="store-label">?</code>. Manifest
+        <code>.github/workflows/pages.yml</code>. See also the
+        <a href="./models.html">backend demo</a>. Store: <code id="store-label">?</code>. Manifest
         source: <code id="source-label">?</code>. Quota source: <code id="quota-source">?</code>.
       </p>
       <p id="range-note" class="note hidden">
@@ -77,8 +78,10 @@
               eviction, not inference.
             </li>
             <li>
-              No backend adapter: WebGPU and WASM inference with the fallback chain arrives in
-              Sprint 2. Only the interface and a mock adapter exist today.
+              Inference is not part of this page: the backend demo (<a href="./models.html"
+                >models.html</a
+              >) detects your device tier and, only after you click, downloads a small test model
+              and answers a prompt on WebGPU or WebAssembly. The assets here stay synthetic.
             </li>
             <li>
               The fixture manifest carries no <code>expiresAt</code> and is signed by a key

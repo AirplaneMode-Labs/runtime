@@ -1,0 +1,34 @@
+Third-party notices for the Airplane Mode Labs runtime demo
+============================================================
+
+The built demo (the GitHub Pages artifact and demo/dist) contains the following third-party code and
+files. Each is redistributed under its own licence; nothing was modified.
+
+1. onnxruntime-web 1.31.0-dev.20260914-8d85527a0 (MIT, Copyright (c) Microsoft Corporation)
+   - app/ort/ort-wasm-simd-threaded.asyncify.mjs: the WebAssembly factory, copied unmodified from the
+     npm package after its SHA-256 was checked against src/backends/ort-pins.ts
+     (0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611).
+   - the ONNX Runtime Web JavaScript, bundled into app/*.js by Vite.
+   - in a build made with DEMO_MODELS=1, models/ort/ort-wasm-simd-threaded.asyncify.wasm (SHA-256
+     49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082) and
+     models/LICENSE-onnxruntime-web.txt (the MIT licence text).
+
+2. @huggingface/transformers 4.3.1 (Apache-2.0), bundled into app/*.js by Vite. It is used only as the
+   inference engine; every file it reads comes from this site, verified against a signed manifest.
+
+3. Other libraries bundled with the two above:
+   - @huggingface/tokenizers 0.2.0 (Apache-2.0)
+   - @huggingface/jinja 0.5.10 (MIT)
+   - onnxruntime-common (MIT)
+   - protobufjs 7.6.6 and @protobufjs/* (BSD-3-Clause)
+   - long 5.3.2 (Apache-2.0)
+   - flatbuffers 25.9.23 (Apache-2.0)
+   - platform 1.3.6 (MIT)
+   - guid-typescript 1.0.9 (ISC)
+
+4. SmolLM2-135M-Instruct (HuggingFaceTB/SmolLM2-135M-Instruct at revision
+   12fd25f77366fa6b3b4b768ec3050bf629380bac, Apache-2.0): the test model, present only in a build made
+   with DEMO_MODELS=1, under models/ with models/LICENSE-SmolLM2-135M-Instruct.txt and
+   models/PROVENANCE.json (repository, revision, and the path, size and SHA-256 of every file).
+
+The licence of the runtime itself is Apache-2.0 (LICENSE and NOTICE in the repository).

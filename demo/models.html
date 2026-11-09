@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="Airplane Mode Labs runtime backend demo: the detected device tier, the fallback chain WebGPU to WebAssembly, and a user-initiated download of a small test model that answers a prompt in this tab."
+    />
+    <title>runtime backend demo</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>runtime backend demo</h1>
+      <p class="lede">
+        What can this device run, and does a small model answer a prompt on it? Everything happens
+        in this tab. Nothing is uploaded, and nothing is requested from this site's
+        <code>models/</code> folder until you click the download button.
+      </p>
+      <p class="muted build-line">
+        Built from <code>main</code> at <code id="build-id">?</code> by
+        <code>.github/workflows/pages.yml</code>. <a href="./index.html">Asset manager demo</a>.
+      </p>
+    </header>
+
+    <main>
+      <div class="boxes">
+        <section id="done-when" class="box">
+          <h2>What this demo shows</h2>
+          <p>
+            Same prompt answered on WebGPU and on WebAssembly with the test model
+            SmolLM2-135M-Instruct (q4), in Chrome on an Apple-silicon Mac only. This is not the
+            Hindi production model; Windows and the 8 GB no-GPU laptop are not measured.
+          </p>
+          <!-- prettier-ignore -->
+          <p class="small">
+Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
+Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
+          </p>
+        </section>
+
+        <section id="not-yet" class="box box-warn">
+          <h2>What this demo does not do yet</h2>
+          <ul>
+            <li>
+              Test model only (SmolLM2-135M-Instruct q4, English): the Hindi production model is not
+              hosted or bundled here (Sprint 5).
+            </li>
+            <li>
+              WebGPU is verified only on an Apple-silicon Mac; Windows and the 8 GB no-GPU laptop
+              are not measured.
+            </li>
+            <li>WebLLM backend: Sprint 3.</li>
+            <li>
+              This page freezes while WebAssembly generates: the engine runs on the main thread, so
+              the tab does not repaint or run timers until generation ends, and answers are kept
+              short there. Moving the engine off the main thread is planned for Sprint 3.
+            </li>
+            <li>
+              If WebGPU fails after the engine has started (for example out of memory), WebAssembly
+              cannot start in the same page: reload the page and tick Force WASM.
+            </li>
+            <li>
+              No threads: GitHub Pages cannot send the COOP and COEP headers, so WebAssembly runs on
+              one thread and is slow.
+            </li>
+            <li>
+              The Chrome built-in model is used only if you tick the box below and the browser
+              reports it already available; it is Google's model, not hash-verified by us.
+            </li>
+            <li>No service worker: offline after the first load is best effort, not guaranteed.</li>
+            <li>
+              The model manifest is signed by a key generated for this build only (never written to
+              disk), so it proves the verification path, not a publisher identity.
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <section id="device">
+        <h2>Your device</h2>
+        <p class="small">
+          Detected locally by <code>detectCapabilities()</code>; nothing is sent anywhere.
+        </p>
+        <pre id="out-tier" class="out" aria-live="polite">Detecting…</pre>
+        <h3>Plan</h3>
+        <p class="small">
+          The rungs of the fallback chain, in order. A rung is skipped before anything is downloaded
+          when the device cannot run it.
+        </p>
+        <ol id="plan-list" class="plan"></ol>
+      </section>
+
+      <section id="model">
+        <h2>Test model</h2>
+        <p id="model-status" class="small" aria-live="polite">Checking this build…</p>
+        <div class="row">
+          <label class="check">
+            <input id="chk-force-wasm" type="checkbox" />
+            Force WASM (skip WebGPU)
+          </label>
+          <label class="check">
+            <input id="chk-builtin" type="checkbox" />
+            Allow Chrome built-in model (Google's model; not verified by this site)
+          </label>
+        </div>
+        <div class="row">
+          <button id="btn-download" type="button" disabled>Download test model and load</button>
+          <span id="download-note" class="muted small"></span>
+        </div>
+        <p id="progress" class="small" aria-live="polite"></p>
+        <p id="refusal" class="note hidden" role="alert"></p>
+        <dl id="result" class="result hidden">
+          <dt>Rung</dt>
+          <dd id="r-rung">?</dd>
+          <dt>Adapter</dt>
+          <dd id="r-adapter">?</dd>
+          <dt>Execution providers</dt>
+          <dd id="r-eps">?</dd>
+          <dt>Load time</dt>
+          <dd id="r-load">?</dd>
+          <dt>Downloaded</dt>
+          <dd id="r-bytes">?</dd>
+        </dl>
+      </section>
+
+      <section id="prompt-section">
+        <h2>Prompt</h2>
+        <p class="small">
+          The prompt is sent to the model in this tab only and is never stored or logged.
+        </p>
+        <label for="in-prompt" class="small">Prompt</label>
+        <textarea id="in-prompt" rows="3" maxlength="2000" spellcheck="false" disabled>
+What is the capital of France? Answer in one word.</textarea>
+        <div class="row">
+          <button id="btn-run" type="button" disabled>Run prompt</button>
+          <span id="run-note" class="muted small"></span>
+        </div>
+        <pre id="out-answer" class="out" aria-live="polite"></pre>
+        <p id="out-timing" class="small muted"></p>
+      </section>
+    </main>
+
+    <script type="module" src="./backend-panel.ts"></script>
+  </body>
+</html>

@@ -242,3 +242,38 @@ footer {
     border-bottom: none;
   }
 }
+
+/* backend demo (models.html) */
+.plan {
+  padding-left: 1.4rem;
+}
+
+.plan li {
+  margin: 0.2rem 0;
+}
+
+.result {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.result dt {
+  font-weight: 600;
+}
+
+.result dd {
+  margin: 0;
+}
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+h3 {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
