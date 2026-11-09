@@ -17,19 +17,26 @@
 // - /__requests (GET: JSON list of {method, path, range, ifRange, status, bytesSent}) and
 //   /__reset (POST) exist only with --test-endpoints; /__* requests are never logged themselves;
 // - static files from --serve on the same origin (index.html for /), no directory listings, no
-//   path escapes; /assets/* is reserved for the streams and never served from the directory.
+//   path escapes; /assets/* is reserved for the streams and never served from the directory;
+// - GET and HEAD /models/<path>: real files under realpath(--models, default <repo>/.cache/models)
+//   with Range, If-Range, a strong ETag (size and mtime) and Last-Modified. Only regular files whose
+//   lexical path equals their real path (no symlink anywhere on the way), inside the root: a '..' or
+//   '.' or empty segment, an encoded slash or backslash, a NUL, a query string, a directory or a
+//   symlink is 404. Every other method is 405. The Host check applies like everywhere else.
 //
 // No query string is ever honoured; a request path with ? or # is answered 404 for assets and the
 // manifest (the manifest contract forbids them).
 
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import { extname, normalize, resolve, sep } from 'node:path';
+import { createReadStream, promises as fs } from 'node:fs';
+import { dirname, extname, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AssetStream } from '../tools/xorshift.mjs';
 import { RFC8032_SEED_HEX, signManifest } from '../tools/lib.mjs';
 
+const here = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_MODELS_DIR = resolve(here, '../../.cache/models');
 const LAST_MODIFIED = 'Mon, 09 Nov 2026 00:00:00 GMT';
 const CREATED_AT = '2026-11-09T00:00:00Z';
 const ASSET_NAME = /^[a-z0-9][a-z0-9._-]{0,127}$/;
@@ -47,12 +54,14 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.wasm': 'application/wasm',
   '.webmanifest': 'application/manifest+json',
+  '.jinja': 'text/plain; charset=utf-8',
 };
 
 export function parseArgs(argv) {
   const opts = {
     port: 8787,
     serve: null,
+    models: DEFAULT_MODELS_DIR,
     testEndpoints: false,
     ignoreRange: false,
     corruptHash: false,
@@ -74,6 +83,9 @@ export function parseArgs(argv) {
       }
       case '--serve':
         opts.serve = resolve(next());
+        break;
+      case '--models':
+        opts.models = resolve(next());
         break;
       case '--test-endpoints':
         opts.testEndpoints = true;
@@ -204,6 +216,97 @@ function safeStaticPath(root, urlPath) {
   return full;
 }
 
+/**
+ * Resolves a /models/ request path to a regular file under the real models root, or null. The
+ * lexical path must equal the real path (so no symlink anywhere on the way and none at the end), and
+ * every spelling of traversal is refused before the filesystem is touched.
+ */
+async function resolveModelFile(modelsRoot, urlPath) {
+  const rest = urlPath.slice('/models/'.length);
+  if (rest === '' || rest.endsWith('/')) return null;
+  const segments = rest.split('/');
+  const clean = [];
+  for (const raw of segments) {
+    if (raw === '') return null;
+    let seg;
+    try {
+      seg = decodeURIComponent(raw);
+    } catch {
+      return null;
+    }
+    if (seg === '' || seg === '.' || seg === '..' || /[\\/\0]/.test(seg)) return null;
+    clean.push(seg);
+  }
+  let rootReal;
+  try {
+    rootReal = await fs.realpath(modelsRoot);
+  } catch {
+    return null;
+  }
+  const lexical = resolve(rootReal, ...clean);
+  if (!lexical.startsWith(rootReal + sep)) return null;
+  let real;
+  try {
+    real = await fs.realpath(lexical);
+  } catch {
+    return null;
+  }
+  if (real !== lexical) return null;
+  const st = await fs.lstat(lexical);
+  if (!st.isFile() || st.isSymbolicLink()) return null;
+  return { file: lexical, st };
+}
+
+function serveModel(req, res, path, hasQuery, entry, send, text, finish, modelsRoot) {
+  if (hasQuery) return text(404, 'not found');
+  resolveModelFile(modelsRoot, path)
+    .then((found) => {
+      if (!found) return text(404, 'not found');
+      const { file, st } = found;
+      const size = st.size;
+      const etag = `"${size}-${Math.trunc(st.mtimeMs)}"`;
+      const lastModified = st.mtime.toUTCString();
+      const base = {
+        'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+        'Accept-Ranges': 'bytes',
+        ETag: etag,
+        'Last-Modified': lastModified,
+      };
+      let start = 0;
+      let end = size - 1;
+      let status = 200;
+      const range = parseRange(req.headers.range, size);
+      const ifRange = req.headers['if-range'];
+      const ifRangeOk = ifRange === undefined || ifRange === etag || ifRange === lastModified;
+      if (range === 'unsatisfiable' && ifRangeOk)
+        return send(416, { ...base, 'Content-Range': `bytes */${size}` });
+      if (range && range !== 'unsatisfiable' && ifRangeOk) {
+        start = range.start;
+        end = range.end;
+        status = 206;
+      }
+      const length = size === 0 ? 0 : end - start + 1;
+      const headers = { ...base, 'Content-Length': String(length) };
+      if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+      entry.status = status;
+      res.writeHead(status, { 'Cache-Control': 'no-store', ...headers });
+      if (req.method === 'HEAD' || length === 0) {
+        res.end();
+        return finish();
+      }
+      const stream = createReadStream(file, { start, end });
+      res.on('close', () => stream.destroy());
+      stream.on('data', (chunk) => {
+        entry.bytesSent += chunk.length;
+      });
+      stream.on('error', () => res.destroy());
+      stream.on('end', finish);
+      stream.pipe(res);
+      return undefined;
+    })
+    .catch(() => text(404, 'not found'));
+}
+
 export function createRangeServer(opts) {
   const log = [];
   const digests = new Map();
@@ -315,6 +418,11 @@ export function createRangeServer(opts) {
         return finish();
       }
       streamAsset(name, start, length, res, entry).finally(finish);
+      return undefined;
+    }
+
+    if (path.startsWith('/models/')) {
+      serveModel(req, res, path, hasQuery, entry, send, text, finish, opts.models);
       return undefined;
     }
 

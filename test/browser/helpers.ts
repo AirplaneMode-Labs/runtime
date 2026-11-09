@@ -497,8 +497,10 @@ export interface QuotaScenario {
   /**
    * How the quota reaches the manager.
    *  'cdp'        Storage.overrideQuotaForOrigin: Chrome itself enforces the limit and throws
-   *               QuotaExceededError; the manager runs on navigator.storage.estimate() alone
-   *               (the real-world configuration). Used for the OPFS proof.
+   *               QuotaExceededError; the manager plans against navigator.storage.estimate().quota
+   *               (usage = max(estimate().usage, accounted bytes); for OPFS the estimate wins, so
+   *               usageSource is 'estimate') - the real-world configuration. Used for the OPFS
+   *               proof.
    *  'quotaBytes' the manager's quotaBytes test override via the demo's ?quota= parameter, no
    *               CDP override. Used for the IndexedDB proof: see CHROME_IDB_QUOTA_NOTE.
    */
@@ -554,7 +556,7 @@ export async function quotaEviction(
     // through CDP, but navigator.storage.estimate().quota keeps the profile default (measured on
     // Chrome for macOS, Nov 2026: 10 GiB before and after the override). The manager therefore has
     // to treat QuotaExceededError as the quota signal and evict reactively; estimate() only gives a
-    // usable usage figure.
+    // usable usage figure (the manager's own accounted bytes floor it, usageSource says which won).
     const q = (await cdp.send('Storage.getUsageAndQuota', { origin })) as UsageAndQuota;
     expect(q.quota, 'CDP must report the overridden quota').toBe(s.quotaBytes);
   }

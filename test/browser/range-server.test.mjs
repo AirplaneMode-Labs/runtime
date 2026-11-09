@@ -296,3 +296,160 @@ test('a request aborted mid-stream records the bytes actually written', async ()
   assert.equal(log[0].status, 200);
   assert.ok(log[0].bytesSent >= 1 << 20 && log[0].bytesSent <= 9000000, String(log[0].bytesSent));
 });
+
+// ---- the /models/ route: real files under realpath(.cache/models), nothing else ----------------
+
+import { mkdirSync, symlinkSync, utimesSync, realpathSync } from 'node:fs';
+
+test('/models/ serves regular files under the models root with Range, HEAD and validators; refuses everything else', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'range-server-models-'));
+  const outside = mkdtempSync(join(tmpdir(), 'range-server-outside-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  mkdirSync(join(root, 'm', 'sub'), { recursive: true });
+  const bytes = new Uint8Array(5000).map((_, i) => (i * 7 + 3) & 0xff);
+  writeFileSync(join(root, 'm', 'file.bin'), bytes);
+  writeFileSync(join(root, 'm', 'sub', 'a.json'), '{"ok":true}');
+  utimesSync(
+    join(root, 'm', 'file.bin'),
+    new Date('2026-11-09T00:00:00Z'),
+    new Date('2026-11-09T00:00:00Z'),
+  );
+  writeFileSync(join(outside, 'secret.txt'), 'outside the models root');
+  try {
+    symlinkSync(join(outside, 'secret.txt'), join(root, 'link-file')); // symlink to a file outside
+    symlinkSync(outside, join(root, 'link-dir')); // symlink to a directory outside
+    symlinkSync(join(root, 'm', 'file.bin'), join(root, 'inner-link')); // symlink to a file inside
+    symlinkSync(join(root, 'm'), join(root, 'inner-dir-link')); // symlink to a directory inside
+  } catch (e) {
+    if (e.code === 'EPERM') return t.skip('symlinks need rights this environment does not give'); // Windows
+    throw e;
+  }
+
+  const c = await startRangeServer(
+    parseArgs(['--port', '0', '--models', root, '--test-endpoints', '--asset', 'a=1']),
+  );
+  t.after(() => c.server.close());
+  const b = `http://127.0.0.1:${c.port}`;
+  const g = (path, headers = {}, method = 'GET') => fetch(b + path, { method, headers });
+  // raw requests keep literal dot segments (fetch and URL collapse them)
+  const raw = (path, method = 'GET') =>
+    new Promise((res, rej) => {
+      const req = request({ host: '127.0.0.1', port: c.port, path, method }, (r) => {
+        r.resume();
+        r.on('end', () => res(r.statusCode));
+      });
+      req.on('error', rej);
+      req.end();
+    });
+
+  // happy path
+  const full = await g('/models/m/file.bin');
+  assert.equal(full.status, 200);
+  assert.equal(full.headers.get('accept-ranges'), 'bytes');
+  assert.equal(full.headers.get('content-length'), '5000');
+  assert.match(full.headers.get('etag'), /^"5000-\d+"$/);
+  assert.equal(full.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(new Uint8Array(await full.arrayBuffer()), bytes);
+  const json = await g('/models/m/sub/a.json');
+  assert.equal(json.status, 200);
+  assert.match(json.headers.get('content-type'), /application\/json/);
+
+  // Range, suffix, If-Range, 416
+  const part = await g('/models/m/file.bin', { Range: 'bytes=100-199' });
+  assert.equal(part.status, 206);
+  assert.equal(part.headers.get('content-range'), 'bytes 100-199/5000');
+  assert.deepEqual(new Uint8Array(await part.arrayBuffer()), bytes.subarray(100, 200));
+  const tail = await g('/models/m/file.bin', { Range: 'bytes=4990-' });
+  assert.equal(tail.status, 206);
+  assert.equal((await tail.arrayBuffer()).byteLength, 10);
+  const etag = full.headers.get('etag');
+  const ifRangeOk = await g('/models/m/file.bin', { Range: 'bytes=0-9', 'If-Range': etag });
+  assert.equal(ifRangeOk.status, 206);
+  const ifRangeBad = await g('/models/m/file.bin', { Range: 'bytes=0-9', 'If-Range': '"other"' });
+  assert.equal(ifRangeBad.status, 200);
+  assert.equal((await ifRangeBad.arrayBuffer()).byteLength, 5000);
+  assert.equal((await g('/models/m/file.bin', { Range: 'bytes=5000-' })).status, 416);
+
+  // HEAD: headers, no body
+  const head = await g('/models/m/file.bin', {}, 'HEAD');
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('content-length'), '5000');
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+
+  // methods other than GET and HEAD are refused
+  for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+    assert.equal((await g('/models/m/file.bin', {}, method)).status, 405, method);
+  }
+
+  // traversal, in every spelling, is 404
+  for (const path of [
+    '/models/../package.json',
+    '/models/%2e%2e/package.json',
+    '/models/%2E%2E/package.json',
+    '/models/m/../../package.json',
+    '/models/m/%2e%2e/%2e%2e/package.json',
+    '/models/m/./file.bin',
+    '/models//m/file.bin',
+    '/models/m%2ffile.bin',
+    '/models/m%5cfile.bin',
+    '/models/m/file.bin%00.txt',
+    '/models/m/..%2f..%2fpackage.json',
+  ]) {
+    assert.equal(await raw(path), 404, path);
+  }
+
+  // symlinks (to outside or inside), directories, query strings and unknown files are 404
+  for (const path of [
+    '/models/link-file',
+    '/models/link-dir/secret.txt',
+    '/models/inner-link',
+    '/models/inner-dir-link/file.bin',
+    '/models/m',
+    '/models/m/',
+    '/models/',
+    '/models/nope.bin',
+    '/models/m/file.bin?x=1',
+    '/models/m/file.bin#frag',
+  ]) {
+    assert.equal(await raw(path), 404, path);
+  }
+
+  // the Host check still applies to /models/
+  const badHost = await new Promise((res, rej) => {
+    const req = request(
+      {
+        host: '127.0.0.1',
+        port: c.port,
+        path: '/models/m/file.bin',
+        setHost: false,
+        headers: { Host: 'evil.test' },
+      },
+      (r) => {
+        r.resume();
+        r.on('end', () => res(r.statusCode));
+      },
+    );
+    req.on('error', rej);
+    req.end();
+  });
+  assert.equal(badHost, 400);
+
+  // requests are logged with their range and status
+  const log = await (await fetch(b + '/__requests')).json();
+  const ranged = log.find((e) => e.range === 'bytes=100-199');
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.bytesSent, 100);
+
+  // the server binds 127.0.0.1 only
+  assert.equal(c.server.address().address, '127.0.0.1');
+  assert.equal(realpathSync(root).length > 0, true);
+});
+
+test('--models defaults to .cache/models of the repository and refuses a non-directory', async () => {
+  const o = parseArgs(['--asset', 'a=1']);
+  assert.match(o.models, /\.cache[\\/]models$/);
+  assert.throws(() => parseArgs(['--models']), /needs a value/);
+});

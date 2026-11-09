@@ -13,8 +13,9 @@ RUNTIME_BENCH_OUT=/path/to/out npm run test:browser   # also write the report JS
 
 `playwright.config.ts` builds `demo/dist` and starts three range servers (8787 honest with test
 endpoints, 8788 `--corrupt-hash`, 8789 `--ignore-range`). Channel `chrome` uses the installed
-Google Chrome; no browser download. CI runs the suite on Linux only after
-`npx playwright install --with-deps chrome`.
+Google Chrome; no browser download. CI runs the suite on Linux only, with the Google Chrome
+preinstalled on ubuntu-latest (the job logs `google-chrome --version` and fails if it is missing);
+configured, not yet executed.
 
 The 700 MB version (`big.spec.ts`) runs only with `RUNTIME_BIG=1` against a server started by
 hand; the exact commands are in the header of `big.spec.ts`.
@@ -46,7 +47,7 @@ ahead of the last sample. After the reload exactly one `/assets/<id>` request is
 
 Measured on Chrome for macOS (stable channel, Playwright 1.65, November 2026). Raw figures: the
 `quota-<store>.json` reports written by `quotaEviction`, T1's `t1-quota-indexeddb.json`, and
-`/private/tmp/airplanemode-team/D3/evidence/idb-usage-diag.log`.
+`evidence/sprint-1/D3/evidence/idb-usage-diag.log` in the workspace folder.
 
 - `Storage.overrideQuotaForOrigin` (CDP) is enforced for OPFS: writes past it throw
   `QuotaExceededError`, and `Storage.getUsageAndQuota` reports the override. The OPFS proof uses
@@ -75,11 +76,14 @@ Measured on Chrome for macOS (stable channel, Playwright 1.65, November 2026). R
   `estimateUsageAfterAB` / `accountedUsageAfterAB` and `estimateUsageAfter` /
   `accountedUsageAfter`, with their ratio `estimateOverAccounted*` (1 for OPFS, about 0.63 for
   IndexedDB on this machine).
-- Consequence for the manager (owned by D1): while `makeRoomLocked` takes `usage` from
-  `estimate()` alone, the under-reported IndexedDB figure keeps `usage + bytes + headroom` below
-  `quotaBytes` and the injected quota never fires either. Flooring usage by the manager's own
-  accounting (sum of index row sizes plus in-flight part bytes) makes the `quotaBytes` proof
-  honest and protects the real store from overshooting the browser's quota.
+- Consequence for the manager (owned by D1): quota decisions never take `usage` from `estimate()`
+  alone. `usage = max(estimate().usage, accounted bytes)`, where the accounted bytes are the sum of
+  the index row sizes plus the bytes already written to in-flight parts, and the `asset.quota` event
+  names the source of the figure in `usageSource` (`estimate` or `accounted`). Without that floor the
+  under-reported IndexedDB figure would keep `usage + bytes + headroom` below `quotaBytes` and the
+  injected quota would never fire; with it the `quotaBytes` proof is honest and the real store is
+  protected from overshooting the browser's quota. `quota` itself stays the browser's estimate (or
+  the `quotaBytes` override), not the enforced limit.
 
 Real-quota IndexedDB eviction, disk-pressure behaviour and IndexedDB throughput for 700 MB are
 measured on the 8 GB Windows laptop, not here (runtime README Limitations, FINDINGS.md).
@@ -90,3 +94,55 @@ Every spec collects `page.on('request')` URLs and the server's `/__requests` log
 only the demo's own files (`/`, `/app/*`), `/manifest.json` and `/assets/*` on 127.0.0.1. A signed
 manifest whose entry points at another origin is refused with `AssetError 'policy'` and
 `asset.download.blocked` before any request leaves the page.
+
+## Model proof (`model.spec.ts`, `npm run test:model`)
+
+The Sprint 2 done-when in real Chrome: the same prompt, "What is the capital of France? Answer in one
+word." (`maxTokens` 16, `temperature` 0), answered with SmolLM2-135M-Instruct (q4) on the WebGPU path and
+on a forced WebAssembly path, behind an aborting network gate.
+
+```sh
+node test/tools/fetch-model.mjs smollm2-135m-instruct       # once; the cache .cache/models is gitignored
+RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 RUNTIME_MODEL_OUT=<dir> npm run test:model
+RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model   # the WebAssembly leg only (CI)
+```
+
+`playwright.model.config.ts` builds the demo, signs `dev.airplanemode.test-models` 0.1.0 with the public
+RFC 8032 test key into `.cache/models/test-models/` (`model-fixture.mjs`; every size and sha256 is
+recomputed and must equal `test/tools/models.json` and `src/backends/ort-pins.ts` before signing) and
+starts the range server on 127.0.0.1:8790 with its `/models/` route: real files under
+`realpath(.cache/models)`, regular files only, no symlink anywhere on the path, GET and HEAD only,
+Range and If-Range supported (`range-server.test.mjs` covers traversal, symlinks and POST).
+
+The page under test is `models.html?models=test`; its loopback-only hook `window.__models` (absent on
+any non-loopback host) loads the manifest the range server serves and calls `loadWithFallback()`.
+
+The gate: `page.route('**/*')` aborts every request whose origin is not the page origin and records it;
+`context.on('request')` records every request; a `securitypolicyviolation` listener records CSP
+violations; the test fails on any aborted request, any violation, any worker (the engine runs on one
+thread with the proxy off) and any request to Hugging Face, a CDN, GitHub or a Google host. Only
+`GET` requests for the manifest and its entries may touch `/models/`. Leg A requires the `webgpu` rung
+with `executionProviders` including `webgpu` (`RUNTIME_REQUIRE_WEBGPU=1` turns a missing adapter from a
+skip into a failure), leg B `forceRung: 'wasm'` with `['wasm']`; both must emit `asset.verify.ok` for
+all seven entries and `backend.egress.refused` zero times. Extra tests: an injected probe to
+`https://huggingface.co/x` is refused with `egress_refused` and an event whose attrs are exactly
+`{adapter, origin: 'https://huggingface.co'}`; with `navigator.gpu` undefined the chain selects the wasm
+rung; with Chrome started with `--js-flags=--jitless` (which hides `WebAssembly`) and no `navigator.gpu`
+the refusal message names WebGPU, WebAssembly and the Chrome built-in model in plain text.
+Fix round 1 adds three real-engine tests under the same gate. T1-S2-01: an init script makes
+`GPUAdapter.prototype.requestDevice` reject, so the adapter's own probe fails and the default chain
+records the WebGPU rung as `unavailable` and answers on wasm; and an init script that rejects only a
+`requestDevice()` called with a descriptor (the probe passes, ONNX Runtime's own call fails, which is a
+failure after session creation started), after which the chain refuses with the "Reload the page and
+choose WebAssembly to try again." sentence, the Force WASM retry in the same page refuses with it too,
+and a fresh page with `forceRung: 'wasm'` answers. T1-S2-02: the hook aborts from inside `onToken` on
+the wasm rung (`abortAfterTokens`), asserts `finishReason: 'abort'` within a few tokens and that a
+second generate works.
+`model-run.json` (in `RUNTIME_MODEL_OUT`, default `test-results/`) records load, prefill and decode
+milliseconds, tokens per second, bytes downloaded, the peak `JSHeapUsedSize`, both outputs verbatim, the
+full request list and the ORT files requested per leg.
+
+`hindi-smoke.spec.ts` (`RUNTIME_HINDI_SMOKE=1 npm run test:hindi-smoke`) is local only, never CI or
+Pages: it loads Qwen3-1.7B q4f16 (1.43 GB, fetched with `node test/tools/fetch-model.mjs
+qwen3-1.7b-webgpu-q4f16`) through the default chain on WebGPU and records five synthetic Hindi prompts
+and their verbatim, unscored outputs to `hindi-smoke.json`.

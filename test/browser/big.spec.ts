@@ -6,7 +6,7 @@
 //   node test/browser/range-server.mjs --port 8787 --serve demo/dist --test-endpoints \
 //     --asset big=734003200 --asset a=734003200 --asset b=419430400 --asset c=524288000
 // then:
-//   RUNTIME_BIG=1 RUNTIME_BIG_OUT=/private/tmp/airplanemode-team/T1 npm run test:browser
+//   RUNTIME_BIG=1 RUNTIME_BIG_OUT=<output dir> npm run test:browser
 // Reports (wall time, MB/s, peak JS heap, resume request, evictions) land in RUNTIME_BIG_OUT.
 
 import { test, expect } from 'playwright/test';
@@ -20,10 +20,12 @@ import { downloadAndVerify, quotaEviction, reloadResume, type Store } from './he
 //               IndexedDB Blob chunks stored, Storage.getUsageAndQuota reported indexeddb usage
 //               1,053,040,640 B (about 63 %) and never threw QuotaExceededError;
 //               navigator.storage.estimate().quota stayed at the 10 GiB profile default
-//               (10,737,418,240 -> 11,790,458,880) so the manager's estimate()-based headroom
-//               never fired. The manager's own quota accounting is therefore exercised through
-//               quotaBytes and the outcome asserted identically (asset.evict b reason quota, a and
-//               c verified, index exactly a and c, no part). The report JSON records CDP usage vs
+//               (10,737,418,240 -> 11,790,458,880) so an estimate()-only manager would never have
+//               seen pressure. The manager floors its usage figure by its own accounting
+//               (usage = max(estimate().usage, accounted bytes), reported as usageSource on
+//               asset.quota), and that accounting is exercised through quotaBytes with the outcome
+//               asserted identically (asset.evict b reason quota, a and c verified, index exactly
+//               a and c, no part). The report JSON records CDP usage vs
 //               stored bytes and estimate().quota before and after. Real-quota IndexedDB eviction
 //               is measured on the 8 GB Windows laptop (runtime README Limitations, FINDINGS.md).
 

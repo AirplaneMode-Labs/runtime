@@ -1,6 +1,6 @@
 // Browser proof for the runtime asset manager and capability detector. Channel "chrome" uses the
-// installed Google Chrome, so no browser download is needed locally; CI (Linux only) runs
-// `npx playwright install --with-deps chrome` first because install scripts are disabled.
+// installed Google Chrome, so no browser download is needed locally; CI (Linux only) uses the Chrome
+// preinstalled on ubuntu-latest and checks `google-chrome --version` first (S1-058).
 //
 // Three range servers, three origins (so each scenario family gets its own OPFS/IndexedDB):
 //   8787  honest server, test endpoints on: download, resume, quota, truncate, egress
