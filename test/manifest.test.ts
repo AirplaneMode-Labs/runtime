@@ -184,6 +184,13 @@ describe('parseManifest', () => {
     }
   });
 
+  it('the shared vector neg-bad-alg-token.json (correct signature, alg "ED25519") is a schema rejection at parse and never verifies', async () => {
+    const text = readText(resolve(specDir, 'vectors', 'neg-bad-alg-token.json'));
+    expect(() => parseManifest(text)).toThrow(expect.objectContaining({ reason: 'schema' }));
+    const r = await verifyManifest(JSON.parse(text), testTrust(), opts);
+    expect(r.ok).toBe(false);
+  });
+
   it('rejects extra properties and missing required fields with schema', () => {
     expect(() => parseManifest({ ...makeManifest(), extra: 1 })).toThrow(
       expect.objectContaining({ reason: 'schema' }),
@@ -445,6 +452,78 @@ describe('verifyManifest: state store failures (S1-013)', () => {
     };
     const r = await verifyManifest(signManifest(makeManifest()), testTrust(), { ...opts, state });
     expect(r).toMatchObject({ ok: false, reason: 'state' });
+  });
+});
+
+describe('verifyManifest: stored state validation (S1-031)', () => {
+  const stateOf = (value: unknown) => ({
+    get: async () => value as never,
+    set: async () => {},
+  });
+
+  it('S1-031: a stored state that is not {valid SemVer, calendar-valid createdAt} is an unreadable store: reason state, event state_unavailable', async () => {
+    for (const bad of [
+      { version: '1.0.0', createdAt: 'garbage' },
+      { version: '1.0.0', createdAt: '2026-02-30T00:00:00Z' },
+      { version: 'not-semver', createdAt: '2026-11-09T00:00:00Z' },
+      { version: '1.0', createdAt: '2026-11-09T00:00:00Z' },
+      { version: '1.0.0' },
+      { createdAt: '2026-11-09T00:00:00Z' },
+      { version: 1, createdAt: 2 },
+      null,
+      'junk',
+      [],
+    ]) {
+      const events = new EventBus();
+      const r = await verifyManifest(signManifest(makeManifest()), testTrust(), {
+        ...opts,
+        state: stateOf(bad),
+        events,
+      });
+      expect(r, JSON.stringify(bad)).toMatchObject({ ok: false, reason: 'state' });
+      expect(
+        events.snapshot().find((e) => e.name === 'manifest.verify.failed')?.attrs['reason'],
+      ).toBe('state_unavailable');
+    }
+  });
+
+  it('S1-031: the old fail-open path is closed: a corrupt createdAt no longer lets an older same-version manifest through', async () => {
+    const r = await verifyManifest(
+      signManifest(makeManifest({ createdAt: '2026-01-01T00:00:00Z' })),
+      testTrust(),
+      { ...opts, state: stateOf({ version: '1.0.0', createdAt: 'garbage' }) },
+    );
+    expect(r).toMatchObject({ ok: false, reason: 'state' });
+  });
+
+  it('S1-031: a corrupt stored version is reason state, not the misattributed schema', async () => {
+    const r = await verifyManifest(signManifest(makeManifest()), testTrust(), {
+      ...opts,
+      state: stateOf({ version: 'not-semver', createdAt: '2026-11-09T00:00:00Z' }),
+    });
+    expect(r).toMatchObject({ ok: false, reason: 'state' });
+  });
+
+  it('S1-031: only allowDowngrade bypasses an invalid state, and it replaces it', async () => {
+    const sets: unknown[] = [];
+    const r = await verifyManifest(signManifest(makeManifest()), testTrust(), {
+      ...opts,
+      allowDowngrade: true,
+      state: {
+        get: async () => ({ version: '1.0.0', createdAt: 'garbage' }),
+        set: async (_id, s) => void sets.push(s),
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(sets).toEqual([{ version: '1.0.0', createdAt: '2026-11-09T00:00:00Z' }]);
+  });
+
+  it('S1-031: a valid stored state still applies the downgrade rule', async () => {
+    const r = await verifyManifest(signManifest(makeManifest({ version: '1.0.0' })), testTrust(), {
+      ...opts,
+      state: stateOf({ version: '1.0.1', createdAt: '2026-11-09T00:00:00Z' }),
+    });
+    expect(r).toMatchObject({ ok: false, reason: 'downgrade' });
   });
 });
 

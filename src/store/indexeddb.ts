@@ -8,6 +8,11 @@
  *
  * Chunks are stored as Blobs so readBlob() can return new Blob(chunks) without copying 700 MB into
  * renderer memory; Chrome keeps IndexedDB Blobs on disk.
+ *
+ * The size of a committed file is the sum of the stored chunk Blob sizes (Blob.size is metadata, no
+ * bytes are read), never the chunkmeta lengths: a chunk replaced or truncated in place is therefore
+ * caught by the manager's size check without a rehash (S1-018). Part lengths during a download still
+ * use chunkmeta, which the store itself wrote a moment earlier.
  */
 
 import {
@@ -222,7 +227,12 @@ export class IndexedDbAssetStore implements AssetStore {
 
   async fileSize(sha: string): Promise<number | undefined> {
     if (!(await this.isCommitted(sha))) return undefined;
-    return (await this.metas(sha)).reduce((n, m) => n + m.len, 0);
+    // Blob.size of the stored chunks (S1-018): independent of the chunkmeta rows an attacker or a
+    // storage bug could leave unchanged while replacing the data.
+    const rows = (await req(
+      this.conn().transaction('chunks', 'readonly').objectStore('chunks').getAll(shaRange(sha)),
+    )) as ChunkRow[];
+    return rows.reduce((n, r) => n + (r.data instanceof Blob ? r.data.size : 0), 0);
   }
 
   async remove(sha: string): Promise<void> {
@@ -236,12 +246,16 @@ export class IndexedDbAssetStore implements AssetStore {
 
   async list(): Promise<StoreListing> {
     const tx = this.conn().transaction(['assets', 'parts', 'chunkmeta'], 'readonly');
-    const bins = (await req(tx.objectStore('assets').getAllKeys())) as string[];
+    const assetRows = (await req(tx.objectStore('assets').getAll())) as AssetRow[];
+    const bins = assetRows.map((r) => r.sha);
+    const binModified: Record<string, number> = {};
+    for (const r of assetRows)
+      if (typeof r.committedAt === 'number') binModified[r.sha] = r.committedAt;
     const partStates = (await req(tx.objectStore('parts').getAllKeys())) as string[];
     const metaKeys = (await req(tx.objectStore('chunkmeta').getAllKeys())) as [string, number][];
     const committed = new Set(bins);
     const parts = [...new Set(metaKeys.map((k) => k[0]))].filter((s) => !committed.has(s));
-    return { bins, parts, partStates };
+    return { bins, binModified, parts, partStates };
   }
 
   async readIndex(): Promise<IndexFile> {

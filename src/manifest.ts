@@ -19,7 +19,7 @@ import { CANONICAL_KEY_PATTERN } from '../spec/manifest';
 import { CanonicalError, signedBytes } from './canonical';
 import { newEvent } from './events';
 import { SCHEMAS, validateSchema } from './schema';
-import { compareSemver } from './semver';
+import { compareSemver, parseSemver } from './semver';
 import { sha256, toHex } from './sha256';
 
 export class ManifestError extends Error {
@@ -43,7 +43,7 @@ const KEY_ID = /^[0-9a-f]{64}$/;
 const LOOPBACK = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 /** Walks a parsed JSON value and rejects floats, out-of-range integers, bad keys and lone surrogates. */
-function checkParsed(value: unknown, path: string): void {
+export function checkParsed(value: unknown, path: string): void {
   if (value === null || typeof value === 'boolean') return;
   if (typeof value === 'string') {
     if (!value.isWellFormed())
@@ -195,6 +195,25 @@ export function parseManifest(input: string | unknown): Manifest {
 export interface ManifestState {
   version: string;
   createdAt: string;
+}
+
+/**
+ * True when a stored downgrade state is exactly the shape the rule needs: a valid SemVer 2.0
+ * `version` and a calendar-valid RFC 3339 `createdAt`. Storage is same-origin writable, so anything
+ * else (a corrupt createdAt used to make the tie-breaker compare NaN and fail open, a corrupt
+ * version used to surface as a misattributed `schema` rejection) is treated like an unreadable
+ * store (S1-031).
+ */
+export function isValidManifestState(v: unknown): v is ManifestState {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o['version'] !== 'string') return false;
+  try {
+    parseSemver(o['version']);
+  } catch {
+    return false;
+  }
+  return isCalendarValidRfc3339(o['createdAt']);
 }
 
 /** Persistence for the downgrade rule, keyed by manifest id. */
@@ -426,7 +445,11 @@ export async function verifyManifest(
     let prev: ManifestState | undefined;
     let stateOk = true;
     try {
-      prev = await opts.state.get(manifest.id);
+      const stored: unknown = await opts.state.get(manifest.id);
+      // undefined means "nothing stored yet"; anything else must be a valid state (S1-031).
+      if (stored === undefined) prev = undefined;
+      else if (isValidManifestState(stored)) prev = stored;
+      else stateOk = false;
     } catch {
       stateOk = false;
     }

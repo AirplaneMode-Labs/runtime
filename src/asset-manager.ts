@@ -11,10 +11,14 @@
  * - quota arithmetic never trusts navigator.storage.estimate() alone: usage is the larger of the
  *   estimate and the bytes this manager accounts for (index rows plus in-flight parts), because
  *   Chrome under-reports IndexedDB usage (T1R-01);
- * - ensure() for one sha and every index read-modify-write run inside a lock.
+ * - ensure() for one sha and every index read-modify-write run inside a lock;
+ * - acquire() takes its refcount, and a SHARED lock `airplanemode-held:<sha>`, inside the asset:<sha>
+ *   lock and keeps both until release(): eviction and reconcile in this instance, another instance
+ *   or another tab skip a held asset (S1-021); reconcile() also skips a file whose asset:<sha> lock
+ *   is held or that is younger than 60 s (S1-015).
  */
 
-import type { AssetHandle, AssetSource } from '../spec/backend-adapter';
+import type { AcquireOptions, AssetHandle, AssetSource } from '../spec/backend-adapter';
 import type { EventAttrs, EventKind, EventLevel, EventSink } from '../spec/event';
 import { DEFAULT_CHUNK_SIZE, type Manifest, type ManifestEntry } from '../spec/manifest';
 import { AssetError, isAbortError, isQuotaExceeded } from './errors';
@@ -33,6 +37,7 @@ import { defaultLockProvider } from './store/locks';
 import { MemoryAssetStore } from './store/memory';
 import { OpfsAssetStore } from './store/opfs';
 import {
+  HELD_LOCK_PREFIX,
   validatePartState,
   type AssetStore,
   type IndexFile,
@@ -57,6 +62,8 @@ const DEFAULT_PROGRESS_INTERVAL_MS = 250;
 const DEFAULT_STALE_PART_MS = 30 * 24 * 3600 * 1000;
 const MAX_RESTARTS = 3;
 const MAX_QUOTA_RETRIES = 3;
+/** reconcile() leaves a committed file younger than this alone when the store reports its age (S1-015). */
+const YOUNG_BIN_MS = 60_000;
 /**
  * Hard cap on a fetched manifest body (S1-016); larger bodies are rejected before parsing.
  * Module-internal: not part of the public API in 0.1.0-dev (S1-034).
@@ -201,6 +208,8 @@ export class AssetManager implements AssetSource {
   private readonly headroom: number;
   private allowedOrigins: string[] | undefined;
   private readonly locks: LockProvider;
+  /** One asset.hold.unknown warning per manager (S1-054). */
+  private holdUnknownWarned = false;
   private readonly sink: EventSink | undefined;
   private readonly allowTestKeys: boolean;
   private readonly progressInterval: number;
@@ -454,6 +463,15 @@ export class AssetManager implements AssetSource {
   // ---- public asset API -----------------------------------------------------------------------
 
   async ensure(entryId: string, opts: EnsureOptions = {}): Promise<AssetHandle> {
+    return this.ensureCore(entryId, opts, false);
+  }
+
+  /**
+   * Shared body of ensure() and acquire(). With `hold` the refcount and the shared
+   * `airplanemode-held:<sha>` lock are taken before the asset:<sha> lock is released, so there is
+   * no window in which the verified asset can be evicted between being ensured and being held.
+   */
+  private async ensureCore(entryId: string, opts: EnsureOptions, hold: boolean): Promise<Handle> {
     await this.ready();
     const entry = this.getEntry(entryId);
     const url = this.resolveUrl(entry);
@@ -462,7 +480,7 @@ export class AssetManager implements AssetSource {
       const row = await this.getRow(sha);
       if (row && row.verifiedAt && (await this.store.fileSize(sha)) === row.size) {
         await this.touch(sha, entry.id);
-        return new Handle(entry.id, sha, entry.size, false, undefined);
+        return this.handleFor(entry, hold);
       }
       if (row) await this.dropRow(sha);
       if ((await this.store.fileSize(sha)) !== undefined)
@@ -501,18 +519,49 @@ export class AssetManager implements AssetSource {
       } finally {
         this.active.delete(sha);
       }
-      return new Handle(entry.id, sha, entry.size, false, undefined);
+      return this.handleFor(entry, hold);
     });
   }
 
-  async acquire(entryId: string): Promise<AssetHandle> {
-    const h = await this.ensure(entryId);
-    this.refcounts.set(h.sha256, (this.refcounts.get(h.sha256) ?? 0) + 1);
-    return new Handle(h.entryId, h.sha256, h.size, true, () => {
-      const n = (this.refcounts.get(h.sha256) ?? 1) - 1;
-      if (n <= 0) this.refcounts.delete(h.sha256);
-      else this.refcounts.set(h.sha256, n);
+  /**
+   * Handle for a verified entry. Called inside the asset:<sha> lock: when `hold` is set it takes the
+   * refcount and the shared cross-instance lock before returning, and release() undoes both.
+   */
+  private async handleFor(entry: ManifestEntry, hold: boolean): Promise<Handle> {
+    const sha = entry.sha256;
+    if (!hold) return new Handle(entry.id, sha, entry.size, false, undefined);
+    this.refcounts.set(sha, (this.refcounts.get(sha) ?? 0) + 1);
+    const unref = () => {
+      const n = (this.refcounts.get(sha) ?? 1) - 1;
+      if (n <= 0) this.refcounts.delete(sha);
+      else this.refcounts.set(sha, n);
+    };
+    let releaseShared: (() => void) | undefined;
+    try {
+      releaseShared = (await this.locks.hold?.(HELD_LOCK_PREFIX + sha)) ?? undefined;
+    } catch (e) {
+      unref();
+      throw new AssetError('store', 'cannot take the shared hold lock', { cause: e });
+    }
+    return new Handle(entry.id, sha, entry.size, true, () => {
+      unref();
+      releaseShared?.();
     });
+  }
+
+  /**
+   * Like ensure() but the returned handle holds a refcount and a shared Web Lock
+   * `airplanemode-held:<sha>` until release(): eviction and reconcile in any instance or tab skip
+   * the asset meanwhile (S1-021). May download through this manager.
+   */
+  async acquire(entryId: string, opts: AcquireOptions = {}): Promise<AssetHandle> {
+    const ensureOpts: EnsureOptions = {};
+    if (opts.signal) ensureOpts.signal = opts.signal;
+    const onProgress = opts.onProgress;
+    if (onProgress)
+      ensureOpts.onProgress = (p) =>
+        onProgress({ entryId: p.entryId, received: p.received, total: p.total });
+    return this.ensureCore(entryId, ensureOpts, true);
   }
 
   async getBlob(entryId: string, opts: { rehash?: boolean } = {}): Promise<Blob> {
@@ -568,6 +617,17 @@ export class AssetManager implements AssetSource {
   }
 
   /**
+   * Size in bytes of the file the store holds for an entry, or undefined when there is none. It asks
+   * the store for the file's size (no bytes are read, nothing is downloaded, the index row is not
+   * consulted), so a caller can tell a row that survived without its file, or with a truncated file,
+   * from an intact one (S1-053). It does not say the bytes are right: getBlob() with rehash does.
+   */
+  async storedSize(entryId: string): Promise<number | undefined> {
+    await this.ready();
+    return this.store.fileSize(this.getEntry(entryId).sha256);
+  }
+
+  /**
    * Removes a verified asset. Refuses (AssetError 'store', "asset is held or downloading") while
    * the asset is held through acquire() or its download is in flight, unless `force` (S1-020).
    * Emits asset.evict with reason 'explicit' only on success.
@@ -579,7 +639,8 @@ export class AssetManager implements AssetSource {
     return this.locks.request('index', async () => {
       const refcount = this.refcounts.get(sha) ?? 0;
       const downloading = this.active.has(sha);
-      if ((refcount > 0 || downloading) && opts.force !== true) {
+      const heldElsewhere = refcount === 0 && (await this.isHeldAnywhere(sha));
+      if ((refcount > 0 || heldElsewhere || downloading) && opts.force !== true) {
         throw new AssetError('store', 'asset is held or downloading', {
           details: { entryId, refcount, downloading },
         });
@@ -636,8 +697,15 @@ export class AssetManager implements AssetSource {
       let orphansRemoved = 0;
       let rowsDropped = 0;
       let stalePartsRemoved = 0;
+      const nowMs = this.now();
       for (const sha of listing.bins) {
         if (!index.rows[sha]) {
+          // S1-015: a committed file without a row may be a commit in flight (its row is written
+          // after the commit, outside the index lock). Leave it alone while its asset lock is held,
+          // while any instance holds it, or while it is younger than a minute.
+          const modified = listing.binModified?.[sha];
+          const young = typeof modified === 'number' && nowMs - modified < YOUNG_BIN_MS;
+          if (young || (await this.isCommitInFlight(sha))) continue;
           await this.storeWrite('remove', () => this.store.remove(sha));
           orphansRemoved++;
         }
@@ -996,7 +1064,7 @@ export class AssetManager implements AssetSource {
         needed,
         usageSource: snap.usageSource,
       });
-      const [victim] = this.candidates(index, activeSha);
+      const [victim] = await this.candidates(index, activeSha);
       if (!victim) return false;
       await this.evictRow(index, victim, 'quota');
       return true;
@@ -1125,16 +1193,61 @@ export class AssetManager implements AssetSource {
     });
   }
 
-  private candidates(index: IndexFile, activeSha: string | undefined): IndexRowStored[] {
-    return Object.values(index.rows)
-      .filter(
-        (r) =>
-          !r.pinned &&
-          r.sha256 !== activeSha &&
-          !this.active.has(r.sha256) &&
-          (this.refcounts.get(r.sha256) ?? 0) === 0,
-      )
-      .sort((a, b) => a.lastAccess - b.lastAccess);
+  /**
+   * Eviction candidates, least recently used first: never pinned rows, the active download, held
+   * rows in this instance (refcount) or in any other instance or tab (shared hold lock, S1-021).
+   */
+  private async candidates(
+    index: IndexFile,
+    activeSha: string | undefined,
+  ): Promise<IndexRowStored[]> {
+    const local = Object.values(index.rows).filter(
+      (r) =>
+        !r.pinned &&
+        r.sha256 !== activeSha &&
+        !this.active.has(r.sha256) &&
+        (this.refcounts.get(r.sha256) ?? 0) === 0,
+    );
+    const out: IndexRowStored[] = [];
+    for (const r of local) if (!(await this.isHeldAnywhere(r.sha256))) out.push(r);
+    return out.sort((a, b) => a.lastAccess - b.lastAccess);
+  }
+
+  /**
+   * True while any instance or tab holds `airplanemode-held:<sha>` (this one included), and also when
+   * the lock provider cannot tell: 'cannot tell' is treated as held (fail closed, S1-054).
+   */
+  private async isHeldAnywhere(sha: string): Promise<boolean> {
+    return this.lockHeldOrUnknown(HELD_LOCK_PREFIX + sha);
+  }
+
+  /** True while the asset:<sha> lock is taken (a commit may be in flight) or the file is held. */
+  private async isCommitInFlight(sha: string): Promise<boolean> {
+    if (await this.lockHeldOrUnknown(`asset:${sha}`)) return true;
+    return (this.refcounts.get(sha) ?? 0) > 0 || (await this.isHeldAnywhere(sha));
+  }
+
+  /**
+   * Asks the lock provider whether `name` is held. A provider without isHeld() keeps its documented
+   * in-process-only behaviour (false). An answer of 'unknown' or a rejection is "cannot tell": it
+   * counts as held, so eviction and reconcile leave the asset alone, and one warn event per manager
+   * says so with an allowed attrs set (never the engine's message).
+   */
+  private async lockHeldOrUnknown(name: string): Promise<boolean> {
+    let answer: boolean | 'unknown' | undefined;
+    try {
+      answer = await this.locks.isHeld?.(name);
+    } catch {
+      answer = 'unknown';
+    }
+    if (answer === 'unknown') {
+      if (!this.holdUnknownWarned) {
+        this.holdUnknownWarned = true;
+        this.emit('asset.hold.unknown', 'warn', { reason: 'lock_state_unavailable' });
+      }
+      return true;
+    }
+    return answer === true;
   }
 
   /**
@@ -1183,7 +1296,7 @@ export class AssetManager implements AssetSource {
     if (needed <= 0) return 0;
     this.emit('asset.quota', 'warn', { usage, quota, needed, usageSource: snap.usageSource });
     let freed = 0;
-    for (const row of this.candidates(index, activeSha)) {
+    for (const row of await this.candidates(index, activeSha)) {
       if (needed <= 0) break;
       await this.evictRow(index, row, 'quota');
       freed += row.size;

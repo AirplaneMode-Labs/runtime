@@ -98,6 +98,12 @@ export interface StoreEstimate {
 export interface StoreListing {
   /** shas with a committed .bin */
   bins: string[];
+  /**
+   * Epoch ms at which each committed file was last modified (OPFS lastModified, IndexedDB commit
+   * time), where the store knows it. reconcile() leaves a file younger than 60 s alone: its
+   * commit may not have an index row yet (S1-015). Absent for stores without timestamps.
+   */
+  binModified?: Record<string, number>;
   /** shas with part data */
   parts: string[];
   /** shas with a part state file */
@@ -150,7 +156,27 @@ export interface AssetStore {
   estimate(): Promise<StoreEstimate>;
 }
 
+/** Prefix of the shared lock an acquired asset is held under: `airplanemode-held:<sha256>`. */
+export const HELD_LOCK_PREFIX = 'airplanemode-held:';
+
 /** Serialises work under a named lock. */
 export interface LockProvider {
   request<T>(name: string, fn: () => Promise<T>): Promise<T>;
+  /**
+   * Takes a SHARED lock called `name` and resolves with a release function once it is granted.
+   * Any number of holders may share it. The asset manager holds `airplanemode-held:<sha>` from
+   * acquire() until release(), so eviction and reconcile in any instance or tab can see the hold
+   * (S1-021). Optional: a provider without it falls back to in-process reference counts only.
+   */
+  hold?(name: string): Promise<() => void>;
+  /**
+   * True while a lock called `name` is held (in any mode) or requested by anyone this provider can
+   * see: every tab and worker of the origin for Web Locks, this provider for the in-process one.
+   * Used for `airplanemode-held:<sha>` and `asset:<sha>` (S1-015, S1-021).
+   *
+   * `'unknown'` (or a rejection) means the provider cannot tell, for example `navigator.locks.query`
+   * is missing or throws. The asset manager treats it as held for eviction and reconcile, so a
+   * missing answer never lets another tab's model be evicted (S1-054).
+   */
+  isHeld?(name: string): Promise<boolean | 'unknown'>;
 }

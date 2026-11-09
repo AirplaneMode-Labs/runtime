@@ -279,16 +279,26 @@ export class OpfsAssetStore implements AssetStore {
 
   async list(): Promise<StoreListing> {
     const bins: string[] = [];
+    const binModified: Record<string, number> = {};
     const parts: string[] = [];
     const partStates: string[] = [];
     for (const [name, handle] of await listEntries(this.root())) {
-      if (handle.kind === 'file' && name.endsWith('.bin')) bins.push(name.slice(0, -4));
-      else if (handle.kind === 'directory' && name.endsWith('.part')) parts.push(name.slice(0, -5));
+      if (handle.kind === 'file' && name.endsWith('.bin')) {
+        const sha = name.slice(0, -4);
+        bins.push(sha);
+        try {
+          binModified[sha] = (await (handle as FileSystemFileHandle).getFile()).lastModified;
+        } catch {
+          // a file that vanished between listing and stat is not a problem for reconcile
+        }
+      } else if (handle.kind === 'directory' && name.endsWith('.part'))
+        parts.push(name.slice(0, -5));
       else if (handle.kind === 'file' && name.endsWith('.part.json'))
         partStates.push(name.slice(0, -10));
     }
     return {
       bins: bins.filter((s) => SHA.test(s)),
+      binModified,
       parts: parts.filter((s) => SHA.test(s)),
       partStates: partStates.filter((s) => SHA.test(s)),
     };

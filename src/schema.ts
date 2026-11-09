@@ -6,6 +6,7 @@
 import capabilityProfileSchema from '../spec/capability-profile.schema.json';
 import eventSchema from '../spec/event.schema.json';
 import manifestSchema from '../spec/manifest.schema.json';
+import modelDescriptorSchema from '../spec/model-descriptor.schema.json';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -21,12 +22,14 @@ export interface SchemaResult {
   errors: SchemaError[];
 }
 
-export const SCHEMAS: Readonly<Record<'manifest' | 'capabilityProfile' | 'event', JsonSchema>> =
-  Object.freeze({
-    manifest: manifestSchema as JsonSchema,
-    capabilityProfile: capabilityProfileSchema as JsonSchema,
-    event: eventSchema as JsonSchema,
-  });
+export const SCHEMAS: Readonly<
+  Record<'manifest' | 'capabilityProfile' | 'event' | 'modelDescriptor', JsonSchema>
+> = Object.freeze({
+  manifest: manifestSchema as JsonSchema,
+  capabilityProfile: capabilityProfileSchema as JsonSchema,
+  event: eventSchema as JsonSchema,
+  modelDescriptor: modelDescriptorSchema as JsonSchema,
+});
 
 const regexCache = new Map<string, RegExp>();
 function regex(pattern: string): RegExp {
@@ -186,5 +189,51 @@ function validateNode(
 export function validateSchema(schema: JsonSchema, value: unknown): SchemaResult {
   const errors: SchemaError[] = [];
   validateNode(schema, schema, value, '', errors);
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Validates a model descriptor: the JSON Schema, then the two rules JSON Schema cannot express
+ * (`files` sorted by path in byte order with unique paths; `devices` sorted). Ordering errors are
+ * reported with keyword `sorted` or `unique` at the offending index.
+ */
+export function validateModelDescriptor(value: unknown): SchemaResult {
+  const result = validateSchema(SCHEMAS.modelDescriptor, value);
+  const errors = [...result.errors];
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const files = (value as { files?: unknown }).files;
+    if (Array.isArray(files)) {
+      for (let i = 1; i < files.length; i++) {
+        const prev = (files[i - 1] as { path?: unknown } | null)?.path;
+        const cur = (files[i] as { path?: unknown } | null)?.path;
+        if (typeof prev !== 'string' || typeof cur !== 'string') continue;
+        if (cur === prev)
+          errors.push({
+            path: `/files/${i}/path`,
+            keyword: 'unique',
+            message: `duplicate path ${JSON.stringify(cur)}`,
+          });
+        else if (cur < prev)
+          errors.push({
+            path: `/files/${i}/path`,
+            keyword: 'sorted',
+            message: `files not sorted by path: ${JSON.stringify(cur)} after ${JSON.stringify(prev)}`,
+          });
+      }
+    }
+    const devices = (value as { devices?: unknown }).devices;
+    if (Array.isArray(devices)) {
+      for (let i = 1; i < devices.length; i++) {
+        const prev = devices[i - 1];
+        const cur = devices[i];
+        if (typeof prev === 'string' && typeof cur === 'string' && cur < prev)
+          errors.push({
+            path: `/devices/${i}`,
+            keyword: 'sorted',
+            message: 'devices not sorted',
+          });
+      }
+    }
+  }
   return { ok: errors.length === 0, errors };
 }

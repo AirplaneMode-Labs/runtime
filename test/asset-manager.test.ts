@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Manifest, ManifestEntry } from '../spec/manifest';
 import { AssetManager } from '../src/asset-manager';
 import { AssetError } from '../src/errors';
 import { EventBus } from '../src/events';
 import { ManifestError } from '../src/manifest';
-import { InProcessLockProvider } from '../src/store/locks';
+import { IndexedDbAssetStore } from '../src/store/indexeddb';
+import { InProcessLockProvider, WebLocksProvider, type LockManagerLike } from '../src/store/locks';
 import { MemoryAssetStore } from '../src/store/memory';
-import type { AssetStore } from '../src/store/types';
+import type { AssetStore, StoreListing } from '../src/store/types';
+import { FakeIdbFactory, installFakeKeyRange } from './fake-idb';
 import { FakeServer, type FakeServerOptions } from './fake-fetch';
 import {
   makeEntry,
@@ -1561,5 +1563,349 @@ describe('AssetManager: reconcile', () => {
     server.reset();
     await mgr.ensure('a');
     expect(server.calls).toBe(1);
+  });
+});
+
+describe('AssetManager: Sprint 2 deferred Low findings', () => {
+  const HELD = (sha: string) => `airplanemode-held:${sha}`;
+
+  /** A memory store that also reports a modification time per committed file. */
+  class TimedStore extends MemoryAssetStore {
+    modified = new Map<string, number>();
+    override async list(): Promise<StoreListing> {
+      const l = await super.list();
+      return { ...l, binModified: Object.fromEntries(this.modified) };
+    }
+  }
+
+  async function orphanBin(store: AssetStore, bytes = new Uint8Array([1, 2, 3])) {
+    const sha = sha256HexNode(bytes);
+    await store.appendPart(sha, bytes);
+    await store.commit(sha);
+    return sha;
+  }
+
+  it('S1-015: reconcile() skips a .bin whose asset:<sha> lock is held (commit not yet indexed)', async () => {
+    const locks = new InProcessLockProvider();
+    const { mgr, store } = await setup({ assets: { a: SMALL }, manager: { locks } });
+    await mgr.ready();
+    const sha = await orphanBin(store);
+    let during: Awaited<ReturnType<typeof mgr.reconcile>> | undefined;
+    await locks.request(`asset:${sha}`, async () => {
+      during = await mgr.reconcile();
+    });
+    expect(during).toEqual({ orphansRemoved: 0, rowsDropped: 0, stalePartsRemoved: 0 });
+    expect((await store.list()).bins).toContain(sha);
+    // once the commit is finished (lock free) and still no row, the file really is an orphan
+    expect((await mgr.reconcile()).orphansRemoved).toBe(1);
+    expect((await store.list()).bins).not.toContain(sha);
+  });
+
+  it('S1-015: reconcile() skips a .bin that is held under airplanemode-held:<sha> by another instance', async () => {
+    const locks = new InProcessLockProvider();
+    const { mgr, store } = await setup({ assets: { a: SMALL }, manager: { locks } });
+    await mgr.ready();
+    const sha = await orphanBin(store);
+    const release = await locks.hold!(HELD(sha));
+    expect((await mgr.reconcile()).orphansRemoved).toBe(0);
+    expect((await store.list()).bins).toContain(sha);
+    release();
+    expect((await mgr.reconcile()).orphansRemoved).toBe(1);
+  });
+
+  it('S1-015: reconcile() skips a .bin younger than 60 s where the store reports a modification time', async () => {
+    const store = new TimedStore();
+    let clock = 1_000_000;
+    const { mgr } = await setup({ assets: { a: SMALL }, store, manager: { now: () => clock } });
+    await mgr.ready();
+    const young = await orphanBin(store, new Uint8Array([9, 9, 9]));
+    store.modified.set(young, clock - 59_000);
+    expect((await mgr.reconcile()).orphansRemoved).toBe(0);
+    expect((await store.list()).bins).toContain(young);
+    clock += 2_000; // now 61 s old
+    expect((await mgr.reconcile()).orphansRemoved).toBe(1);
+    expect((await store.list()).bins).not.toContain(young);
+  });
+
+  describe('S1-018: IndexedDB fileSize() trusts chunk metadata', () => {
+    let restore: () => void;
+    beforeAll(() => {
+      restore = installFakeKeyRange();
+    });
+    afterAll(() => restore());
+
+    it('S1-018: a truncated chunk Blob makes getBlob reject not_verified even without rehash, and the row is removed', async () => {
+      const factory = new FakeIdbFactory();
+      const store = new IndexedDbAssetStore(factory as unknown as IDBFactory);
+      const { mgr, events, manifest } = await setup({
+        assets: { a: A },
+        store: store as unknown as MemoryAssetStore,
+      });
+      await mgr.ensure('a');
+      expect((await mgr.getBlob('a')).size).toBe(A.length);
+      const sha = manifest.entries[0]!.sha256;
+      expect(await store.fileSize(sha)).toBe(A.length);
+      // Truncate chunk 1 in place; chunkmeta still claims the original length.
+      const chunks = factory.rows('chunks');
+      const victim = chunks[1]!;
+      const row = victim.value as { sha: string; seq: number; data: Blob };
+      factory.setRow('chunks', victim.key, { ...row, data: row.data.slice(0, row.data.size - 10) });
+      expect(await store.fileSize(sha)).toBe(A.length - 10);
+      await rejectsWith(mgr.getBlob('a'), 'not_verified');
+      expect(await mgr.list()).toEqual([]);
+      expect(find(events, 'asset.verify.failed').pop()!.attrs['reason']).toBe('size_changed');
+      expect(await mgr.has('a')).toBe(false);
+    });
+
+    it('S1-018: the IndexedDB store lists a commit time for each committed file', async () => {
+      const factory = new FakeIdbFactory();
+      const store = new IndexedDbAssetStore(factory as unknown as IDBFactory);
+      const { mgr, manifest } = await setup({
+        assets: { a: SMALL },
+        store: store as unknown as MemoryAssetStore,
+      });
+      await mgr.ensure('a');
+      const listing = await store.list();
+      const sha = manifest.entries[0]!.sha256;
+      expect(listing.binModified?.[sha]).toBeGreaterThan(0);
+    });
+  });
+
+  describe('S1-021: eviction window between ensure() and acquire()', () => {
+    /** Runs `afterAsset` right after the asset:<sha> lock has been released, in the old gap. */
+    class GapLocks extends InProcessLockProvider {
+      afterAsset: (() => Promise<unknown>) | undefined;
+      override async request<T>(name: string, fn: () => Promise<T>): Promise<T> {
+        const r = await super.request(name, fn);
+        if (name.startsWith('asset:') && this.afterAsset) {
+          const hook = this.afterAsset;
+          this.afterAsset = undefined;
+          await hook();
+        }
+        return r;
+      }
+    }
+
+    it('S1-021: acquire() takes the refcount inside the asset lock: an evictToFit() right after ensure() leaves the asset alone', async () => {
+      const locks = new GapLocks();
+      const { mgr } = await setup({
+        assets: { a: SMALL },
+        manager: { locks, quotaBytes: MiB },
+      });
+      await mgr.ensure('a');
+      locks.afterAsset = () => mgr.evictToFit(Number.MAX_SAFE_INTEGER).catch(() => 0);
+      const h = await mgr.acquire('a');
+      expect(h.held).toBe(true);
+      expect(await mgr.has('a')).toBe(true);
+      expect((await mgr.list())[0]).toMatchObject({ entryId: 'a', refcount: 1 });
+      expect((await mgr.getBlob('a')).size).toBe(SMALL.length);
+      h.release();
+    });
+
+    it('S1-021: cross-instance hold: A.acquire(x); B.evictToFit(MAX_SAFE_INTEGER) and B.reconcile() leave x intact', async () => {
+      const locks = new InProcessLockProvider();
+      const a = await setup({ assets: { x: SMALL }, manager: { locks } });
+      const hx = await a.mgr.acquire('x');
+      const sha = a.manifest.entries[0]!.sha256;
+      const b = new AssetManager({
+        store: a.store,
+        fetch: a.server.fetch,
+        allowTestKeys: true,
+        allowedOrigins: [ORIGIN],
+        headroomBytes: 0,
+        quotaBytes: MiB,
+        locks,
+      });
+      await b.ready();
+      // B cannot make room for MAX_SAFE_INTEGER bytes and says so, but it must not touch x.
+      await rejectsWith(b.evictToFit(Number.MAX_SAFE_INTEGER), 'quota');
+      await b.reconcile();
+      const { bins, index } = await assertConsistent(a.store);
+      expect(bins).toEqual([sha]);
+      expect(Object.keys(index.rows)).toEqual([sha]);
+      // an explicit evict() in the other instance refuses too, unless forced
+      await b.loadManifest(a.manifest, testTrust());
+      await rejectsWith(b.evict('x'), 'store');
+      expect((await a.store.list()).bins).toEqual([sha]);
+      // once A releases, B may evict
+      hx.release();
+      await rejectsWith(b.evictToFit(Number.MAX_SAFE_INTEGER), 'quota');
+      expect((await a.store.list()).bins).toEqual([]);
+    });
+
+    it('S1-021: the quota make-room path of another instance also skips a held asset', async () => {
+      const locks = new InProcessLockProvider();
+      const a = await setup({
+        assets: { x: SMALL, y: SMALL.subarray(0, 100) },
+        manager: { locks },
+      });
+      const hx = await a.mgr.acquire('x');
+      const b = new AssetManager({
+        store: a.store,
+        fetch: a.server.fetch,
+        allowTestKeys: true,
+        allowedOrigins: [ORIGIN],
+        headroomBytes: 0,
+        quotaBytes: SMALL.length + 50,
+        locks,
+      });
+      await b.loadManifest(a.manifest, testTrust());
+      await rejectsWith(b.ensure('y'), 'quota');
+      expect(await a.mgr.has('x')).toBe(true);
+      hx.release();
+    });
+
+    it('S1-021: release() frees the shared hold and is idempotent', async () => {
+      const locks = new InProcessLockProvider();
+      const { mgr, manifest } = await setup({ assets: { x: SMALL }, manager: { locks } });
+      const sha = manifest.entries[0]!.sha256;
+      const h = await mgr.acquire('x');
+      expect(await locks.isHeld!(HELD(sha))).toBe(true);
+      h.release();
+      h.release();
+      expect(await locks.isHeld!(HELD(sha))).toBe(false);
+      const h2 = await mgr.acquire('x');
+      const h3 = await mgr.acquire('x');
+      h2.release();
+      expect(await locks.isHeld!(HELD(sha))).toBe(true);
+      h3.release();
+      expect(await locks.isHeld!(HELD(sha))).toBe(false);
+    });
+  });
+
+  describe('S1-054: a hold check that cannot be answered fails closed', () => {
+    /**
+     * A navigator.locks look-alike on top of an in-process provider. `query` is absent (an old or
+     * restricted LockManager) or throws; request() works either way, so holds and the index lock behave.
+     */
+    function lockManager(query: 'absent' | 'throws'): LockManagerLike {
+      const inner = new InProcessLockProvider();
+      const m: LockManagerLike = {
+        request: (async (name: string, a: unknown, b?: () => Promise<unknown>) => {
+          const cb = (typeof a === 'function' ? a : b) as () => Promise<unknown>;
+          const mode =
+            typeof a === 'object' && a !== null ? (a as { mode?: string }).mode : undefined;
+          if (mode === 'shared') {
+            const release = await inner.hold(name);
+            try {
+              return await cb();
+            } finally {
+              release();
+            }
+          }
+          return inner.request(name, cb);
+        }) as LockManagerLike['request'],
+      };
+      if (query === 'throws')
+        m.query = async () => {
+          throw new Error('SENTINEL-LOCK-ENGINE-TEXT');
+        };
+      return m;
+    }
+
+    for (const kind of ['absent', 'throws'] as const) {
+      const label = kind === 'absent' ? 'has no query()' : 'query() throws';
+
+      it(`S1-054: WebLocksProvider.isHeld reports unknown when navigator.locks ${label}`, async () => {
+        const provider = new WebLocksProvider(lockManager(kind));
+        expect(await provider.isHeld('airplanemode-held:abc')).toBe('unknown');
+      });
+
+      it(`S1-054: A.acquire(x); B.evictToFit(MAX_SAFE_INTEGER) and B.reconcile() leave x's row and .bin intact when navigator.locks ${label}`, async () => {
+        const lm = lockManager(kind);
+        const a = await setup({
+          assets: { x: SMALL },
+          manager: { locks: new WebLocksProvider(lm) },
+        });
+        const hx = await a.mgr.acquire('x');
+        const sha = a.manifest.entries[0]!.sha256;
+        const bEvents = new EventBus(100);
+        const b = new AssetManager({
+          store: a.store,
+          fetch: a.server.fetch,
+          allowTestKeys: true,
+          allowedOrigins: [ORIGIN],
+          headroomBytes: 0,
+          quotaBytes: MiB,
+          locks: new WebLocksProvider(lm),
+          events: bEvents,
+        });
+        await b.ready();
+        await rejectsWith(b.evictToFit(Number.MAX_SAFE_INTEGER), 'quota');
+        await b.reconcile();
+        const { bins, index } = await assertConsistent(a.store);
+        expect(bins).toEqual([sha]);
+        expect(Object.keys(index.rows)).toEqual([sha]);
+        // an explicit evict() in the other instance refuses as well
+        await b.loadManifest(a.manifest, testTrust());
+        await rejectsWith(b.evict('x'), 'store');
+        expect((await a.store.list()).bins).toEqual([sha]);
+        // one warn event, with an allowed attrs set and no engine text
+        const warns = find(bEvents, 'asset.hold.unknown');
+        expect(warns).toHaveLength(1);
+        expect(warns[0]!.level).toBe('warn');
+        expect(warns[0]!.attrs).toEqual({ reason: 'lock_state_unavailable' });
+        expect(JSON.stringify(bEvents.snapshot())).not.toContain('SENTINEL');
+        hx.release();
+      });
+
+      it(`S1-054: reconcile() leaves an unindexed .bin alone when navigator.locks ${label} (a commit may be in flight)`, async () => {
+        const lm = lockManager(kind);
+        const { mgr, store } = await setup({
+          assets: { a: SMALL },
+          manager: { locks: new WebLocksProvider(lm) },
+        });
+        await mgr.ready();
+        const bytes = new Uint8Array([4, 5, 6]);
+        const sha = sha256HexNode(bytes);
+        await store.appendPart(sha, bytes);
+        await store.commit(sha);
+        expect((await mgr.reconcile()).orphansRemoved).toBe(0);
+        expect((await store.list()).bins).toContain(sha);
+      });
+    }
+
+    it('S1-054: a provider that answers true or false is unchanged: no unknown event, orphans are still removed', async () => {
+      const locks = new InProcessLockProvider();
+      const { mgr, store, events } = await setup({ assets: { a: SMALL }, manager: { locks } });
+      await mgr.ready();
+      const bytes = new Uint8Array([7, 8, 9]);
+      const sha = sha256HexNode(bytes);
+      await store.appendPart(sha, bytes);
+      await store.commit(sha);
+      expect((await mgr.reconcile()).orphansRemoved).toBe(1);
+      expect(find(events, 'asset.hold.unknown')).toHaveLength(0);
+    });
+  });
+
+  it('S1-031: an invalid stored downgrade state fails closed with reason state and event reason state_unavailable; allowDowngrade bypasses it', async () => {
+    const { mgr, manifest, events, store } = await setup({ assets: { a: SMALL }, skipLoad: true });
+    await mgr.ready();
+    for (const bad of [
+      { version: '1.0.0', createdAt: 'garbage' },
+      { version: 'not-semver', createdAt: '2026-11-09T00:00:00Z' },
+      { version: '1.0.0', createdAt: '2026-99-99T00:00:00Z' },
+      { version: 7, createdAt: '2026-11-09T00:00:00Z' },
+      'junk',
+    ]) {
+      const index = await store.readIndex();
+      index.manifests[manifest.id] = bad as never;
+      await store.writeIndex(index);
+      await expect(mgr.loadManifest(manifest, testTrust())).rejects.toMatchObject({
+        reason: 'state',
+      });
+      expect(find(events, 'manifest.verify.failed').pop()!.attrs['reason']).toBe(
+        'state_unavailable',
+      );
+    }
+    await expect(
+      mgr.loadManifest(manifest, testTrust(), { allowDowngrade: true }),
+    ).resolves.toBeDefined();
+    // the bypass replaced the corrupt state with a valid one
+    expect((await store.readIndex()).manifests[manifest.id]).toEqual({
+      version: manifest.version,
+      createdAt: manifest.createdAt,
+    });
+    await expect(mgr.loadManifest(manifest, testTrust())).resolves.toBeDefined();
   });
 });
