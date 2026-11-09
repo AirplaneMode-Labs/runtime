@@ -52,6 +52,37 @@ describe('no network egress in library code', () => {
     });
   }
 
+  it('src/backends never touches the global fetch, the network or a CDN: fetch( appears in src/asset-manager.ts only', () => {
+    const backends = files.filter((f) => relative(repoDir, f).startsWith('src/backends'));
+    expect(backends.length).toBeGreaterThanOrEqual(5);
+    const callers = files
+      .filter((f) => /\bfetch\(/.test(readFileSync(f, 'utf8')))
+      .map((f) => relative(repoDir, f));
+    expect(callers.filter((c) => c !== 'src/asset-manager.ts')).toEqual([]);
+    for (const f of backends) {
+      const text = readFileSync(f, 'utf8');
+      const rel = relative(repoDir, f);
+      expect(text, rel).not.toMatch(/globalThis\.fetch|window\.fetch|self\.fetch/);
+      expect(text, rel).not.toMatch(
+        /cdn\.jsdelivr|unpkg\.com|cdnjs|huggingface\.co|raw\.githubusercontent/,
+      );
+    }
+  });
+
+  it('the main entry never imports an engine package; only src/backends/transformers.ts names one', () => {
+    for (const f of files) {
+      const rel = relative(repoDir, f);
+      const text = readFileSync(f, 'utf8');
+      const named = /@huggingface\/transformers|@mlc-ai\/web-llm/.test(text);
+      if (rel === 'src/backends/transformers.ts') expect(named, rel).toBe(true);
+      else expect(named, rel).toBe(false);
+    }
+    const index = readFileSync(resolve(srcDir, 'index.ts'), 'utf8');
+    expect(index).not.toMatch(
+      /backends\/(transformers|chain|chrome-prompt|descriptor|verified-files)/,
+    );
+  });
+
   it('the asset manager uses fetch with the fixed hardened options', () => {
     const text = readFileSync(resolve(srcDir, 'asset-manager.ts'), 'utf8');
     for (const opt of [

@@ -50,10 +50,12 @@ function fakeAssets(entry: ManifestEntry) {
 }
 
 describe('MockAdapter', () => {
-  it('reports id, tier and capabilities', () => {
+  it('reports id, tier, device and capabilities; available() is true (backend adapter 0.2.0)', async () => {
     const a = new MockAdapter();
     expect(a.id).toBe('mock');
     expect(a.tier).toBe('none');
+    expect(a.device).toBe('wasm');
+    expect(await a.available(profile)).toBe(true);
     expect(a.capabilities()).toEqual({ generate: true, embed: true, streaming: true });
   });
 
@@ -81,7 +83,9 @@ describe('MockAdapter', () => {
     const events = new EventBus();
     await a.load(entry, { assets, profile, events });
     expect(acquired).toEqual(['m']);
-    expect(events.snapshot().some((e) => e.kind === 'model-load')).toBe(true);
+    const loaded = events.snapshot().find((e) => e.name === 'model.load');
+    expect(loaded?.kind).toBe('model-load');
+    expect(loaded?.attrs['entryId']).toBe('m');
     await a.unload();
     expect(released).toEqual(['m']);
     await expect(a.generate('x')).rejects.toMatchObject({ code: 'not_loaded' });

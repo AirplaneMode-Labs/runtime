@@ -41,6 +41,7 @@ export {
   RFC8032_TEST_KEY_ID,
   isAllowedAssetUrl,
   isLoopbackHost,
+  isValidManifestState,
   parseManifest,
   verifyManifest,
   type ManifestState,
@@ -57,6 +58,7 @@ export { MockAdapter, MOCK_EMBEDDING_DIMS } from './backends/mock';
 export { Sha256, sha256, sha256Hex, toHex } from './sha256';
 export {
   SCHEMAS,
+  validateModelDescriptor,
   validateSchema,
   type JsonSchema,
   type SchemaError,
@@ -74,6 +76,7 @@ export {
 } from './store/locks';
 export {
   emptyIndex,
+  HELD_LOCK_PREFIX,
   type AssetStore,
   type IndexFile,
   type IndexRowStored,

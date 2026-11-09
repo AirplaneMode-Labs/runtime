@@ -6,16 +6,18 @@
 
 import {
   AdapterError,
+  type AcquireOptions,
   type AdapterCapabilities,
   type AssetHandle,
   type BackendAdapter,
   type ChatMessage,
   type EmbedResult,
+  type ExecutionDevice,
   type GenerateOptions,
   type GenerateResult,
   type LoadOptions,
 } from '../../spec/backend-adapter';
-import type { BackendTier } from '../../spec/capability-profile';
+import type { BackendTier, CapabilityProfile } from '../../spec/capability-profile';
 import type { ManifestEntry } from '../../spec/manifest';
 import { newEvent } from '../events';
 import { satisfies } from '../satisfies';
@@ -26,11 +28,17 @@ export const MOCK_EMBEDDING_DIMS = 64;
 export class MockAdapter implements BackendAdapter {
   readonly id = 'mock';
   readonly tier: BackendTier = 'none';
+  /** The mock runs on the main thread like the WASM path; it needs no hardware. */
+  readonly device: ExecutionDevice = 'wasm';
   private entry: ManifestEntry | undefined;
   private handle: AssetHandle | undefined;
 
   capabilities(): AdapterCapabilities {
     return { generate: true, embed: true, streaming: true };
+  }
+
+  async available(_profile: CapabilityProfile): Promise<boolean> {
+    return true;
   }
 
   async load(entry: ManifestEntry, opts: LoadOptions): Promise<void> {
@@ -44,7 +52,10 @@ export class MockAdapter implements BackendAdapter {
     const t0 = now();
     await this.unload();
     if (typeof opts.assets.acquire === 'function') {
-      this.handle = await opts.assets.acquire(entry.id);
+      const acquireOpts: AcquireOptions = {};
+      if (opts.signal) acquireOpts.signal = opts.signal;
+      if (opts.onProgress) acquireOpts.onProgress = opts.onProgress;
+      this.handle = await opts.assets.acquire(entry.id, acquireOpts);
     }
     this.entry = entry;
     opts.events?.emit(

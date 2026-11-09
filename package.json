@@ -20,6 +20,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./backends": {
+      "types": "./dist/backends/index.d.ts",
+      "import": "./dist/backends/index.js"
+    },
     "./spec": {
       "types": "./dist/spec/index.d.ts",
       "import": "./dist/spec/index.js"
@@ -45,9 +49,21 @@
     "demo:build": "node demo/tools/make-fixture.mjs && vite build --config demo/vite.config.ts",
     "spec:vectors": "node test/tools/make-vectors.mjs",
     "spec:sign-example": "node test/tools/sign-example.mjs",
-    "ci": "npm run fmt:check && npm run typecheck && npm run test && npm run build"
+    "ci": "npm run fmt:check && npm run typecheck && npm run test && npm run build",
+    "test:model": "playwright test -c test/browser/playwright.model.config.ts",
+    "models:fetch": "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "test:hindi-smoke": "playwright test -c test/browser/playwright.model.config.ts hindi-smoke"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": "4.3.1"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@huggingface/transformers": "4.3.1",
     "@types/node": "22.20.5",
     "playwright": "1.65.0",
     "prettier": "3.9.10",
@@ -55,5 +71,11 @@
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "4.1.12"
+  },
+  "overrides": {
+    "global-agent": "4.1.6",
+    "semver": "7.8.5",
+    "tslib": "2.8.1",
+    "@huggingface/jinja": "0.5.10"
   }
 }
