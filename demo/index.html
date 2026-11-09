@@ -91,9 +91,10 @@
               eviction. Chrome under-reports IndexedDB usage in <code>estimate()</code>.
             </li>
             <li>
-              Resume after an interrupted download was verified on a local server that answers Range
-              requests; it is unverified on GitHub Pages until the first deploy. If Pages answers
-              200 instead of 206, the download restarts from zero and is still hash-verified.
+              Resume after an interrupted download is verified on the local Range server and on
+              GitHub Pages (checked 9 Nov 2026: <code>Range: bytes=0-1023</code> on the fixture
+              answered 206 with <code>Accept-Ranges: bytes</code>). If a host ever answers 200
+              instead of 206, the download restarts from zero and is still hash-verified.
             </li>
             <li>
               No service worker: offline after the first load is best effort (Chrome's HTTP cache),

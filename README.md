@@ -192,9 +192,9 @@ through CDP `Storage.overrideQuotaForOrigin` (no `quotaBytes` injection); raw ou
   interface and a `MockAdapter` ship now.
 - The demo's fixture manifest is signed by a key generated for that build only and carries no
   `expiresAt`; its bytes are synthetic streams. It proves the verification and download paths, not
-  a publisher identity. Resume after an interrupted download is verified on the local range server;
-  whether GitHub Pages answers `Range` requests with 206 is unverified until the first deploy (a 200
-  restarts the download from zero, still hash-verified).
+  a publisher identity. Resume after an interrupted download is verified on the local range server and
+  on GitHub Pages, which answered a `Range` request on the deployed fixture with 206 and
+  `Accept-Ranges: bytes` on 9 Nov 2026 (a 200 would restart the download from zero, still hash-verified).
 
 ## Security and privacy
 
