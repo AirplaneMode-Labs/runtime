@@ -1,0 +1,51 @@
+{
+  "spec": "airplanemode.model/0.1",
+  "id": "qwen3-1.7b.tjs-webgpu-q4f16",
+  "engine": "transformers-js",
+  "task": "text-generation",
+  "devices": ["webgpu"],
+  "dtype": "q4f16",
+  "files": [
+    {
+      "path": "chat_template.jinja",
+      "entryId": "qwen3-1.7b.chat-template"
+    },
+    {
+      "path": "config.json",
+      "entryId": "qwen3-1.7b.config"
+    },
+    {
+      "path": "generation_config.json",
+      "entryId": "qwen3-1.7b.generation-config"
+    },
+    {
+      "path": "onnx/model_q4f16.onnx",
+      "entryId": "qwen3-1.7b.onnx-q4f16"
+    },
+    {
+      "path": "runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "entryId": "ort.wasm"
+    },
+    {
+      "path": "tokenizer.json",
+      "entryId": "qwen3-1.7b.tokenizer"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "entryId": "qwen3-1.7b.tokenizer-config"
+    }
+  ],
+  "runtimeWasm": "runtime/ort-wasm-simd-threaded.asyncify.wasm",
+  "contextLength": 40960,
+  "generation": {
+    "maxNewTokens": 128,
+    "chatTemplateKwargs": {
+      "enable_thinking": false
+    }
+  },
+  "source": {
+    "repo": "onnx-community/Qwen3-1.7B-ONNX",
+    "revision": "3231b522c6e703b2f9b3cd8ea27426a1289a02f2"
+  },
+  "licence": "Apache-2.0"
+}

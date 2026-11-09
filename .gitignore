@@ -20,3 +20,6 @@ coverage/
 # browser test caches and local scratch
 .playwright/
 .scratch/
+
+# model caches (never committed)
+.cache/
