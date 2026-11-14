@@ -1,6 +1,6 @@
 {
   "name": "@airplanemode/runtime",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0-alpha.1",
   "description": "Offline-first browser runtime (alpha): capability profile, verified asset manager, backend adapters with WebGPU to WASM fallback, observability events and open contracts (manifest, capability profile, event, storage API, backend adapter, model descriptor).",
   "license": "Apache-2.0",
   "type": "module",

@@ -1,4 +1,4 @@
-// D1-10: alpha packaging (0.2.0-alpha.0). Written before package.json, tsup.config.ts, README,
+// D1-10: alpha packaging (0.2.0-alpha.0, now 0.2.0-alpha.1). Written before package.json, tsup.config.ts, README,
 // CHANGELOG and docs/release.md changed (red-D1-10.log). The offline fresh-directory install itself
 // is scripts/pack-check.mjs (npm run pack:check), run on CI and logged under the lane evidence.
 
@@ -23,8 +23,8 @@ const NOT_PUBLISHED =
   "Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.";
 
 describe('package.json', () => {
-  it('is version 0.2.0-alpha.0, public, ESM, node 22', () => {
-    expect(pkg.version).toBe('0.2.0-alpha.0');
+  it('is version 0.2.0-alpha.1, public, ESM, node 22', () => {
+    expect(pkg.version).toBe('0.2.0-alpha.1');
     expect(pkg['name']).toBe('@airplanemode/runtime');
     expect(pkg['private']).toBe(false);
     expect(pkg['type']).toBe('module');
@@ -187,6 +187,22 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
       expect(section, h).toContain(h);
     for (const id of ['S1-053', 'S1-066', 'T1-S2-07', 'D1-06', 'D1-07', 'D1-10'])
       expect(section, id).toContain(id);
+  });
+
+  it('CHANGELOG has the 0.2.0-alpha.1 heading (untagged) with every fixed id named and WebLLM described as cut', () => {
+    const log = read('CHANGELOG.md');
+    expect(log).toContain('## [0.2.0-alpha.1] - 2026-11-14 (untagged)');
+    expect(log.indexOf('## [0.2.0-alpha.1]')).toBeLessThan(log.indexOf('## [0.2.0-alpha.0]'));
+    const start = log.indexOf('## [0.2.0-alpha.1]');
+    const section = log.slice(start, log.indexOf('\n## [', start + 5));
+    for (const h of ['### Added', '### Changed', '### Fixed', '### Security'])
+      expect(section, h).toContain(h);
+    for (const id of ['S1-074', 'S1-075', 'BUG-T2-S3-22', 'BUG-T2-S3-23-R2', 'T3-S3-035'])
+      expect(section, id).toContain(id);
+    expect(section).toContain('manifest spec v0.1 published in runtime/spec');
+    expect(section).toContain("committed; public after the owner's push");
+    expect(section).toContain('WebLLM: not yet (cut from Sprint 4');
+    expect(section).not.toMatch(/\bcompliance\b|\bDPDP\b|\bAIBOM\b/);
   });
 
   it('docs/release.md has seven definition-of-done rows; the CI row is not Done; every Open row has an Owner must line', () => {

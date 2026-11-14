@@ -11,7 +11,10 @@
 //        npm i <tgz> --ignore-scripts --offline --no-audit --no-fund --cache <empty cache>
 //      and `npm ls --all` lists exactly @airplanemode/runtime (no optional peer is installed).
 //   4. a real Node call: verifyManifest() on the signed spec example with the public RFC 8032 test key
-//      under allowTestKeys prints valid:true.
+//      under allowTestKeys prints valid:true, and on the tamper vector tamper-01 (one hex digit of an
+//      entry's sha256 changed after signing) prints no_valid_signature with bad_signature. The vectors
+//      are not in the tarball; the call reads them from the repository.
+//   5. no builder path ('/Users/', '/home/', 'C:\\') in any shipped file.
 //
 //   node scripts/pack-check.mjs [--out <dir>] [--work <dir>] [--skip-build]
 //
@@ -160,6 +163,24 @@ ok(
   'the packed worker has no static import (no shared chunk can run before the guard)',
 );
 
+// no builder path in anything the tarball carries (the packed bytes are the bytes of dist/ and spec/)
+const BUILDER_PATHS = ['/Users/', '/home/', 'C:\\'];
+const pathHits = [];
+for (const f of files) {
+  if (!/\.(js|mjs|cjs|ts|json|md|txt)$/.test(f.path) && !/^(LICENSE|NOTICE)$/.test(f.path))
+    continue;
+  const text = readFileSync(join(root, f.path), 'utf8');
+  for (const p of BUILDER_PATHS) if (text.includes(p)) pathHits.push(`${f.path} (${p})`);
+}
+ok(
+  pathHits.length === 0,
+  `no builder path ('/Users/', '/home/', 'C:\\') in any shipped file${pathHits.length ? ` (${pathHits.join(', ')})` : ''}`,
+);
+ok(
+  files.some((f) => f.path === 'spec/MANIFEST.md'),
+  'contains spec/MANIFEST.md (the manifest spec v0.1)',
+);
+
 const NOT_PUBLISHED =
   "Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.";
 ok(
@@ -226,21 +247,26 @@ ok(
 
 // ---- 4. a real Node call --------------------------------------------------------------------------
 const exampleSigned = join(root, 'spec/examples/manifest.signed.example.json');
+const tamper01 = join(root, 'spec/vectors/tamper/tamper-01-entry-sha-byte.json');
 const callSource = `
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { verifyManifest, SPEC_VERSIONS } from '@airplanemode/runtime';
+import { verifyManifest, SPEC_RELEASE, SPEC_STATUS, SPEC_VERSIONS } from '@airplanemode/runtime';
 const publicKey = Uint8Array.from(Buffer.from('d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a', 'hex'));
 const keyId = createHash('sha256').update(publicKey).digest('hex');
 const manifest = JSON.parse(readFileSync(process.env.EXAMPLE, 'utf8'));
 const result = await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z') });
-console.log(JSON.stringify({ valid: result.ok, specVersions: SPEC_VERSIONS }));
+// tamper-01: one hex digit of an entry's sha256 changed after signing, verified from its TEXT
+const tampered = await verifyManifest(readFileSync(process.env.TAMPER, 'utf8'), new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z') });
+const tamperReason = tampered.ok ? 'accepted' : tampered.reason;
+const tamperSignatures = tampered.signatures.map((s) => (s.valid ? 'valid' : s.reason));
+console.log(JSON.stringify({ valid: result.ok, tamper01: tamperReason, tamper01Signatures: tamperSignatures, specRelease: SPEC_RELEASE, specStatus: SPEC_STATUS, specVersions: SPEC_VERSIONS }));
 `;
 writeFileSync(join(fresh, 'call.mjs'), callSource);
 const called = execFileSync(process.execPath, ['call.mjs'], {
   cwd: fresh,
   encoding: 'utf8',
-  env: { ...process.env, EXAMPLE: exampleSigned },
+  env: { ...process.env, EXAMPLE: exampleSigned, TAMPER: tamper01 },
 }).trim();
 const parsed = JSON.parse(called);
 ok(
@@ -248,9 +274,17 @@ ok(
   `verifyManifest() on the signed spec example prints valid:${parsed.valid}`,
 );
 ok(
-  parsed.specVersions?.backendAdapter === '0.3.0' &&
-    parsed.specVersions?.modelDescriptor === '0.2.0',
-  'the installed package carries SPEC_VERSIONS backendAdapter 0.3.0 and modelDescriptor 0.2.0',
+  parsed.tamper01 === 'no_valid_signature' &&
+    JSON.stringify(parsed.tamper01Signatures) === '["bad_signature"]',
+  `verifyManifest() on tamper-01 prints ${parsed.tamper01} (${(parsed.tamper01Signatures ?? []).join(', ')})`,
+);
+ok(
+  parsed.specRelease === '0.4.0' &&
+    parsed.specStatus?.manifest === 'published' &&
+    parsed.specVersions?.manifest === '0.1.1' &&
+    parsed.specVersions?.backendAdapter === '0.3.1' &&
+    parsed.specVersions?.modelDescriptor === '0.2.1',
+  'the installed package carries spec release 0.4.0 (manifest 0.1.1 published, backend adapter 0.3.1, model descriptor 0.2.1)',
 );
 
 const summary = {
