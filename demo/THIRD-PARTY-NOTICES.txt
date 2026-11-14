@@ -7,10 +7,10 @@ files. Each is redistributed under its own licence; nothing was modified.
 1. onnxruntime-web 1.31.1 (MIT, Copyright (c) Microsoft Corporation)
    - app/ort/ort-wasm-simd-threaded.asyncify.mjs: the WebAssembly factory, copied unmodified from the
      npm package after its SHA-256 was checked against src/backends/ort-pins.ts
-     (0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611).
+     (59cf781530e1a16df2a291d78798e3ec1152467edaec402d6f9599d85047c302).
    - the ONNX Runtime Web JavaScript, bundled into app/*.js by Vite.
    - in a build made with DEMO_MODELS=1, models/ort/ort-wasm-simd-threaded.asyncify.wasm (SHA-256
-     49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082) and
+     ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec) and
      models/LICENSE-onnxruntime-web.txt (the MIT licence text).
 
 2. @huggingface/transformers 4.3.1 (Apache-2.0), bundled into app/*.js by Vite. It is used only as the
