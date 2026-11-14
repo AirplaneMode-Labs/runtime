@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error the .mjs tool has no declaration file; the shape used here is checked at run time
 import { buildModelManifest } from './tools/model-manifest.mjs';
 import { repoDir } from './helpers';
+import { ORT_FACTORY_SHA256, ORT_WASM_SHA256, ORT_WEB_VERSION } from '../src/backends/ort-pins';
 
 const read = (rel: string) => readFileSync(resolve(repoDir, rel), 'utf8');
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -224,6 +225,14 @@ describe('redistribution: notices, licences and provenance', () => {
         read('node_modules/@huggingface/transformers/node_modules/@huggingface/jinja/package.json'),
       ).license,
     ).toBe('MIT');
+  });
+
+  it('THIRD-PARTY-NOTICES.txt quotes exactly the ort-pins.ts digests for the pinned onnxruntime-web (S1-083)', () => {
+    const text = read('demo/THIRD-PARTY-NOTICES.txt');
+    expect(text).toContain(`onnxruntime-web ${ORT_WEB_VERSION} (MIT`);
+    const digests = [...text.matchAll(/\b[0-9a-f]{64}\b/g)].map((m) => m[0]);
+    // the two onnxruntime-web digests come first; any later digest belongs to another component
+    expect(digests.slice(0, 2)).toEqual([ORT_FACTORY_SHA256, ORT_WASM_SHA256]);
   });
 
   it('NOTICE mentions the bundled ONNX Runtime factory and its licence', () => {
