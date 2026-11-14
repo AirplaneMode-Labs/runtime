@@ -33,10 +33,17 @@ const URL_RE = /https?:\/\/[^\s"'`<>)\\]+/g;
 const BARE_RE =
   /(?<![A-Za-z0-9-])(huggingface\.co|hf\.co|jsdelivr|unpkg|cdnjs|raw\.githubusercontent\.com|githubusercontent|github\.com|googleapis|gstatic)(?![A-Za-z0-9-])/gi;
 
-const adapterSource = readFileSync(join(root, 'src/backends/transformers.ts'), 'utf8').split('\n');
+// the engine overrides live in the shared engine core and in the adapter
+const SOURCES = ['src/backends/tjs-core.ts', 'src/backends/transformers.ts'].map((file) => ({
+  file,
+  lines: readFileSync(join(root, file), 'utf8').split('\n'),
+}));
 const lineOf = (needle) => {
-  const i = adapterSource.findIndex((l) => l.includes(needle));
-  return i < 0 ? null : `src/backends/transformers.ts:${i + 1}`;
+  for (const { file, lines } of SOURCES) {
+    const i = lines.findIndex((l) => l.includes(needle));
+    if (i >= 0) return `${file}:${i + 1}`;
+  }
+  return null;
 };
 
 /** Returns {library, role, override} or null when the string is not recognised. */

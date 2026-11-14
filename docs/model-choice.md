@@ -23,7 +23,7 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
   `LICENSE`, a provenance record (repository and 40-hex revision) and a `NOTICE`. That pilot licence
   package is not built this sprint (PRE-PILOT-CHECKLIST).
 - WebLLM is information only here: the WebGPU build `mlc-ai/Qwen3-1.7B-q4f16_1-MLC` is
-  984,156,278 B in total; the WebLLM adapter is Sprint 3.
+  984,156,278 B in total; the WebLLM adapter slipped from Sprint 3 to Sprint 4.
 - Descriptors (spec `model-descriptor.schema.json`): `qwen3-1.7b.tjs-webgpu-q4f16` (devices `webgpu`,
   dtype `q4f16`, `minProfile` WebGPU with `backendTier` `webgpu-f16`, `ramGb` 8) and
   `qwen3-1.7b.tjs-wasm-q8` (devices `wasm`, dtype `q8`, `backendTier` `wasm-simd`, `ramGb` 8). The q8
@@ -40,13 +40,13 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
 - **Finding: it only loads with `graphOptimizationLevel: 'disabled'`.** With ONNX Runtime Web's default
   graph optimisation the session cannot be created (`ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc`,
   after about 15 s); `'basic'` fails the same way and `'disabled'` loads. The single 1.43 GB file plus
-  its optimised copy do not fit the 4 GB WebAssembly heap. Descriptor 0.1.0 has no field for session
-  options, so the adapter takes `sessionOptions: { graphOptimizationLevel }` from the application (the
-  only session option it accepts) and the local hook sets it for this model. This needs an architect
-  decision (a descriptor field, or external-data weights) before the production model works through
-  `createDefaultAdapters()` without application help, and it is one more reason the 8 GB laptop
-  measurement in Sprint 5 matters.
-- **What that means in practice:** the q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; createDefaultAdapters() cannot load the production model unless the application passes the sessionOptions option; the descriptor field for this is an architect decision for Sprint 3. The sessionOptions allow-list stays at that one key.
+  its optimised copy do not fit the 4 GB WebAssembly heap. Model descriptor 0.1.0 had no field for session
+  options, so the Sprint 2 adapter took `sessionOptions: { graphOptimizationLevel }` from the application.
+  Model descriptor 0.2.0 (Sprint 3) carries it: the q4f16 descriptor in `docs/examples/` has
+  `sessionOptions { graphOptimizationLevel: 'disabled' }`, which the adapter hands to ONNX Runtime
+  without the application passing `sessionOptions` (the application option still works, is deprecated,
+  and wins when given). It remains one more reason the 8 GB laptop measurement in Sprint 5 matters.
+- **What that means in practice:** the q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; since model descriptor 0.2.0 the q4f16 descriptor carries sessionOptions { graphOptimizationLevel: 'disabled' }, so createDefaultAdapters() loads it without the application passing sessionOptions. The sessionOptions allow-list stays at that one key.
 
 ## The decision rule (the lab's stricter rule)
 

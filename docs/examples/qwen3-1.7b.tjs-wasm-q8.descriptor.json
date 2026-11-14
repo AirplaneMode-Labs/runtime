@@ -1,5 +1,5 @@
 {
-  "spec": "airplanemode.model/0.1",
+  "spec": "airplanemode.model/0.2",
   "id": "qwen3-1.7b.tjs-wasm-q8",
   "engine": "transformers-js",
   "task": "text-generation",

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 demo/dist/
+devtools/dist/
 demo/public/
 coverage/
 playwright-report/
@@ -8,3 +9,5 @@ test-results/
 package-lock.json
 spec/vectors/*.txt
 test/fixtures/*.txt
+dist-pack/
+*.tgz

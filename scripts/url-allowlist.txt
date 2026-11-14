@@ -1,0 +1,9 @@
+# URL allow-list for scripts/pack-check.mjs.
+#
+# The packed dist/ must not contain an engine-default endpoint: huggingface.co, raw.githubusercontent.com,
+# cdn.jsdelivr.net or unpkg.com. A line of dist/ that contains one of them is accepted only when it also
+# contains a substring listed here, one per line, each with the reason after a '#'. Blank lines and lines
+# starting with '#' are ignored.
+#
+# Empty on purpose: the library never names these hosts. The only place they appear is the demo build,
+# where demo/engine-defaults.ts rewrites the engine's own defaults (test/tools/dist-url-inventory.mjs).

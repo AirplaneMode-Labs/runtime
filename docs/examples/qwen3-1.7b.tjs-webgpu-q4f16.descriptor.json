@@ -1,5 +1,5 @@
 {
-  "spec": "airplanemode.model/0.1",
+  "spec": "airplanemode.model/0.2",
   "id": "qwen3-1.7b.tjs-webgpu-q4f16",
   "engine": "transformers-js",
   "task": "text-generation",
@@ -42,6 +42,9 @@
     "chatTemplateKwargs": {
       "enable_thinking": false
     }
+  },
+  "sessionOptions": {
+    "graphOptimizationLevel": "disabled"
   },
   "source": {
     "repo": "onnx-community/Qwen3-1.7B-ONNX",

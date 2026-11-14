@@ -2,25 +2,25 @@
 // A runtimeWasm entry whose sha256 differs from the pin for its device is refused (bad_descriptor).
 // test/ort-pins.test.ts re-hashes the installed files and fails on drift.
 
-export const ORT_WEB_VERSION = '1.31.0-dev.20260914-8d85527a0';
+export const ORT_WEB_VERSION = '1.31.1';
 export const ORT_WASM_FILE = 'ort-wasm-simd-threaded.asyncify.wasm';
-export const ORT_WASM_SHA256 = '49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082';
+export const ORT_WASM_SHA256 = 'ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec';
 export const ORT_FACTORY_FILE = 'ort-wasm-simd-threaded.asyncify.mjs';
 export const ORT_FACTORY_SHA256 =
-  '0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611';
+  '59cf781530e1a16df2a291d78798e3ec1152467edaec402d6f9599d85047c302';
 
 /** One pin per execution device (identical while both paths load the same wasm variant). */
 export const ORT_PINS = {
   wasm: {
     wasmFile: 'ort-wasm-simd-threaded.asyncify.wasm',
-    wasmSha256: '49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082',
+    wasmSha256: 'ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec',
     factoryFile: 'ort-wasm-simd-threaded.asyncify.mjs',
-    factorySha256: '0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611',
+    factorySha256: '59cf781530e1a16df2a291d78798e3ec1152467edaec402d6f9599d85047c302',
   },
   webgpu: {
     wasmFile: 'ort-wasm-simd-threaded.asyncify.wasm',
-    wasmSha256: '49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082',
+    wasmSha256: 'ca319e9539cd0f1e291cf56074760121eaf39650f5dbf84b6e52c07f4b2944ec',
     factoryFile: 'ort-wasm-simd-threaded.asyncify.mjs',
-    factorySha256: '0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611',
+    factorySha256: '59cf781530e1a16df2a291d78798e3ec1152467edaec402d6f9599d85047c302',
   },
 } as const;

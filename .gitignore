@@ -1,6 +1,7 @@
 node_modules/
 dist/
 demo/dist/
+devtools/dist/
 demo/public/
 target/
 .venv/
@@ -23,3 +24,5 @@ coverage/
 
 # model caches (never committed)
 .cache/
+dist-pack/
+*.tgz
