@@ -54,6 +54,28 @@ export {
 export { CanonicalError, canonicalize, signedBytes, type CanonicalReason } from './canonical';
 export { compareSemver, parseSemver, type SemVer } from './semver';
 export { EventBus, newEvent, sessionId, type EventListener, type NewEventInput } from './events';
+export {
+  PhaseTimer,
+  emitMemorySample,
+  meterDownloads,
+  newLoadId,
+  sampleMemory,
+  type DownloadMeter,
+  type LoadHost,
+  type MemoryApi,
+  type MemorySample,
+  type MemoryScope,
+  type PhaseTimerOptions,
+} from './observability';
+export {
+  DEVTOOLS_DEFAULT_GLOBAL,
+  DEVTOOLS_MAX_BYTES,
+  DEVTOOLS_MAX_EVENTS,
+  DEVTOOLS_SNAPSHOT_SPEC,
+  exposeDevtoolsHook,
+  type DevtoolsEventSource,
+  type DevtoolsHookOptions,
+} from './devtools-hook';
 export { MockAdapter, MOCK_EMBEDDING_DIMS } from './backends/mock';
 export { Sha256, sha256, sha256Hex, toHex } from './sha256';
 export {

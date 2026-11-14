@@ -41,6 +41,22 @@ export {
   type TransformersModule,
 } from './transformers';
 export {
+  WorkerTransformersAdapter,
+  createWorkerAdapter,
+  type WorkerAdapterHandle,
+  type WorkerAdapterOptions,
+  type WorkerLike,
+} from './worker-adapter';
+export {
+  WORKER_POLICY_NAME,
+  bootstrapSource,
+  createBootstrapUrl,
+  getWorkerUrlPolicy,
+  resolveWorkerUrl,
+} from './worker-bootstrap';
+export { AdapterEntryError } from './entry-error';
+export { DescriptorError } from './descriptor';
+export {
   ChromePromptAdapter,
   BUILTIN_MODEL_ENTRY,
   BUILTIN_MODEL_ID,

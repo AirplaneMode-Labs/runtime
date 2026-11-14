@@ -1,0 +1,305 @@
+/**
+ * The Transformers.js engine inside the worker (backend-adapter.md R2w, R7, R12). One TjsEngine serves
+ * exactly one load: the page starts a fresh worker per load() and terminates it afterwards.
+ *
+ * Order of work on `init`: the egress guard sentinel is checked FIRST (without it nothing runs); the
+ * verifiedPrefix must be absolute, end in '__airplanemode/verified/', carry no query or fragment and
+ * share its origin with this script; every file's Blob must have exactly the manifest size (a Blob that
+ * is not readable or has another size is 'integrity'); then hand-off (register the Blobs the page
+ * re-hashed, read the wasm binary), the engine is configured exactly as on the main thread
+ * (configureEnv with the shim built from an EXPLICIT location, never from self.location, which is
+ * non-hierarchical in a blob worker), and pipeline() creates the session.
+ *
+ * The worker never opens storage and never fetches; it posts plain payloads (phases, memory, tokens,
+ * the result) and the page builds the events (R12). It posts an enum error code and nothing else on
+ * failure: engine text stays here.
+ */
+
+import { AdapterError, type AdapterErrorCode } from '../../spec/backend-adapter';
+import type { ModelDescriptor } from '../../spec/model-descriptor';
+import {
+  assertEnv,
+  buildSessionOptions,
+  configureEnv,
+  expectedThreads,
+  generateText,
+  now,
+  usableModelId,
+  type EnginePipeline,
+  type EnvContext,
+  type TransformersModule,
+} from '../backends/tjs-core';
+import {
+  createVerifiedFetch,
+  registerVerifiedFiles,
+  type VerifiedFileSet,
+} from '../backends/verified-files';
+import { sampleMemory } from '../observability';
+import { isEgressGuardInstalled, setGuardedFetch } from './egress-guard';
+import type { GenerateMessage, InitMessage } from './protocol';
+
+const VERIFIED_SUFFIX = '__airplanemode/verified/';
+
+export interface TjsEngineDeps {
+  /** Posts a plain object to the page. */
+  post(message: Record<string, unknown>): void;
+  /** Loads the engine module. Default: import('@huggingface/transformers'). */
+  loadEngine?: () => Promise<TransformersModule>;
+  /** The origin of this worker script: new URL(import.meta.url).origin. */
+  selfOrigin: string;
+  /** The scope that carries the guard sentinel. Default: globalThis. */
+  scope?: object;
+}
+
+const defaultLoader = (): Promise<TransformersModule> =>
+  import('@huggingface/transformers') as unknown as Promise<TransformersModule>;
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+function codeOf(e: unknown): AdapterErrorCode {
+  if (e instanceof AdapterError) return e.code;
+  // S1-073: an unreadable Blob (the OPFS snapshot changed) is an integrity failure
+  if (e !== null && typeof e === 'object' && (e as { name?: unknown }).name === 'NotReadableError')
+    return 'integrity';
+  return 'backend';
+}
+
+export class TjsEngine {
+  private readonly post: (m: Record<string, unknown>) => void;
+  private readonly loadEngine: () => Promise<TransformersModule>;
+  private readonly selfOrigin: string;
+  private readonly scope: object;
+  private mod: TransformersModule | undefined;
+  private generator: EnginePipeline | undefined;
+  private env: EnvContext | undefined;
+  private descriptor: ModelDescriptor | undefined;
+  private set: VerifiedFileSet | undefined;
+  private current: { id: number; ctl: AbortController } | undefined;
+  private firstTokenPosted = false;
+  private inited = false;
+
+  constructor(deps: TjsEngineDeps) {
+    this.post = (m) => deps.post({ v: 1, ...m });
+    this.loadEngine = deps.loadEngine ?? defaultLoader;
+    this.selfOrigin = deps.selfOrigin;
+    this.scope = deps.scope ?? globalThis;
+  }
+
+  /** Dispatches a message from the page. Never throws. */
+  async handle(raw: unknown): Promise<void> {
+    try {
+      if (!isRecord(raw) || raw['v'] !== 1 || typeof raw['type'] !== 'string') return;
+      switch (raw['type']) {
+        case 'init':
+          return await this.init(raw as unknown as InitMessage);
+        case 'generate':
+          return await this.generate(raw as unknown as GenerateMessage);
+        case 'abort':
+          if (this.current && this.current.id === raw['id']) this.current.ctl.abort();
+          return;
+        case 'unload':
+          return await this.unload();
+        default:
+          return;
+      }
+    } catch (e) {
+      this.post({ type: 'error', code: codeOf(e) });
+    }
+  }
+
+  private fail(e: unknown): void {
+    this.post({ type: 'error', code: codeOf(e) });
+  }
+
+  private checkInit(m: InitMessage): { prefix: URL } {
+    if (!isEgressGuardInstalled(this.scope))
+      throw new AdapterError('backend', 'the egress guard is not installed in this worker');
+    if (this.inited) throw new AdapterError('backend', 'this worker already loaded a model');
+    if (typeof m.verifiedPrefix !== 'string')
+      throw new AdapterError('backend', 'no verified prefix');
+    let prefix: URL;
+    try {
+      prefix = new URL(m.verifiedPrefix);
+    } catch {
+      throw new AdapterError('backend', 'the verified prefix is not a URL');
+    }
+    if (
+      (prefix.protocol !== 'https:' && prefix.protocol !== 'http:') ||
+      prefix.search !== '' ||
+      prefix.hash !== '' ||
+      /[?#]/.test(m.verifiedPrefix) ||
+      !prefix.pathname.endsWith(`/${VERIFIED_SUFFIX}`) ||
+      prefix.href !== m.verifiedPrefix ||
+      prefix.origin !== this.selfOrigin
+    )
+      throw new AdapterError('backend', 'the verified prefix is not usable from this worker');
+    if (
+      !Array.isArray(m.files) ||
+      m.files.length === 0 ||
+      typeof m.runtimeWasm !== 'string' ||
+      !isRecord(m.descriptor) ||
+      typeof m.descriptorEntryId !== 'string' ||
+      !usableModelId(m.descriptorEntryId) ||
+      (m.device !== 'wasm' && m.device !== 'webgpu') ||
+      typeof m.ortFactoryUrl !== 'string'
+    )
+      throw new AdapterError('backend', 'the init message is not usable');
+    for (const f of m.files) {
+      if (!isRecord(f) || typeof f.path !== 'string' || typeof f.entryId !== 'string')
+        throw new AdapterError('backend', 'a file of the init message is not usable');
+      if (!(f.blob instanceof Blob) || !Number.isSafeInteger(f.size) || f.blob.size !== f.size)
+        throw new AdapterError(
+          'integrity',
+          'a file does not have the size its manifest entry promised',
+        );
+    }
+    if (!m.files.some((f) => f.path === m.runtimeWasm))
+      throw new AdapterError('backend', 'the runtime wasm is not among the files');
+    return { prefix };
+  }
+
+  private async init(m: InitMessage): Promise<void> {
+    try {
+      const { prefix } = this.checkInit(m);
+      this.inited = true;
+      const d = m.descriptor;
+      this.descriptor = d;
+
+      // hand-off: the Blobs the page re-hashed, the wasm binary the engine is given
+      const t0 = now();
+      const wasm = m.files.find((f) => f.path === m.runtimeWasm)!;
+      const wasmBinary = await wasm.blob.arrayBuffer();
+      this.set = registerVerifiedFiles(
+        prefix.pathname,
+        m.descriptorEntryId,
+        m.files.map((f) => ({ path: f.path, blob: f.blob, sha256: f.sha256 })),
+      );
+      let bytes = 0;
+      for (const f of m.files) bytes += f.blob.size;
+      this.post({ type: 'phase', phase: 'handoff', durationMs: Math.max(0, now() - t0), bytes });
+
+      // the engine's network function is the verified shim, built from an explicit location
+      const shim = createVerifiedFetch({
+        adapterId: m.adapter,
+        prefix: prefix.pathname,
+        location: { href: m.verifiedPrefix, origin: prefix.origin, pathname: prefix.pathname },
+        events: {
+          emit: (e) => this.post({ type: 'egress', origin: String(e.attrs['origin'] ?? '') }),
+        },
+      });
+      setGuardedFetch(shim as never);
+      const mod = await this.loadEngine();
+      this.mod = mod;
+      // localModelPath must stay a PATH: the engine treats an absolute http URL as a remote location and
+      // skips its local-file check (so it would find no tokenizer). The shim resolves the path against
+      // the explicit location above, which is how it reaches the page origin from a blob worker.
+      const envCtx: EnvContext = {
+        prefix: prefix.pathname,
+        shim,
+        ortFactoryUrl: m.ortFactoryUrl,
+        wasmBinary,
+        numThreads: expectedThreads(),
+      };
+      this.env = envCtx;
+      configureEnv(mod.env, envCtx);
+      assertEnv(mod.env, envCtx);
+
+      const sessionOptions = buildSessionOptions(
+        m.sessionOptions as Parameters<typeof buildSessionOptions>[0],
+        d,
+      );
+      const t1 = now();
+      this.generator = await mod.pipeline(d.task, m.descriptorEntryId, {
+        device: m.device,
+        dtype: d.dtype,
+        local_files_only: true,
+        ...(sessionOptions ? { session_options: sessionOptions } : {}),
+      });
+      this.post({ type: 'phase', phase: 'session', durationMs: Math.max(0, now() - t1) });
+      this.postMemory('after_session');
+      this.post({ type: 'ready' });
+    } catch (e) {
+      this.cleanup();
+      this.fail(e);
+    }
+  }
+
+  private postMemory(at: 'after_session' | 'after_first_token'): void {
+    const s = sampleMemory('worker', at, undefined);
+    this.post({
+      type: 'memory',
+      scope: 'worker',
+      at: s.at,
+      api: s.api,
+      usedJsHeap: s.usedJsHeap,
+      totalJsHeap: s.totalJsHeap,
+      jsHeapLimit: s.jsHeapLimit,
+      wasmMemory: s.wasmMemory,
+    });
+  }
+
+  private async generate(m: GenerateMessage): Promise<void> {
+    const { mod, generator, descriptor, env } = this;
+    if (!mod || !generator || !descriptor || !env)
+      throw new AdapterError('not_loaded', 'not loaded');
+    if (!Number.isSafeInteger(m.id) || m.id < 0 || !isRecord(m.opts))
+      throw new AdapterError('backend', 'the generate message is not usable');
+    if (descriptor.task !== 'text-generation')
+      throw new AdapterError('unsupported_operation', 'this model does not generate text');
+    const ctl = new AbortController();
+    this.current = { id: m.id, ctl };
+    try {
+      assertEnv(mod.env, env);
+      const o = m.opts;
+      const r = await generateText(mod, generator, descriptor, m.prompt, {
+        ...(typeof o.maxTokens === 'number' ? { maxTokens: o.maxTokens } : {}),
+        ...(typeof o.temperature === 'number' ? { temperature: o.temperature } : {}),
+        ...(typeof o.topP === 'number' ? { topP: o.topP } : {}),
+        ...(typeof o.seed === 'number' ? { seed: o.seed } : {}),
+        ...(Array.isArray(o.stop)
+          ? { stop: o.stop.filter((s): s is string => typeof s === 'string') }
+          : {}),
+        signal: ctl.signal,
+        onToken: (text) => this.post({ type: 'token', id: m.id, text }),
+      });
+      if (!this.firstTokenPosted && r.firstTokenMs !== undefined) {
+        this.firstTokenPosted = true;
+        this.post({ type: 'phase', phase: 'first_token', durationMs: r.firstTokenMs });
+        this.postMemory('after_first_token');
+      }
+      this.post({
+        type: 'done',
+        id: m.id,
+        result: {
+          text: r.text,
+          finishReason: r.finishReason,
+          usage: { promptTokens: r.inTokens, completionTokens: r.outTokens },
+          timings: {
+            prefillMs: r.prefillMs,
+            decodeMs: r.decodeMs,
+            tokensPerSecond: r.tokensPerSecond,
+            ...(r.firstTokenMs !== undefined ? { firstTokenMs: r.firstTokenMs } : {}),
+          },
+        },
+      });
+    } finally {
+      this.current = undefined;
+    }
+  }
+
+  private cleanup(): void {
+    this.set?.release();
+    this.set = undefined;
+  }
+
+  async unload(): Promise<void> {
+    try {
+      await this.generator?.dispose?.();
+    } catch {
+      // best effort: the page terminates this worker next
+    }
+    this.generator = undefined;
+    this.cleanup();
+  }
+}
