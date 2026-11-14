@@ -3,11 +3,124 @@
 All notable changes to `@airplanemode/runtime` are recorded here. The format is based on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/). Nothing is released yet; the package version is
-`0.1.0-dev` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+`0.2.0-alpha.0` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0-alpha.0] - UNRELEASED (not tagged, not published)
+
+Sprint 3 (alpha): contracts 0.3.0, cache-only at `acquire()`, the integrity reason, observability and a
+DevTools panel, packaging. Nothing is published, tagged or reserved; the npm scope `@airplanemode` is a
+placeholder. Entries below the Sprint 3 groups are the Sprint 1 and 2 work that this alpha also ships.
+
 ### Added
+
+- Spec release 0.3.0 (draft): backend adapter 0.3.0 (`cacheOnly`, the codes `integrity` and `not_cached`,
+  `firstTokenMs`, `host`, rules R2w, R3w and R7 to R13), event 0.1.2 and model descriptor 0.2.0 with 3
+  positive and 14 negative shared vectors; `spec/CHANGELOG.md` has the detail (D1-01, S1-053, S1-066,
+  T1-S2-07, T1-S2-01, T1-S2-02).
+- `AcquireOptions.cacheOnly` enforced inside `AssetManager.acquire()`: a missing, row-only, truncated or
+  `.part`-only asset rejects `not_cached` before any request, with no Range header and no
+  `asset.download.*` event; the chain loads a rung that needs no download cache-only (Sprint 3 spec touch;
+  D1-02, S1-053).
+- The `integrity` reason: a file that fails its hash check at download or at the R2 re-hash is
+  `AdapterError('integrity')` naming the manifest entry, and `loadWithFallback()` never acquires it again
+  in the same call (the next rung is recorded failed with reason `integrity`, no consent question, one GET
+  per path); the message reads "a downloaded file failed its integrity check" (D1-02, T1-S2-07).
+- Model descriptor `sessionOptions.graphOptimizationLevel` reaches ONNX Runtime as a fresh object literal;
+  `createDefaultAdapters()` loads Qwen3-1.7B q4f16 without the application passing `sessionOptions`; the
+  `chatTemplateKwargs` keys `__proto__`, `constructor` and `prototype` are refused (D1-03).
+- Observability: `newLoadId()`, `PhaseTimer`, `sampleMemory()` and `emitMemorySample()`; the main-thread
+  Transformers adapter emits one `model.load.phase` per phase (acquire, verify, handoff, session,
+  first_token) and `memory.sample` at before-load, after-session and after-first-token under one `loadId`
+  with `host: 'main'`; `GenerateResult.timings.firstTokenMs`; memory figures are read from
+  `performance.memory` and are null where it is absent, never estimated (D1-06).
+- `exposeDevtoolsHook(bus)` (opt-in, one frozen non-enumerable global; nothing in `src/` calls it) and the
+  `airplanemode.devtools/0.1` snapshot (at most 1000 events and 2 MiB) (D1-06).
+- `devtools/`: a Manifest V3 Chrome DevTools extension, the Airplane Mode panel, with no permissions and
+  `connect-src 'none'`; `npm run devtools:build`; Playwright proof in installed Chrome, renderer and the
+  real DevTools window (`npm run test:devtools`, `RUNTIME_DEVTOOLS_HEADED=1`) (D1-07).
+- The engine in a dedicated module worker (`createTransformersAdapter({ workerUrl })`,
+  `createDefaultAdapters({ workerUrl })`, `dist/worker/engine-worker.js` as `@airplanemode/runtime/worker`):
+  one fresh worker per `load()` started from a `blob:` bootstrap (`'import ' + JSON.stringify(abs) + ';'`,
+  validated before `URL.createObjectURL`, through the singleton Trusted Types policy `airplanemode-worker`),
+  the page does R1 and R2 and posts the same re-hashed Blobs, an egress guard is the first import of the
+  worker (fetch on every prototype owner, XHR, WebSocket, WebTransport, EventSource, `Worker`,
+  `SharedWorker`, `importScripts`, `serviceWorker.register`, `Cache.add` and `addAll`, all locked
+  non-writable and non-configurable), every worker message is validated strictly on the page (R13),
+  an abort that is not answered within 250 ms terminates the worker, and the asset holds, the bootstrap
+  URL and the registry keys are released after every terminate (D1-04, T1-S2-01, T1-S2-02).
+- `--flip-byte <url path>:<offset>` on the range test server, and an isolation fixture whose WebGPU
+  descriptor names a malformed ONNX file (`model-fixture.mjs --isolation`) (D1-04).
+- Trusted Types on `demo/models.html`: `require-trusted-types-for 'script'` with the single policy
+  `airplanemode-worker`, no `allow-duplicates`, no default policy; `worker-src 'self' blob:`
+  (D1-09).
+- The backend demo page: an engine picker (Auto, Transformers.js WebGPU, Transformers.js WebAssembly), an
+  "Engine runs in a worker" line driven by `backend.worker` events and a "Load timing and memory"
+  read-out built with the DevTools panel's own model and view; `pages.yml` records the built demo's size
+  per model and refuses a build over 1 GB (D1-11).
+- Alpha packaging: `0.2.0-alpha.0`, an exports map with types, `sideEffects` for the worker files,
+  `scripts/pack-check.mjs` (`npm run pack:check`: contents, no source map, no engine-default URL, offline
+  install into a fresh empty directory with an empty npm cache, a real Node call), `test:install`, and
+  `docs/release.md` with the seven definition-of-done rows (D1-10).
+
+### Changed
+
+- The published tarball no longer carries source maps, `spec/vectors/` or `spec/examples/`, and `tsup`
+  keeps `@huggingface/transformers`, `onnxruntime-web`, `onnxruntime-common` and `@mlc-ai/web-llm`
+  external (D1-10).
+- `model.load` and `model.load.failed` carry `loadId` and `host`; `model.generate` carries `firstTokenMs`
+  and `host`; `backend.select` may report reason `integrity` (Event 0.1.2) (D1-06, D1-02).
+- `loadDescriptor()` and the adapters read a descriptor with both wire strings `airplanemode.model/0.1`
+  and `/0.2`; a rejection is a `DescriptorError` (an `AdapterError` `bad_descriptor`) with a `reason`
+  (D1-01).
+- `onnxruntime-web` is the stable 1.31.1 (a `package.json` override of the nightly the engine declares);
+  `src/backends/ort-pins.ts` pins its wasm and factory, and `PROVENANCE.json` of a `DEMO_MODELS=1` build
+  carries an `ort` block with the lockfile integrity, the attestation status and the cross-check
+  (D1-08, S1-055).
+- The engine-independent parts of the Transformers adapter moved to `src/backends/tjs-core.ts` (shared by
+  the main-thread adapter and the worker host); the models page of the demo now runs the engine in a worker
+  and its CSP gains `worker-src blob:` (D1-04).
+- The Transformers adapter acquires every file, then re-hashes every file, so the two phases are timed on
+  their own; the application option `sessionOptions` is deprecated in favour of the descriptor field (D1-06,
+  D1-03).
+
+### Fixed
+
+- T1-S2-01 and T1-S2-02: a WebGPU failure after session creation no longer poisons WebAssembly in the same
+  page, and the page no longer freezes on WebAssembly nor waits for the next yield to abort, when the
+  engine runs in the worker host; the main-thread adapter keeps both limitations and says so (D1-04).
+- S1-055: the nightly `-dev` onnxruntime-web is replaced by the stable 1.31.1 (D1-08).
+- T1-S2-07: a file that fails its hash check was reported as "could not be started" and downloaded again by
+  the next rung (D1-02).
+- S1-053: cache-only was enforced in the chain only; `acquire()` could still download a file that vanished
+  between the plan and the load (D1-02).
+- S1-066: `asset.hold.unknown` was emitted but not reserved in `RUNTIME_EVENT_NAMES` (D1-01).
+
+### Security
+
+- Worker egress (R3w): the guard is the first import and locks its replacements; dynamic `import()` and
+  FontFace loads are stopped only by the inherited CSP, which Chrome applies to blob workers (measured:
+  `script-src-elem` and `font-src` violations, no request left the browser); a `workerUrl` with a quote,
+  newline, backslash, `javascript:`, `data:`, another origin or a query string is refused before the Blob
+  is made; worker messages are untrusted and `error.cause` and every other worker string are dropped (D1-04,
+  S1-068 to S1-071).
+- Trusted Types are required on the models page, with zero violations in the page and the worker on both
+  rungs (D1-09).
+- The DevTools panel reads the page with one constant expression through property descriptors (a page
+  getter is never invoked), rechecks type and size, validates every event, writes text only and makes no
+  network request; its manifest declares no permissions, host permissions, content scripts, background,
+  web-accessible resources or external connections (D1-07, S1-070).
+- `chatTemplateKwargs` and `sessionOptions` are copied into fresh object literals, never with
+  `Object.assign`, `for...in` or spread, and prototype-polluting keys are refused (D1-03).
+- The packed `dist/` is checked for engine-default endpoints (huggingface.co, raw.githubusercontent.com,
+  cdn.jsdelivr.net, unpkg.com) by an allow-list that is empty (D1-10).
+
+### Earlier work that the alpha ships (Sprint 1 and 2)
+
+#### Added
 
 - Backend adapters behind the `BackendAdapter` contract 0.2.0, exported from
   `@airplanemode/runtime/backends` (the main entry never imports an engine): a Transformers.js adapter
@@ -49,7 +162,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   helpers `demo/build-id.ts`, `demo/limits.ts` and `demo/engine-defaults.ts`; the loopback hook
   `__models.run` takes `abortAfterTokens` (T1-S2-01, S1-053, T1-S2-08).
 
-### Changed
+#### Changed
 
 - `BackendAdapter` 0.2.0 (see `spec/CHANGELOG.md`): `device`, `available()`, `LoadOptions.onProgress`,
   `AssetSource.acquire(entryId, opts)`, three new error codes; `load(entry)` takes the descriptor entry;
@@ -64,7 +177,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   `max(estimate().usage, accounted bytes)` with `usageSource` (T1R2-01, T3-12, T3-13, T1R2-02).
 - Spec release 0.2.0 (draft): shared negative vector `neg-bad-alg-token.json` (D1-01).
 
-### Fixed
+#### Fixed
 
 - The asset manager ignores `Content-Length` when a response carries a `Content-Encoding` other than
   `identity`: GitHub Pages gzips JSON on the fly, so the header counted compressed bytes and every
@@ -122,7 +235,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   install scripts and describe `sharp` as prebuilt native code from the optional `@img/*` packages with
   no install script (S1-067).
 
-### Added (Sprint 1)
+#### Added (Sprint 1)
 
 - Public demo at <https://airplanemode-labs.github.io/runtime/> with a build-time-signed synthetic
   fixture: `demo/tools/make-fixture.mjs` writes three xorshift64* streams and a manifest signed by a
@@ -149,7 +262,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
 - Package skeleton: tsup build (ESM + d.ts), Vitest, Playwright on the installed Chrome
   (`channel: "chrome"`), three-OS CI with pinned actions, Apache-2.0 LICENSE and NOTICE.
 
-### Fixed (Sprint 1)
+#### Fixed (Sprint 1)
 
 - Quota usage is never `navigator.storage.estimate().usage` alone (T1R-01): every quota decision
   (proactive `makeRoom` before a download or commit, and the evict-and-retry after a
@@ -165,7 +278,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   A complete part (`bytesWritten == size`) is committed without a Range request.
 - The abort-then-resume test locates the resume request by predicate rather than index (BUG-T2-2).
 
-### Security
+#### Security
 
 - Model bytes reach an engine only from files the asset manager fetched and SHA-256-verified against a
   signed manifest entry: the engine's network function is a shim that serves only verified Blobs, the
@@ -208,7 +321,7 @@ All notable changes to `@airplanemode/runtime` are recorded here. The format is 
   the Google Chrome preinstalled on ubuntu-latest through Playwright channel "chrome", log
   `google-chrome --version` and fail when it is missing. Configured, not yet executed (S1-058).
 
-### Security (Sprint 1)
+#### Security (Sprint 1)
 
 - Every store write goes through one helper that maps the platform `QuotaExceededError` to
   `AssetError 'quota'` and anything else to `AssetError 'store'` (S1-019).

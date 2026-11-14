@@ -44,7 +44,8 @@ describe('documentation hygiene', () => {
       .find((l) => l.includes('Quota eviction') && l.includes('IndexedDB'));
     expect(row).toBeDefined();
     expect(row).toContain('6252 ms');
-    expect(row).not.toContain('not measured');
+    expect(row).toMatch(/\| not measured\s*\|\s*$/); // the 8 GB column only
+    expect(row!.replace(/\| not measured\s*\|\s*$/, '')).not.toContain('not measured');
     expect(row).toContain('placeholder');
   });
 
@@ -132,6 +133,8 @@ describe('documentation hygiene', () => {
       ['qwen3-1.7b.tjs-wasm-q8.descriptor.json', ['wasm'], 'q8', 'onnx/model_quantized.onnx'],
     ] as const) {
       const d = JSON.parse(read(`docs/examples/${file}`)) as {
+        spec: string;
+        sessionOptions?: unknown;
         devices: string[];
         dtype: string;
         files: { path: string }[];
@@ -141,6 +144,11 @@ describe('documentation hygiene', () => {
       };
       const r = validateModelDescriptor(d);
       expect(r.errors, file).toEqual([]);
+      // D1-03: both docs descriptors are 0.2; only the q4f16 one needs graphOptimizationLevel disabled
+      expect(d.spec, file).toBe('airplanemode.model/0.2');
+      expect(d.sessionOptions, file).toEqual(
+        dtype === 'q4f16' ? { graphOptimizationLevel: 'disabled' } : undefined,
+      );
       expect(d.devices).toEqual(devices);
       expect(d.dtype).toBe(dtype);
       expect(d.files.map((f) => f.path)).toContain(onnx);
@@ -162,12 +170,12 @@ describe('fix round 1: honest wording', () => {
     'Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.';
   const LOADED_ONCE =
     'Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).';
-  const HASH_FAIL =
-    'A model file that fails its hash check is reported as "could not be started", and the next rung downloads it again; a distinct integrity reason is planned with the Sprint 3 event minor.';
+  // Sprint 3: the worker host (default in the demo) removes both limitations; they remain true for the
+  // main-thread adapter, which is what createDefaultAdapters() builds without a workerUrl.
   const POISON =
-    'If the WebGPU engine fails after it has started creating a session (for example out of memory), WebAssembly cannot start in the same page until it is reloaded; per-rung engine isolation is planned for Sprint 3.';
+    'Main-thread adapter only: if the WebGPU engine fails after it has started creating a session (for example out of memory), WebAssembly cannot start in the same page until it is reloaded; the worker host (a workerUrl) starts a fresh engine per rung and has no such limit.';
   const MAIN_THREAD =
-    'On WebAssembly, generation runs on the main thread: the tab does not repaint or run timers until generation ends, and an AbortSignal fired from a timer or a button is honoured only between engine steps that yield; abort from onToken works. Moving the engine off the main thread is planned for Sprint 3.';
+    'Main-thread adapter only: on WebAssembly, generation runs on the main thread: the tab does not repaint or run timers until generation ends, and an AbortSignal fired from a timer or a button is honoured only between engine steps that yield; abort from onToken works. The worker host (a workerUrl) keeps the page responsive and lands an abort within about 250 ms by terminating the worker.';
 
   it('README.md, demo/models.html and docs/model-choice.md carry the model-card sentence verbatim on one line, then the loaded-once sentence', () => {
     for (const rel of ['README.md', 'demo/models.html', 'docs/model-choice.md']) {
@@ -181,16 +189,17 @@ describe('fix round 1: honest wording', () => {
     }
   });
 
-  it('model-choice.md and the README state the sessionOptions finding and the Sprint 3 decision', () => {
+  it('model-choice.md and the README state the sessionOptions finding and its Sprint 3 resolution (model descriptor 0.2.0)', () => {
     for (const rel of ['README.md', 'docs/model-choice.md']) {
       const d = flat(read(rel));
       expect(d, rel).toContain("graphOptimizationLevel 'disabled'");
       expect(d, rel).toContain('std::bad_alloc');
       expect(d, rel).toContain('4 GB wasm32 heap');
       expect(d, rel).toContain(
-        'createDefaultAdapters() cannot load the production model unless the application passes the sessionOptions option',
+        "the q4f16 descriptor carries sessionOptions { graphOptimizationLevel: 'disabled' }, so createDefaultAdapters() loads it without the application passing sessionOptions",
       );
-      expect(d, rel).toContain('architect decision for Sprint 3');
+      expect(d, rel).not.toContain('cannot load the production model unless');
+      expect(d, rel).not.toContain('architect decision for Sprint 3');
       expect(d, rel).toContain('The sessionOptions allow-list stays at that one key.');
     }
   });
@@ -213,34 +222,38 @@ describe('fix round 1: honest wording', () => {
       'evidence/sprint-2/T1/legs/rep1-wasm.json',
     ])
       expect(d, s).toContain(s);
-    expect(d).toContain('8 GB Windows no-GPU laptop (any of the above) | not measured');
+    expect(d).toMatch(/\| Scenario[^\n]*\| 8 GB Windows no-GPU laptop \|/);
+    expect(d).not.toContain('8 GB Windows no-GPU laptop (any of the above)');
   });
 
-  it('README Limitations: the hash-failure line (T1-S2-07), the poisoned-engine line (T1-S2-01) and the main-thread line (T1-S2-02)', () => {
+  it('README Limitations: the poisoned-engine line (T1-S2-01) and the main-thread line (T1-S2-02) stay until the worker host lands; the hash-failure line (T1-S2-07) is gone', () => {
     const readme = read('README.md');
     const limitations = readme.slice(
       readme.indexOf('## Limitations'),
       readme.indexOf('## Security'),
     );
     expect(limitations.length).toBeGreaterThan(100);
-    for (const sentence of [HASH_FAIL, POISON, MAIN_THREAD])
-      expect(flat(limitations)).toContain(sentence);
+    for (const sentence of [POISON, MAIN_THREAD]) expect(flat(limitations)).toContain(sentence);
+    // T1-S2-07 is closed in Sprint 3: the hash-failure limitation is gone and the fix is in the CHANGELOG
+    expect(flat(limitations)).not.toContain('is reported as "could not be started"');
   });
 
-  it('spec/backend-adapter.md carries the main-thread limitation as an informative paragraph, and spec/CHANGELOG.md records it under 0.2.0 (T1-S2-02)', () => {
+  it('spec/backend-adapter.md rewrites the main-thread limitation for 0.3.0, and spec/CHANGELOG.md recorded it under 0.2.0 (T1-S2-02)', () => {
     const md = flat(read('spec/backend-adapter.md'));
-    expect(md).toContain('Known limitation (0.2.0 draft)');
-    expect(md).toContain(MAIN_THREAD);
+    expect(md).toContain('Known limitation (0.3.0 draft)');
+    expect(md).toContain('the main-thread engine adapter');
     const log = read('spec/CHANGELOG.md');
     const section = log.slice(log.indexOf('## [0.2.0]'));
     expect(flat(section)).toContain('T1-S2-02');
     expect(flat(section)).toContain('Known limitation');
   });
 
-  it('models.html: the not-yet box says the page freezes while WebAssembly generates, and the WASM path keeps maxTokens at 32 or less (T1-S2-02)', () => {
+  it('models.html: the not-yet box no longer says the page freezes (the engine runs in a worker, D1-04) and the WASM path keeps maxTokens at 32 or less', () => {
     const html = flat(read('demo/models.html'));
     const box = html.slice(html.indexOf('What this demo does not do yet'));
-    expect(box).toMatch(/freezes while WebAssembly generates/);
+    expect(box).not.toMatch(/freezes while WebAssembly generates/);
+    // the line itself is written by the page when a backend.worker ready event arrives
+    expect(read('demo/backend-panel.ts')).toContain('The engine runs in a worker');
     expect(maxTokensFor('wasm')).toBeLessThanOrEqual(32);
     expect(maxTokensFor('wasm')).toBeGreaterThan(0);
     expect(maxTokensFor('webgpu')).toBeGreaterThanOrEqual(maxTokensFor('wasm'));
@@ -289,7 +302,8 @@ describe('fix round 1: honest wording', () => {
 
   it('CHANGELOG.md has a bullet for each fix, ending with the id, and the S1-053 bullet names the Sprint 3 cacheOnly option', () => {
     const log = read('CHANGELOG.md');
-    const from = log.indexOf('## [Unreleased]');
+    // since Sprint 3 the unreleased work lives under the 0.2.0-alpha.0 heading
+    const from = log.indexOf('## [0.2.0-alpha.0]');
     const next = log.indexOf('\n## [', from + 5);
     const unreleased = log.slice(from, next === -1 ? undefined : next);
     // a bullet is a "- " line plus its continuation lines; it must end with "(... <id> ...)."
@@ -318,5 +332,18 @@ describe('fix round 1: honest wording', () => {
     expect(s053, 'the S1-053 bullet names AcquireOptions.cacheOnly').toBeDefined();
     expect(s053).toContain('AcquireOptions.cacheOnly');
     expect(s053).toContain('Sprint 3');
+  });
+});
+
+describe('D1-03: docs describe the descriptor sessionOptions', () => {
+  const flat = (x: string) => x.replace(/\s+/g, ' ');
+  it('docs/examples/README.md and docs/model-choice.md say the 1.7B q4f16 descriptor carries graphOptimizationLevel disabled and that createDefaultAdapters needs no sessionOptions', () => {
+    const examples = flat(read('docs/examples/README.md'));
+    expect(examples).toContain('airplanemode.model/0.2');
+    expect(examples).toContain("sessionOptions { graphOptimizationLevel: 'disabled' }");
+    const choice = flat(read('docs/model-choice.md'));
+    expect(choice).toContain("sessionOptions { graphOptimizationLevel: 'disabled' }");
+    expect(choice).toContain('without the application passing sessionOptions');
+    expect(choice).not.toContain('the application passes it');
   });
 });

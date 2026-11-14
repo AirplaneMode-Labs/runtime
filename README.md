@@ -8,15 +8,45 @@ Labs is built on.
 Package names use the placeholder scope `@airplanemode` / crate names `<repo>` until the handles are
 reserved; nothing is published yet.
 
-Pre-alpha, `0.1.0-dev`, no release and no tag. Sprint 1 delivered the capability profile, the asset
-manager and the first contracts; Sprint 2 adds the backend adapters (Transformers.js on WebGPU and
-WebAssembly, the Chrome Prompt API), the descriptor and the fallback chain, with contracts 0.2.0 under
-[`spec/`](spec/README.md). The WebLLM backend and the observability panel are later sprints; see
-Limitations.
+## Status
+
+**Runtime `0.2.0-alpha.0`: alpha, not tagged: no API stability promise before the beta (Sprint 5).**
+Sprint 1 delivered the capability profile, the asset manager and the first contracts; Sprint 2 the
+backend adapters (Transformers.js on WebGPU and WebAssembly, the Chrome Prompt API), the descriptor and the
+fallback chain. Sprint 3 (alpha) adds spec release 0.3.0 (draft), cache-only enforced at `acquire()`, a
+distinct `integrity` failure reason, descriptor-carried ONNX Runtime session options, the engine in a
+dedicated worker (one per load, with an egress guard and strictly validated messages), model-load timing
+and memory events, an opt-in DevTools hook and a real Chrome DevTools panel (`devtools/`), Trusted Types
+on the demo's backend page, the stable onnxruntime-web 1.31.1 (S1-055), and the packaging below. WebLLM
+did not land (Limitations); nothing is published, tagged or reserved.
 
 ## Install
 
-Not published yet. From a clone:
+Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.
+
+Alpha, not tagged. The tarball is built and proven by `npm run pack:check`: it packs, checks the file list
+(only `dist/`, `spec/` without the test vectors and examples, `LICENSE`, `NOTICE`, `README.md` and
+`package.json`; no source map, no lifecycle script, no file over 5 MB, no engine-default URL in `dist/`),
+installs it into a fresh empty directory and calls it:
+
+```sh
+npm run pack:check                       # builds, packs, installs offline, calls verifyManifest()
+# or by hand, from this clone:
+npm pack                                 # airplanemode-runtime-0.2.0-alpha.0.tgz
+mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
+npm i /path/to/airplanemode-runtime-0.2.0-alpha.0.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
+```
+
+Packed size 159,991 B in 31 files (evidence/sprint-3/D1/pack/pack-check.json); `node_modules` then holds exactly
+`@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
+
+**After the owner publishes** (not possible today; the scope is not reserved):
+
+```sh
+npm i @airplanemode/runtime
+```
+
+From a clone:
 
 ```sh
 npm ci
@@ -104,6 +134,26 @@ A model is a signed manifest entry (the **descriptor**, at most 64 KiB) that nam
 tokenizer, config and WebAssembly runtime files; see [`spec/backend-adapter.md`](spec/backend-adapter.md)
 and [`docs/model-choice.md`](docs/model-choice.md).
 
+### DevTools panel
+
+Model-load timing and memory are Event 0.1.2 events (`model.load.phase` for acquire, verify, hand-off,
+session and first token under one `loadId`, and `memory.sample` at before-load, after-session and
+after-first-token). A page opts in to the **Airplane Mode** DevTools panel with one call; nothing in this
+library calls it, and without the call the global does not exist:
+
+```ts
+import { EventBus, exposeDevtoolsHook } from '@airplanemode/runtime';
+const bus = new EventBus();
+const dispose = exposeDevtoolsHook(bus); // globalThis.__airplanemodeDevtools = { version: 1, snapshot() }
+// pass `bus` as `events` to loadWithFallback() and to the AssetManager
+```
+
+The panel is a real Manifest V3 Chrome DevTools extension in [`devtools/`](devtools/README.md) with no
+permissions and no network access. It installs from a clone only (not on the Chrome Web Store, not in the
+npm tarball): `npm run devtools:build`, then `chrome://extensions`, Developer mode, **Load unpacked**
+`devtools/dist`, then open DevTools on the page and choose the Airplane Mode tab. Memory figures are
+Chrome's `performance.memory`, read and never estimated; a dash means the browser did not expose it.
+
 ## How it works
 
 - **Manifest verification.** `parseManifest` rejects floats, integers above 2^53-1, digit-leading
@@ -181,9 +231,9 @@ and [`docs/model-choice.md`](docs/model-choice.md).
 
 ## Contracts
 
-This package is the home of the contracts, released together as spec release 0.2.0 (draft): Manifest
-0.1.0, Capability profile 0.1.0, Event 0.1.1, Storage API 0.1.0, Backend adapter 0.2.0 and the Model
-descriptor 0.1.0 that belongs to it, all under [`spec/`](spec/README.md) and exported from
+This package is the home of the contracts, released together as spec release 0.3.0 (draft): Manifest
+0.1.0, Capability profile 0.1.0, Event 0.1.2, Storage API 0.1.0, Backend adapter 0.3.0 and the Model
+descriptor 0.2.0 that belongs to it, all under [`spec/`](spec/README.md) and exported from
 `@airplanemode/runtime/spec`. Other repos vendor them and never edit their copies.
 
 ## Demo
@@ -192,8 +242,7 @@ Live demo: <https://airplanemode-labs.github.io/runtime/> (the backend page is
 <https://airplanemode-labs.github.io/runtime/models.html>). Built from `main` by
 `.github/workflows/pages.yml` on every push; each page shows only what works today and has a box titled
 "What this demo does not do yet". They run entirely in the browser: no upload, no analytics, no
-third-party scripts or fonts, and a strict meta CSP with no inline script or style. They are not yet
-live: the owner pushes and enables Pages.
+third-party scripts or fonts, and a strict meta CSP with no inline script or style. The Sprint 2 demo is live on Pages; the Sprint 3 demo appears after the owner's push.
 
 - `index.html` (asset manager): the capability profile; verification of a manifest signed at build time
   (a key pair generated inside the workflow signs a manifest describing three synthetic 12, 8 and 6 MiB
@@ -202,18 +251,23 @@ live: the owner pushes and enables Pages.
   with resume, in-page SHA-256, eviction under a test quota; and a "paste your own manifest URL" field
   that fetches nothing unless the URL's origin is in the allowed origins list. The assets are synthetic
   byte streams, never a model.
-- `models.html` (backend panel, its own CSP: `connect-src 'self'`): the detected capability tier, the plan
-  of the fallback chain before any download, and a **Download test model and load** button. No request
-  to `models/` is made before the click; after it, only same-origin requests. Ticking **Force WASM**
-  skips WebGPU; **Allow Chrome built-in model** is off by default. A prompt box shows the answer, the
-  rung, the execution providers, timings and bytes. WebAssembly generation runs on the main thread, so
-  the page freezes while it generates and the demo keeps the answer short there (at most 24 tokens); if
-  WebGPU fails after the engine started, the page says to reload and choose WebAssembly. The page text states the done-when and the model
+- `models.html` (backend panel, its own CSP: `connect-src 'self'`, `worker-src 'self' blob:`, and Trusted
+  Types required for scripts with the single policy `airplanemode-worker`): the detected capability tier,
+  the plan of the fallback chain before any download, an **Engine** picker (Auto, Transformers.js WebGPU,
+  Transformers.js WebAssembly; WebLLM is not offered, see Limitations) and a **Download test model and
+  load** button. No request to `models/` is made before the click; after it, only same-origin requests.
+  The engine of every choice runs in a dedicated worker, so the page stays responsive while WebAssembly
+  generates; an "Engine runs in a worker" line appears when a `backend.worker` ready event arrives.
+  **Allow Chrome built-in model** is off by default. A prompt box shows the answer, the rung, the
+  execution providers, timings and bytes, and a **Load timing and memory** read-out shows the load's five
+  phase durations under one load id and the memory figures Chrome exposes (the same model and view as the
+  DevTools panel; the page calls `exposeDevtoolsHook()`). The page text states the done-when and the model
   card: "Same prompt answered on WebGPU and on WebAssembly with the test model SmolLM2-135M-Instruct
   (q4), in Chrome on an Apple-silicon Mac only. This is not the Hindi production model; Windows and the
   8 GB no-GPU laptop are not measured." The Pages build bundles the Apache-2.0 test model with its
   licence texts and a provenance file (`DEMO_MODELS=1 npm run demo:build`); a build without it says
-  "test model not bundled in this build".
+  "test model not bundled in this build". `npm run test:demo` builds it exactly as `pages.yml` does,
+  serves it under `/runtime/` (every other path 404s) and runs every picker choice.
 
 ## Benchmarks
 
@@ -269,20 +323,38 @@ processes of the browser while the legs run; the data is in
 evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/sprint-2/T1/legs/rep1-wasm.json to rep3-wasm.json
 (three repetitions were taken, the range below covers all of them).
 
-| Scenario                                                                                                                                                                             | Result                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 700 MB (734003200 B) full download and SHA-256 verify, OPFS                                                                                                                          | 4060 ms, 180.8 MB/s, peak JS heap 2.79 MB; sha256 equals `node test/tools/asset-digest.mjs big 734003200`                                                                                                                                                                                                                                  |
-| 700 MB full download and SHA-256 verify, IndexedDB                                                                                                                                   | 2561 ms, 286.6 MB/s, peak JS heap 2.80 MB; same sha256                                                                                                                                                                                                                                                                                     |
-| 700 MB, OPFS: reload at 37.7 % (276824064 B written) then resume                                                                                                                     | exactly one `Range: bytes=276824064-` request with `If-Range` = strong ETag, 206, 457179136 B sent; wall time of the resume leg not measured                                                                                                                                                                                               |
-| 700 MB, IndexedDB: reload at 38.9 % (285212672 B written) then resume                                                                                                                | exactly one `Range: bytes=285212672-` request, 206, 448790528 B sent; resume leg 2805 ms including the reload                                                                                                                                                                                                                              |
-| `detectCapabilities()` wall time in Chrome                                                                                                                                           | under 2 s (test/browser/capability.spec.ts passes; exact figure not measured)                                                                                                                                                                                                                                                              |
-| Quota eviction at a 1.5 GiB origin quota (CDP `Storage.overrideQuotaForOrigin`), OPFS                                                                                                | 9582 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, a and c verified, index exactly a and c, no `.part` left (t1-retest1-quota-opfs.json)                                                                                                                        |
-| Quota eviction at a 1.5 GiB `quotaBytes`, IndexedDB                                                                                                                                  | 6252 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, `asset.quota` usage 1153433600 B with `usageSource` `accounted` (estimate 723398656 B, ratio 0.627), a and c verified, 1258291200 B left stored (t1-retest2-quota-indexeddb.json); Apple-silicon placeholder |
-| Sprint 2 done-when: SmolLM2-135M-Instruct (q4), prompt "What is the capital of France? Answer in one word.", maxTokens 16, temperature 0, **WebGPU** path, Chrome (channel "chrome") | load 2667 ms including the verified download of 211,040,709 B (7 signed entries) over loopback; prefill 66 ms, decode 51 ms, 155.9 tokens/s; 8 tokens generated; peak JS heap 23,781,052 B; output "The capital of France is Paris." (`model-run.json`, key `webgpu`); one run, Apple-silicon placeholder                                  |
-| the same, forced **WebAssembly** path (`forceRung: 'wasm'`, executionProviders `['wasm']`)                                                                                           | load 2592 ms (same download); prefill 368 ms, decode 732 ms, 10.9 tokens/s; peak JS heap 26,728,356 B; output "The capital of France is Paris." (`model-run.json`, key `wasm`); one thread, no COOP/COEP; Apple-silicon placeholder                                                                                                        |
-| Local Hindi smoke run: Qwen3-1.7B q4f16 on WebGPU, five synthetic Hindi prompts, up to 128 new tokens, temperature 0, thinking off (`hindi-smoke.json`)                              | load 16887 ms including the verified download of 1,462,064,779 B; mean 28.2 tokens/s; peak JS heap 76,495,528 B; outputs recorded verbatim and **unscored**; only with `graphOptimizationLevel: 'disabled'` (the default level fails with `std::bad_alloc`); Apple-silicon placeholder                                                     |
-| renderer process RSS peak (proxy, placeholder)                                                                                                                                       | SmolLM2-135M q4, same prompt: about 1.9 GiB on the WebGPU path and about 1.6 GiB on the WebAssembly path (renderer process); GPU process 0.35-0.42 GiB on the WebGPU path. Includes WebAssembly memory, not a GPU-memory figure; Apple-silicon placeholder (`rep1-webgpu.json` to `rep3-webgpu.json`, `rep1-wasm.json`)                    |
-| 8 GB Windows no-GPU laptop (any of the above)                                                                                                                                        | not measured                                                                                                                                                                                                                                                                                                                               |
+| Scenario                                                                                                                                                                             | Result                                                                                                                                                                                                                                                                                                                                     | 8 GB Windows no-GPU laptop |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| 700 MB (734003200 B) full download and SHA-256 verify, OPFS                                                                                                                          | 4060 ms, 180.8 MB/s, peak JS heap 2.79 MB; sha256 equals `node test/tools/asset-digest.mjs big 734003200`                                                                                                                                                                                                                                  | not measured               |
+| 700 MB full download and SHA-256 verify, IndexedDB                                                                                                                                   | 2561 ms, 286.6 MB/s, peak JS heap 2.80 MB; same sha256                                                                                                                                                                                                                                                                                     | not measured               |
+| 700 MB, OPFS: reload at 37.7 % (276824064 B written) then resume                                                                                                                     | exactly one `Range: bytes=276824064-` request with `If-Range` = strong ETag, 206, 457179136 B sent; wall time of the resume leg not measured                                                                                                                                                                                               | not measured               |
+| 700 MB, IndexedDB: reload at 38.9 % (285212672 B written) then resume                                                                                                                | exactly one `Range: bytes=285212672-` request, 206, 448790528 B sent; resume leg 2805 ms including the reload                                                                                                                                                                                                                              | not measured               |
+| `detectCapabilities()` wall time in Chrome                                                                                                                                           | under 2 s (test/browser/capability.spec.ts passes; exact figure not measured)                                                                                                                                                                                                                                                              | not measured               |
+| Quota eviction at a 1.5 GiB origin quota (CDP `Storage.overrideQuotaForOrigin`), OPFS                                                                                                | 9582 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, a and c verified, index exactly a and c, no `.part` left (t1-retest1-quota-opfs.json)                                                                                                                        | not measured               |
+| Quota eviction at a 1.5 GiB `quotaBytes`, IndexedDB                                                                                                                                  | 6252 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, `asset.quota` usage 1153433600 B with `usageSource` `accounted` (estimate 723398656 B, ratio 0.627), a and c verified, 1258291200 B left stored (t1-retest2-quota-indexeddb.json); Apple-silicon placeholder | not measured               |
+| Sprint 2 done-when: SmolLM2-135M-Instruct (q4), prompt "What is the capital of France? Answer in one word.", maxTokens 16, temperature 0, **WebGPU** path, Chrome (channel "chrome") | load 2667 ms including the verified download of 211,040,709 B (7 signed entries) over loopback; prefill 66 ms, decode 51 ms, 155.9 tokens/s; 8 tokens generated; peak JS heap 23,781,052 B; output "The capital of France is Paris." (`model-run.json`, key `webgpu`); one run, Apple-silicon placeholder                                  | not measured               |
+| the same, forced **WebAssembly** path (`forceRung: 'wasm'`, executionProviders `['wasm']`)                                                                                           | load 2592 ms (same download); prefill 368 ms, decode 732 ms, 10.9 tokens/s; peak JS heap 26,728,356 B; output "The capital of France is Paris." (`model-run.json`, key `wasm`); one thread, no COOP/COEP; Apple-silicon placeholder                                                                                                        | not measured               |
+| Local Hindi smoke run: Qwen3-1.7B q4f16 on WebGPU, five synthetic Hindi prompts, up to 128 new tokens, temperature 0, thinking off (`hindi-smoke.json`)                              | load 16887 ms including the verified download of 1,462,064,779 B; mean 28.2 tokens/s; peak JS heap 76,495,528 B; outputs recorded verbatim and **unscored**; only with `graphOptimizationLevel: 'disabled'` (the default level fails with `std::bad_alloc`); Apple-silicon placeholder                                                     | not measured               |
+| renderer process RSS peak (proxy, placeholder)                                                                                                                                       | SmolLM2-135M q4, same prompt: about 1.9 GiB on the WebGPU path and about 1.6 GiB on the WebAssembly path (renderer process); GPU process 0.35-0.42 GiB on the WebGPU path. Includes WebAssembly memory, not a GPU-memory figure; Apple-silicon placeholder (`rep1-webgpu.json` to `rep3-webgpu.json`, `rep1-wasm.json`)                    | not measured               |
+
+Sprint 3 rows, measured on 14 Nov 2026 on the same Apple-silicon machine with Chrome 157 (installed, Playwright
+channel "chrome") by this repository's own commands: `RUNTIME_MODEL=1 RUNTIME_DEVTOOLS_HEADED=1 npm run test:devtools`
+(the load timing in the real DevTools window), `RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:worker`,
+`npm run test:demo` and `npm run pack:check`. Raw outputs, relative to the workspace folder that holds the
+repositories: `evidence/sprint-3/D1/devtools/devtools-figures.json` and `devtools-window.png`,
+`evidence/sprint-3/D1/worker/worker-run.json`, `evidence/sprint-3/D1/demo/demo-run.json`,
+`evidence/sprint-3/D1/pack/pack-check.json` and `evidence/sprint-3/D1/dist-size.txt`. Every Apple-silicon
+figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
+
+| Scenario                                                                                                                            | Apple silicon                                                                                                                                                | 8 GB Windows no-GPU laptop |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| Load of SmolLM2-135M (q4) on forced WebAssembly, engine in a worker, phases shown by the DevTools panel (devtools-figures.json)     | acquire 1260.9 ms (212,926,670 B over loopback), verify 663 ms, hand-off 7.6 ms, session 481.2 ms, first token 655.1 ms, under one load id                   | not measured               |
+| Page JS heap at before-load, after-session and after-first-token, same load (`performance.memory`, coarse; worker figures are null) | 2,747,591 B, 79,554,898 B, 79,611,170 B                                                                                                                      | not measured               |
+| Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured               |
+| Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured               |
+| A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured               |
+| Packed tarball `airplanemode-runtime-0.2.0-alpha.0.tgz` (pack-check.json)                                                           | 159,991 B in 31 files (567,785 B unpacked), installed offline into a fresh empty directory                                                                   | not measured               |
+| `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured               |
 
 ## Limitations
 
@@ -294,16 +366,15 @@ evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/spri
   Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
   Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
   The q8 WebAssembly path of that model was not run. See [`docs/model-choice.md`](docs/model-choice.md).
-  The q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; createDefaultAdapters() cannot load the production model unless the application passes the sessionOptions option; the descriptor field for this is an architect decision for Sprint 3. The sessionOptions allow-list stays at that one key.
-- The WebLLM backend is Sprint 3: there is no `@mlc-ai/web-llm` dependency, `engine: 'webllm'` and
-  `modelLib` exist only in the descriptor schema.
-- If the WebGPU engine fails after it has started creating a session (for example out of memory), WebAssembly cannot start in the same page until it is reloaded; per-rung engine isolation is planned for Sprint 3.
-- On WebAssembly, generation runs on the main thread: the tab does not repaint or run timers until generation ends, and an AbortSignal fired from a timer or a button is honoured only between engine steps that yield; abort from onToken works. Moving the engine off the main thread is planned for Sprint 3.
-- A model file that fails its hash check is reported as "could not be started", and the next rung downloads it again; a distinct integrity reason is planned with the Sprint 3 event minor.
-- The chain checks cache-only consent before it asks the asset manager for a file (a file counts as
-  present only if its row is verified and the stored file has exactly the manifest size) but
-  `acquire()` itself still downloads a file that vanished in between; enforcing cache-only inside
-  `acquire()` (`AcquireOptions.cacheOnly`) is a Sprint 3 backend-adapter minor (S1-053).
+  The q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; since model descriptor 0.2.0 the q4f16 descriptor carries sessionOptions { graphOptimizationLevel: 'disabled' }, so createDefaultAdapters() loads it without the application passing sessionOptions. The sessionOptions allow-list stays at that one key.
+- **WebLLM: not yet.** The descriptor and the spec describe it (`engine: 'webllm'`, `modelLib`, the staging
+  rules R11), but there is no `@mlc-ai/web-llm` dependency and no adapter; it is carried to Sprint 4.
+- Main-thread adapter only: if the WebGPU engine fails after it has started creating a session (for example out of memory), WebAssembly cannot start in the same page until it is reloaded; the worker host (a workerUrl) starts a fresh engine per rung and has no such limit.
+- Main-thread adapter only: on WebAssembly, generation runs on the main thread: the tab does not repaint or run timers until generation ends, and an AbortSignal fired from a timer or a button is honoured only between engine steps that yield; abort from onToken works. The worker host (a workerUrl) keeps the page responsive and lands an abort within about 250 ms by terminating the worker.
+- A rung whose plan counts 0 bytes loads cache-only, and `acquire({ cacheOnly: true })` refuses to fetch (a
+  missing, row-only, truncated or `.part`-only file is `not_cached`); a rung that needs a download still
+  depends on the caller's consent callback, and when the descriptor is not yet in the store the consent
+  byte count is an upper bound.
 - No WebAssembly threads: GitHub Pages and a plain static server cannot send the COOP and COEP headers,
   so `crossOriginIsolated` is false and the engine runs on one thread with the proxy off (about 11
   tokens/s for the 135M test model). Header-only controls (`frame-ancestors`) are not available either.
@@ -355,8 +426,8 @@ evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/spri
   orphan is removed by the first reconcile after that. When the hold state cannot be read
   (`navigator.locks.query` is missing or throws) eviction and `reconcile()` treat every asset as held
   and emit one `asset.hold.unknown` warn event with `reason: lock_state_unavailable`, so such a browser
-  never evicts another tab's model and never removes an unindexed file (S1-054); this event name is not
-  in the 0.2.0 reserved list and joins it with the Sprint 3 event minor.
+  never evicts another tab's model and never removes an unindexed file (S1-054); the event name is
+  reserved since Event 0.1.2 (S1-066).
 - A stored downgrade state that is not `{ version: valid SemVer, createdAt: calendar-valid }` is
   treated as an unreadable store: the manifest is refused with reason `state` (event reason
   `state_unavailable`) unless `allowDowngrade` is set (S1-031).
@@ -370,6 +441,17 @@ evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/spri
   a publisher identity. Resume after an interrupted download is verified on the local range server and
   on GitHub Pages, which answered a `Range` request on the deployed fixture with 206 and
   `Accept-Ranges: bytes` on 9 Nov 2026 (a 200 would restart the download from zero, still hash-verified).
+
+- **Memory figures** are Chrome's non-standard performance.memory: coarse, quantised, Chrome-only and absent in workers, so worker figures may all be null. They are read, never estimated; there is no GPU-memory figure.
+- **The DevTools panel** installs by Load unpacked from a clone only and is not on the Chrome Web Store; Chrome shows a warning for unpacked extensions and refuses internal pages.
+- **WebLLM is WebGPU only and doubles storage while staged** (the spec's R11): not yet implemented here.
+- **Re-hash on the main thread**: the main thread re-hashes during load. Every verified file is read once and SHA-256 hashed there (the verify phase), so a large model takes seconds, and moving the re-hash into a worker is a Sprint 4 follow-up.
+- **Worker egress relies on the guard plus the inherited CSP, and Pages sends no headers.** Inside the worker `fetch`, XHR, WebSocket, EventSource, WebTransport, `new Worker` and `Cache.add` are refused by the guard, but dynamic `import()` and FontFace loads cannot be intercepted in JavaScript: the Content Security Policy the blob worker inherits stops them (measured in Chrome 157: `script-src-elem` and `font-src` violations, no request left the browser). A page without that policy has no such stop, and a host that cannot send headers (Pages) can only use a `<meta>` policy. The worker host re-hashes nothing itself: the page re-hashes, then hands over the same Blobs, so an OPFS snapshot can still change between the re-hash and the engine's read (a Sprint 4 follow-up).
+- **The worker host has no embeddings yet**: `embed()` rejects `unsupported_operation`; use the main-thread adapter for feature extraction.
+- **An abort terminates the worker**, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded); there is no Stop button in the demo yet.
+- **Per-rung isolation is per adapter instance**: each load() starts a new worker, but two loads on one adapter are serialised, and an abort that the engine does not answer within 250 ms terminates the worker, so the model must be loaded again.
+- **Apple silicon only**: every figure here is from one Apple-silicon Mac with Chrome 157; Windows and the 8 GB no-GPU laptop are not measured.
+- **Alpha packaging**: the tarball is proven offline into a fresh directory on macOS arm64 only; Linux and Windows runs of `npm run pack:check` are configured in CI and wait for the owner's push.
 
 ## Security and privacy
 
@@ -422,6 +504,12 @@ node test/tools/fetch-model.mjs smollm2-135m-instruct          # the test model 
 RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:model     # same prompt on WebGPU and forced WASM
 RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model      # the WebAssembly leg only (what CI runs)
 RUNTIME_HINDI_SMOKE=1 npm run test:hindi-smoke                  # local only: Qwen3-1.7B, 1.43 GB
+RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:worker    # engine worker, isolation, guard order, Trusted Types
+RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:demo      # the Pages build under /runtime/, every picker choice
+RUNTIME_MODEL=1 npm run test:devtools                           # DevTools panel renderer (add RUNTIME_DEVTOOLS_HEADED=1 for the DevTools window)
+npm run devtools:build                                          # devtools/dist, loaded with Load unpacked
+npm run pack:check                                              # pack, check, install offline into a fresh directory, call
+npm run test:install                                            # the packed tarball imported by a bundler-free page
 npm run spec:vectors   # regenerate spec/vectors from test/tools/make-vectors.mjs
 npm run spec:sign-example
 npm run deps:scripts   # which packages carry install scripts (none are run)
@@ -431,6 +519,7 @@ DEMO_MODELS=1 npm run demo:build           # also bundles the test model (what p
 node demo/tools/make-fixture.mjs                      # fixture only: demo/public/fixture (git-ignored)
 node test/tools/asset-digest.mjs hello-data 1048576   # sha256 of a synthetic asset
 node test/tools/dist-url-inventory.mjs demo/dist      # every library URL string in a build, attributed
+node test/tools/make-descriptor-vectors.mjs --check   # the shared descriptor vectors under spec/vectors/descriptor
 ```
 
 Vitest is pinned at 4.1.12. With npm 10.9.8, adding or upgrading a package reports a peer-dependency conflict, so run `npm install --legacy-peer-deps` for that one command. `npm ci` from the committed lockfile needs no flag. We revisit this when vitest's peer range is updated.
