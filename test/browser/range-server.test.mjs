@@ -453,3 +453,50 @@ test('--models defaults to .cache/models of the repository and refuses a non-dir
   assert.match(o.models, /\.cache[\\/]models$/);
   assert.throws(() => parseArgs(['--models']), /needs a value/);
 });
+
+// ---- --flip-byte: the integrity browser proof's server hook --------------------------------------
+
+test('--flip-byte XORs one byte of one /models/ file, with and without a Range, and leaves every other byte and file alone', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'range-server-flip-'));
+  try {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(root, 'm'), { recursive: true });
+    const bytes = Buffer.alloc(3000, 7);
+    writeFileSync(join(root, 'm', 'weights.bin'), bytes);
+    writeFileSync(join(root, 'm', 'other.bin'), bytes);
+    assert.throws(() => parseArgs(['--flip-byte', '/assets/x:1']), /bad --flip-byte/);
+    assert.throws(() => parseArgs(['--flip-byte', '/models/m/weights.bin:x']), /bad --flip-byte/);
+    assert.throws(() => parseArgs(['--flip-byte', 'nocolon']), /bad --flip-byte/);
+    const srv = await startRangeServer(
+      parseArgs([
+        '--port',
+        '0',
+        '--models',
+        root,
+        '--flip-byte',
+        '/models/m/weights.bin:1500',
+        '--asset',
+        'a=1',
+      ]),
+    );
+    try {
+      const get = async (path, headers = {}) =>
+        new Uint8Array(
+          await (await fetch(`http://127.0.0.1:${srv.port}${path}`, { headers })).arrayBuffer(),
+        );
+      const full = await get('/models/m/weights.bin');
+      assert.equal(full[1500], 7 ^ 1);
+      assert.equal(full.filter((b) => b !== 7).length, 1);
+      const ranged = await get('/models/m/weights.bin', { Range: 'bytes=1400-1599' });
+      assert.equal(ranged[100], 7 ^ 1);
+      const before = await get('/models/m/weights.bin', { Range: 'bytes=0-1499' });
+      assert.equal(before.filter((b) => b !== 7).length, 0);
+      const other = await get('/models/m/other.bin');
+      assert.equal(other.filter((b) => b !== 7).length, 0);
+    } finally {
+      srv.server.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

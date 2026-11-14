@@ -2,7 +2,7 @@
 // Hardened Range test server for the runtime browser proof. Node built-ins only.
 //
 //   node test/browser/range-server.mjs --port <n> --serve <dir> [--test-endpoints] [--ignore-range]
-//        [--corrupt-hash] --asset <name>=<bytes> ...
+//        [--corrupt-hash] [--flip-byte <url path>:<offset> ...] --asset <name>=<bytes> ...
 //
 // Contract (runtime range-server contract):
 // - binds 127.0.0.1 only; any Host header other than 127.0.0.1[:port] or localhost[:port] gets 400;
@@ -12,6 +12,9 @@
 //   and Last-Modified fixed to Mon, 09 Nov 2026 00:00:00 GMT; answers 206/200/416;
 // - --ignore-range: every asset response is 200 with the whole body (simulates a host without Range);
 // - --corrupt-hash: the manifest carries a wrong sha256 for every asset (first hex digit flipped);
+// - --flip-byte <url path>:<offset>: GET and HEAD of that /models/ file answer with the byte at <offset>
+//   XOR 1 (the integrity browser proof: the signed hash no longer matches). Test servers only: it binds
+//   127.0.0.1, and no pages.yml, demo build or npm script other than test:browser and test:model uses it;
 // - GET /manifest.json: the configured assets as relative urls assets/<name>, chunkSize 8388608 or
 //   1048576 when bytes <= 1048576, signed with the RFC 8032 test seed (test/tools/lib.mjs);
 // - /__requests (GET: JSON list of {method, path, range, ifRange, status, bytesSent}) and
@@ -65,6 +68,7 @@ export function parseArgs(argv) {
     testEndpoints: false,
     ignoreRange: false,
     corruptHash: false,
+    flips: new Map(),
     assets: new Map(),
   };
   for (let i = 0; i < argv.length; i++) {
@@ -96,6 +100,16 @@ export function parseArgs(argv) {
       case '--corrupt-hash':
         opts.corruptHash = true;
         break;
+      case '--flip-byte': {
+        const v = next();
+        const colon = v.lastIndexOf(':');
+        const urlPath = v.slice(0, colon);
+        const offset = v.slice(colon + 1);
+        if (colon <= 0 || !urlPath.startsWith('/models/') || !/^\d+$/.test(offset))
+          throw new Error(`bad --flip-byte ${v}; expected /models/<path>:<offset>`);
+        opts.flips.set(urlPath, Number(offset));
+        break;
+      }
       case '--asset': {
         const v = next();
         const eq = v.indexOf('=');
@@ -257,7 +271,7 @@ async function resolveModelFile(modelsRoot, urlPath) {
   return { file: lexical, st };
 }
 
-function serveModel(req, res, path, hasQuery, entry, send, text, finish, modelsRoot) {
+function serveModel(req, res, path, hasQuery, entry, send, text, finish, modelsRoot, flips) {
   if (hasQuery) return text(404, 'not found');
   resolveModelFile(modelsRoot, path)
     .then((found) => {
@@ -296,8 +310,16 @@ function serveModel(req, res, path, hasQuery, entry, send, text, finish, modelsR
       }
       const stream = createReadStream(file, { start, end });
       res.on('close', () => stream.destroy());
+      // --flip-byte: the byte at the configured offset is XORed with 1 on its way out
+      const flipAt = flips?.get(path);
+      let position = start;
       stream.on('data', (chunk) => {
         entry.bytesSent += chunk.length;
+        if (flipAt !== undefined && flipAt >= position && flipAt < position + chunk.length) {
+          const i = flipAt - position;
+          chunk[i] = chunk[i] ^ 1;
+        }
+        position += chunk.length;
       });
       stream.on('error', () => res.destroy());
       stream.on('end', finish);
@@ -422,7 +444,7 @@ export function createRangeServer(opts) {
     }
 
     if (path.startsWith('/models/')) {
-      serveModel(req, res, path, hasQuery, entry, send, text, finish, opts.models);
+      serveModel(req, res, path, hasQuery, entry, send, text, finish, opts.models, opts.flips);
       return undefined;
     }
 

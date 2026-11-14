@@ -45,7 +45,33 @@ import type { ManifestEntry } from '../../spec/manifest';
 import type { ModelDescriptor } from '../../spec/model-descriptor';
 import { AssetError } from '../errors';
 import { newEvent } from '../events';
+import { PhaseTimer, emitMemorySample, meterDownloads, newLoadId } from '../observability';
+import {
+  WEIGHTS_PATH,
+  assertEnv,
+  buildSessionOptions,
+  checkSessionOptions,
+  configureEnv,
+  expectedThreads,
+  generateText,
+  now,
+  probeWebGpuDevice,
+  usableModelId,
+  type EngineEnv,
+  type EnginePipeline,
+  type EnvContext,
+  type GpuLike,
+  type OrtPin,
+  type SessionOptions,
+  type TransformersModule,
+} from './tjs-core';
 import { loadDescriptor } from './descriptor';
+import {
+  createWorkerAdapter,
+  type WorkerAdapterOptions,
+  type WorkerTransformersAdapter,
+} from './worker-adapter';
+import { forEntry } from './entry-error';
 import { ORT_PINS } from './ort-pins';
 import {
   createVerifiedFetch,
@@ -57,38 +83,16 @@ import {
   type VerifiedFileSet,
 } from './verified-files';
 
-// ---- the slice of the engine we rely on ---------------------------------------------------------
-
-export interface EngineEnv {
-  backends: { onnx: { wasm: Record<string, unknown> } };
-  fetch: unknown;
-  [key: string]: unknown;
-}
-
-export interface EnginePipeline {
-  (input: unknown, options?: Record<string, unknown>): Promise<unknown>;
-  tokenizer?: unknown;
-  dispose?(): Promise<void> | void;
-}
-
-interface EngineStreamer {
-  put(value: bigint[][]): void;
-  end(): void;
-}
-
-export interface TransformersModule {
-  env: EngineEnv;
-  pipeline(task: string, model: string, options?: Record<string, unknown>): Promise<EnginePipeline>;
-  TextStreamer: new (tokenizer: unknown, options: Record<string, unknown>) => EngineStreamer;
-  InterruptableStoppingCriteria: new () => { interrupt(): void; reset(): void };
-}
-
-export interface OrtPin {
-  wasmFile: string;
-  wasmSha256: string;
-  factoryFile: string;
-  factorySha256: string;
-}
+export {
+  checkSessionOptions,
+  probeWebGpuDevice,
+  type GpuLike,
+  type OrtPin,
+  type EngineEnv,
+  type EnginePipeline,
+  type SessionOptions,
+  type TransformersModule,
+};
 
 export interface TransformersAdapterOptions {
   device: 'webgpu' | 'wasm';
@@ -108,8 +112,10 @@ export interface TransformersAdapterOptions {
    * The one ONNX Runtime session option an app may set: graphOptimizationLevel. Needed for a model
    * whose session creation runs out of the 4 GB WebAssembly heap with the default 'all' level (the
    * planned Qwen3-1.7B q4f16 fails with std::bad_alloc unless it is 'disabled'; see
-   * docs/model-choice.md). Any other key is refused. It belongs in the model descriptor eventually;
-   * until the contract carries it, the application passes it here.
+   * docs/model-choice.md). Any other key is refused. Deprecated since model descriptor 0.2.0, which
+   * carries the same field as `sessionOptions.graphOptimizationLevel`: the descriptor is signed with
+   * the manifest, so a model that needs the option no longer needs the application to know it. When
+   * given, a level named here wins over the descriptor's.
    */
   sessionOptions?: SessionOptions;
   /**
@@ -117,112 +123,25 @@ export interface TransformersAdapterOptions {
    * probeWebGpuDevice() (navigator.gpu.requestAdapter() then requestDevice(), then destroy()).
    */
   gpuProbe?: () => Promise<boolean>;
-}
-
-export interface SessionOptions {
-  graphOptimizationLevel?: 'disabled' | 'basic' | 'extended' | 'layout' | 'all';
-}
-
-const GRAPH_LEVELS: ReadonlySet<string> = new Set([
-  'disabled',
-  'basic',
-  'extended',
-  'layout',
-  'all',
-]);
-
-/** Accepts only {graphOptimizationLevel} with a known level; anything else is a TypeError. */
-export function checkSessionOptions(o: unknown): SessionOptions {
-  if (o === null || typeof o !== 'object' || Array.isArray(o))
-    throw new TypeError('sessionOptions must be an object');
-  const out: SessionOptions = {};
-  for (const [key, value] of Object.entries(o)) {
-    if (key !== 'graphOptimizationLevel')
-      throw new TypeError(`sessionOptions.${key} is not allowed; only graphOptimizationLevel is`);
-    if (typeof value !== 'string' || !GRAPH_LEVELS.has(value))
-      throw new TypeError('sessionOptions.graphOptimizationLevel is not a known level');
-    out.graphOptimizationLevel = value as NonNullable<SessionOptions['graphOptimizationLevel']>;
-  }
-  return out;
-}
-
-// ---- the WebGPU device probe ----------------------------------------------------------------------
-
-/** The slice of navigator.gpu the probe uses (so tests can hand it a fake). */
-export interface GpuLike {
-  requestAdapter(): Promise<{
-    requestDevice(): Promise<{ destroy(): void } | null | undefined>;
-  } | null>;
-}
-
-const PROBE_TIMEOUT_MS = 10_000;
-
-/**
- * True only when the browser hands out a WebGPU adapter AND a device from it. The device is destroyed
- * at once: this asks "can a device be created here", it keeps nothing. Never throws; a missing
- * navigator.gpu, a null adapter or device, a rejection, or no answer within the timeout is false. No
- * download, no model, no engine import (the contract says available() is cheap).
- */
-export async function probeWebGpuDevice(
-  gpu: GpuLike | undefined = (globalThis as { navigator?: { gpu?: GpuLike } }).navigator?.gpu,
-  timeoutMs: number = PROBE_TIMEOUT_MS,
-): Promise<boolean> {
-  if (!gpu || typeof gpu.requestAdapter !== 'function') return false;
-  const attempt = (async (): Promise<boolean> => {
-    const adapter = await gpu.requestAdapter();
-    if (!adapter) return false;
-    const device = await adapter.requestDevice();
-    if (!device) return false;
-    try {
-      device.destroy();
-    } catch {
-      // a device that cannot be destroyed was still created
-    }
-    return true;
-  })().catch(() => false);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => resolve(false), timeoutMs);
-  });
-  try {
-    return await Promise.race([attempt, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
+  /**
+   * URL of the engine worker script (backend adapter 0.3.0, rules R2w, R3w and R7 to R13). When given,
+   * createTransformersAdapter() returns the worker adapter (host 'worker'): the engine runs in a
+   * dedicated module worker, one per load(), so the page does not freeze on WebAssembly and a WebGPU
+   * failure cannot poison the next rung. Without it the main-thread adapter is returned.
+   */
+  workerUrl?: string;
+  /** Worker adapter only: starts the worker (tests inject a fake). */
+  spawnWorker?: WorkerAdapterOptions['spawnWorker'];
+  /** Worker adapter only: URL.createObjectURL and revokeObjectURL. */
+  urlApi?: WorkerAdapterOptions['urlApi'];
+  /** Worker adapter only: how long an abort waits for the worker before it is terminated. Default 250 ms. */
+  abortGraceMs?: number;
 }
 
 // ---- constants ----------------------------------------------------------------------------------
 
 const ADAPTER_ID = 'transformers-js';
 const DEFAULT_MAX_NEW_TOKENS = 256;
-const REMOTE_HOST_SINK = 'https://invalid.invalid/';
-
-/** Flags that must hold at every pipeline() and generate(): remote and every cache switched off. */
-const REQUIRED_FLAGS: Readonly<Record<string, boolean | string>> = Object.freeze({
-  allowRemoteModels: false,
-  allowLocalModels: true,
-  useBrowserCache: false,
-  useFSCache: false,
-  useFS: false,
-  useCustomCache: false,
-  useWasmCache: false,
-  experimental_useCrossOriginStorage: false,
-  remoteHost: REMOTE_HOST_SINK,
-});
-
-/** The engine builds its URL as <localModelPath><model id>/<file>: the id must pass its own regex. */
-function usableModelId(id: string): boolean {
-  return (
-    id.length <= 96 &&
-    /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(id) &&
-    !id.includes('..') &&
-    !id.includes('--') &&
-    !id.endsWith('.git') &&
-    !id.endsWith('.ipynb')
-  );
-}
-
-const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // ---- one load at a time -------------------------------------------------------------------------
 
@@ -247,75 +166,8 @@ function withLoadMutex<T>(fn: () => Promise<T>): Promise<T> {
  */
 const POISONED_ENGINES = new WeakSet<object>();
 
-/** Weight files: reading one means the engine is about to create a session. */
-const WEIGHTS_PATH = /(?:^|\/)onnx\/|\.onnx(?:_data)?$/;
-
 const defaultEngineLoader = (): Promise<TransformersModule> =>
   import('@huggingface/transformers') as unknown as Promise<TransformersModule>;
-
-// ---- engine env ---------------------------------------------------------------------------------
-
-interface EnvContext {
-  prefix: string;
-  shim: VerifiedFetch;
-  ortFactoryUrl: string;
-  wasmBinary: ArrayBuffer;
-  numThreads: number;
-}
-
-function wasmEnv(env: EngineEnv): Record<string, unknown> {
-  const wasm = env?.backends?.onnx?.wasm;
-  if (!wasm || typeof wasm !== 'object')
-    throw new AdapterError('backend', 'the engine does not expose its ONNX runtime settings');
-  return wasm;
-}
-
-function expectedThreads(): number {
-  const isolated = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
-  if (!isolated) return 1;
-  const cores = (globalThis as { navigator?: { hardwareConcurrency?: number } }).navigator
-    ?.hardwareConcurrency;
-  return Math.max(1, Math.min(4, cores ?? 1));
-}
-
-/** Runs right after import() and before the first pipeline(). */
-function configureEnv(env: EngineEnv, ctx: EnvContext): void {
-  for (const [key, value] of Object.entries(REQUIRED_FLAGS)) env[key] = value;
-  env['localModelPath'] = ctx.prefix;
-  env.fetch = ctx.shim;
-  const wasm = wasmEnv(env);
-  // The library default points wasmPaths at a CDN. An object with only `mjs` (and no `wasm` key)
-  // makes it use the wasmBinary below instead of fetching the binary.
-  wasm['wasmPaths'] = { mjs: ctx.ortFactoryUrl };
-  wasm['wasmBinary'] = ctx.wasmBinary;
-  wasm['numThreads'] = ctx.numThreads;
-  wasm['proxy'] = false;
-}
-
-/** Re-asserts every configured value; any drift is AdapterError 'backend' and nothing runs. */
-function assertEnv(env: EngineEnv, ctx: EnvContext): void {
-  const drift = (what: string): never => {
-    throw new AdapterError(
-      'backend',
-      `the engine settings no longer match the verified configuration (${what})`,
-    );
-  };
-  for (const [key, value] of Object.entries(REQUIRED_FLAGS)) if (env[key] !== value) drift(key);
-  if (env['localModelPath'] !== ctx.prefix) drift('localModelPath');
-  if (env.fetch !== ctx.shim) drift('fetch');
-  const wasm = wasmEnv(env);
-  const paths = wasm['wasmPaths'];
-  if (
-    paths === null ||
-    typeof paths !== 'object' ||
-    Object.keys(paths).length !== 1 ||
-    (paths as { mjs?: unknown }).mjs !== ctx.ortFactoryUrl
-  )
-    drift('wasmPaths');
-  if (wasm['wasmBinary'] !== ctx.wasmBinary) drift('wasmBinary');
-  if (wasm['numThreads'] !== ctx.numThreads) drift('numThreads');
-  if (wasm['proxy'] !== false) drift('proxy');
-}
 
 // ---- errors and events --------------------------------------------------------------------------
 
@@ -352,6 +204,9 @@ function safeEmit(sink: EventSink | undefined, build: () => ReturnType<typeof ne
 // ---- the adapter --------------------------------------------------------------------------------
 
 interface LoadedState {
+  loadId: string;
+  /** Emits model.load.phase for this load; first_token is added by the first generate(). */
+  timer: PhaseTimer;
   mod: TransformersModule;
   generator: EnginePipeline;
   descriptor: ModelDescriptor;
@@ -366,6 +221,8 @@ export class TransformersAdapter implements BackendAdapter {
   readonly id = ADAPTER_ID;
   readonly tier: BackendTier;
   readonly device: ExecutionDevice;
+  /** The engine runs on the page's main thread; a worker adapter reports 'worker'. */
+  readonly host = 'main' as const;
   private readonly ortFactoryUrl: string;
   private readonly prefix: string | undefined;
   private readonly engineLoader: () => Promise<TransformersModule>;
@@ -473,6 +330,21 @@ export class TransformersAdapter implements BackendAdapter {
     await this.unloadLocked();
     const held: AssetHandle[] = [];
     let set: VerifiedFileSet | undefined;
+    const loadId = newLoadId();
+    const timer = new PhaseTimer({
+      sink: opts.events,
+      loadId,
+      adapter: this.id,
+      device: this.device,
+      model: entry.id,
+      host: this.host,
+    });
+    const meter = meterDownloads(opts.assets);
+    const onProgress: NonNullable<LoadOptions['onProgress']> = (p) => {
+      meter.progress(p);
+      opts.onProgress?.(p);
+    };
+    emitMemorySample(opts.events, loadId, 'page', 'before_load');
     const aborted = () => {
       if (opts.signal?.aborted) throw new AdapterError('aborted', 'the load was aborted');
     };
@@ -504,7 +376,9 @@ export class TransformersAdapter implements BackendAdapter {
         device: this.device,
         held,
         signal: opts.signal,
-        onProgress: opts.onProgress,
+        onProgress,
+        cacheOnly: opts.cacheOnly,
+        timer,
       });
       aborted();
       const d = loaded.descriptor;
@@ -516,23 +390,43 @@ export class TransformersAdapter implements BackendAdapter {
           'runtimeWasm is not the pinned ONNX runtime binary for this device',
         );
 
-      // R2: every byte the engine gets comes from a Blob read after acquire() with rehash.
+      // R2: every byte the engine gets comes from a Blob read after acquire() with rehash. The two
+      // steps run one after the other so each phase (acquire, then verify) is timed on its own.
+      const acquireOpts = acquireOptions({ ...opts, onProgress });
+      for (const f of loaded.files) {
+        held.push(
+          await timer.measure('acquire', () =>
+            forEntry(f.entry.id, () => opts.assets.acquire!(f.entry.id, acquireOpts)),
+          ),
+        );
+        aborted();
+      }
+      timer.add('acquire', 0, meter.bytes());
+      timer.emit('acquire');
       const verified: VerifiedFileInput[] = [];
       let wasmBlob: Blob | undefined;
       let bytes = entry.size;
       for (const f of loaded.files) {
-        held.push(await opts.assets.acquire!(f.entry.id, acquireOptions(opts)));
-        aborted();
-        const blob = await opts.assets.getBlob(f.entry.id, { rehash: true });
+        const blob = await timer.measure(
+          'verify',
+          () => forEntry(f.entry.id, () => opts.assets.getBlob(f.entry.id, { rehash: true })),
+          (b) => b.size,
+        );
         bytes += blob.size;
         verified.push({ path: f.path, blob, sha256: f.entry.sha256 });
         if (f === wasmFile) wasmBlob = blob;
       }
-      const wasmBinary = await wasmBlob!.arrayBuffer();
+      timer.emit('verify');
       aborted();
 
+      // hand-off: read the wasm binary and register the verified Blobs the engine is given
+      const handoffStart = now();
+      const wasmBinary = await wasmBlob!.arrayBuffer();
+      aborted();
       const prefix = this.prefix ?? defaultVerifiedPrefix();
       set = registerVerifiedFiles(prefix, entry.id, verified);
+      timer.add('handoff', now() - handoffStart, bytes - entry.size);
+      timer.emit('handoff');
       let sessionStarted = false;
       const fileBase = `${prefix}${entry.id}/`;
       const shim = createVerifiedFetch({
@@ -561,15 +455,16 @@ export class TransformersAdapter implements BackendAdapter {
       assertEnv(mod.env, envCtx);
       aborted();
       let generator: EnginePipeline;
+      const sessionOptions = buildSessionOptions(this.sessionOptions, d);
       try {
-        generator = await mod.pipeline(d.task, entry.id, {
-          device: this.device,
-          dtype: d.dtype,
-          local_files_only: true,
-          ...(this.sessionOptions && Object.keys(this.sessionOptions).length > 0
-            ? { session_options: { ...this.sessionOptions } }
-            : {}),
-        });
+        generator = await timer.measure('session', () =>
+          mod.pipeline(d.task, entry.id, {
+            device: this.device,
+            dtype: d.dtype,
+            local_files_only: true,
+            ...(sessionOptions ? { session_options: sessionOptions } : {}),
+          }),
+        );
       } catch (e) {
         // the engine had read the weights, so the failure is (or may be) a rejected session creation,
         // which poisons this module instance; an abort is not an engine failure
@@ -577,8 +472,12 @@ export class TransformersAdapter implements BackendAdapter {
         throw e;
       }
       aborted();
+      timer.emit('session');
+      emitMemorySample(opts.events, loadId, 'page', 'after_session');
 
       this.state = {
+        loadId,
+        timer,
         mod,
         generator,
         descriptor: d,
@@ -604,6 +503,8 @@ export class TransformersAdapter implements BackendAdapter {
             files: d.files.length,
             tier: this.tier,
             verified: true,
+            loadId,
+            host: this.host,
           },
         }),
       );
@@ -617,10 +518,19 @@ export class TransformersAdapter implements BackendAdapter {
           kind: 'model-load',
           name: 'model.load.failed',
           level: 'error',
-          attrs: { adapter: this.id, model: entry.id, device: this.device, code: codeOf(err) },
+          attrs: {
+            adapter: this.id,
+            model: entry.id,
+            device: this.device,
+            code: codeOf(err),
+            loadId,
+            host: this.host,
+          },
         }),
       );
       throw err;
+    } finally {
+      meter.stop();
     }
   }
 
@@ -634,96 +544,24 @@ export class TransformersAdapter implements BackendAdapter {
     assertEnv(st.mod.env, st.env);
     if (opts.signal?.aborted) return { text: '', finishReason: 'abort', usage: {}, timings: {} };
 
-    const messages: ChatMessage[] =
-      typeof prompt === 'string' ? [{ role: 'user', content: prompt }] : prompt;
-    const maxTokens =
-      opts.maxTokens ?? st.descriptor.generation?.maxNewTokens ?? DEFAULT_MAX_NEW_TOKENS;
-    const greedy =
-      opts.temperature === 0 || (opts.temperature === undefined && opts.seed !== undefined);
-    const kwargs: Record<string, unknown> = { max_new_tokens: maxTokens };
-    if (greedy) kwargs['do_sample'] = false;
-    else if (opts.temperature !== undefined || opts.topP !== undefined) {
-      kwargs['do_sample'] = true;
-      if (opts.temperature !== undefined) kwargs['temperature'] = opts.temperature;
-      if (opts.topP !== undefined) kwargs['top_p'] = opts.topP;
-    }
-    const templateKwargs = st.descriptor.generation?.chatTemplateKwargs;
-    if (templateKwargs && Object.keys(templateKwargs).length > 0)
-      kwargs['tokenizer_encode_kwargs'] = { ...templateKwargs };
-
-    const stopper = new st.mod.InterruptableStoppingCriteria();
-    const onAbort = () => stopper.interrupt();
-    opts.signal?.addEventListener('abort', onAbort, { once: true });
-    const stats = {
-      puts: 0,
-      inTokens: 0,
-      outTokens: 0,
-      firstTokenAt: undefined as number | undefined,
-    };
-    const textStreamer = new st.mod.TextStreamer(st.generator.tokenizer, {
-      skip_prompt: true,
-      skip_special_tokens: true,
-      callback_function: (piece: string) => {
-        try {
-          opts.onToken?.(piece);
-        } catch {
-          // a token listener must not break generation
-        }
-      },
-    });
-    kwargs['streamer'] = {
-      put(value: bigint[][]) {
-        stats.puts++;
-        if (stats.puts === 1) stats.inTokens = value[0]?.length ?? 0;
-        else {
-          stats.outTokens++;
-          stats.firstTokenAt ??= now();
-        }
-        textStreamer.put(value);
-      },
-      end() {
-        textStreamer.end();
-      },
-    } satisfies EngineStreamer;
-    kwargs['stopping_criteria'] = stopper;
-
-    const t0 = now();
-    let out: unknown;
+    let r: Awaited<ReturnType<typeof generateText>>;
     try {
-      out = await st.generator(messages, kwargs);
+      r = await generateText(st.mod, st.generator, st.descriptor, prompt, opts);
     } catch (e) {
       throw mapError(e, 'the inference engine failed while generating');
-    } finally {
-      opts.signal?.removeEventListener('abort', onAbort);
     }
-    const t1 = now();
-
-    let text = extractText(out);
-    let stoppedOnString = false;
-    for (const s of opts.stop ?? []) {
-      if (s.length === 0) continue;
-      const i = text.indexOf(s);
-      if (i >= 0 && (!stoppedOnString || i < text.length)) {
-        text = text.slice(0, i);
-        stoppedOnString = true;
-      }
-    }
-    const aborted = opts.signal?.aborted === true;
-    const finishReason: GenerateResult['finishReason'] = aborted
-      ? 'abort'
-      : !stoppedOnString && stats.outTokens >= maxTokens
-        ? 'length'
-        : 'stop';
-    const prefillMs = Math.max(0, (stats.firstTokenAt ?? t1) - t0);
-    const decodeMs = Math.max(0, t1 - (stats.firstTokenAt ?? t1));
-    const tokensPerSecond = decodeMs > 0 ? (stats.outTokens / decodeMs) * 1000 : 0;
+    const { finishReason, prefillMs, decodeMs, tokensPerSecond, firstTokenMs, text } = r;
+    const stats = { inTokens: r.inTokens, outTokens: r.outTokens };
+    // the first token of the first generate() after the load: one model.load.phase and one sample
+    if (firstTokenMs !== undefined && st.timer.record('first_token', firstTokenMs))
+      emitMemorySample(st.events, st.loadId, 'page', 'after_first_token');
     safeEmit(st.events, () =>
       newEvent({
         source: 'runtime',
         kind: 'timing',
         name: 'model.generate',
         level: 'info',
-        durationMs: Math.max(0, t1 - t0),
+        durationMs: r.durationMs,
         attrs: {
           adapter: this.id,
           device: this.device,
@@ -733,6 +571,8 @@ export class TransformersAdapter implements BackendAdapter {
           tokensPerSecond,
           prefillMs,
           decodeMs,
+          firstTokenMs: firstTokenMs ?? null,
+          host: this.host,
         },
       }),
     );
@@ -740,7 +580,12 @@ export class TransformersAdapter implements BackendAdapter {
       text,
       finishReason,
       usage: { promptTokens: stats.inTokens, completionTokens: stats.outTokens },
-      timings: { prefillMs, decodeMs, tokensPerSecond },
+      timings: {
+        prefillMs,
+        decodeMs,
+        tokensPerSecond,
+        ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
+      },
     };
   }
 
@@ -796,23 +641,31 @@ function acquireOptions(opts: LoadOptions): Parameters<NonNullable<AssetSource['
   const o: NonNullable<Parameters<NonNullable<AssetSource['acquire']>>[1]> = {};
   if (opts.signal) o.signal = opts.signal;
   if (opts.onProgress) o.onProgress = opts.onProgress;
+  if (opts.cacheOnly === true) o.cacheOnly = true;
   return o;
 }
 
-/** Text of a text-generation result: the last chat message's content, or the generated string. */
-function extractText(out: unknown): string {
-  const first = Array.isArray(out)
-    ? (out[0] as { generated_text?: unknown } | undefined)
-    : undefined;
-  const gt = first?.generated_text;
-  if (typeof gt === 'string') return gt;
-  if (Array.isArray(gt)) {
-    const last = gt[gt.length - 1] as { content?: unknown } | undefined;
-    if (typeof last?.content === 'string') return last.content;
+export function createTransformersAdapter(
+  opts: TransformersAdapterOptions & { workerUrl: string },
+): WorkerTransformersAdapter;
+export function createTransformersAdapter(opts: TransformersAdapterOptions): TransformersAdapter;
+export function createTransformersAdapter(
+  opts: TransformersAdapterOptions,
+): TransformersAdapter | WorkerTransformersAdapter {
+  if (opts.workerUrl !== undefined) {
+    const { workerUrl, spawnWorker, urlApi, abortGraceMs, ...rest } = opts;
+    return createWorkerAdapter({
+      device: rest.device,
+      ortFactoryUrl: rest.ortFactoryUrl,
+      workerUrl,
+      ...(rest.verifiedPrefix !== undefined ? { verifiedPrefix: rest.verifiedPrefix } : {}),
+      ...(rest.pins !== undefined ? { pins: rest.pins } : {}),
+      ...(rest.sessionOptions !== undefined ? { sessionOptions: rest.sessionOptions } : {}),
+      ...(rest.gpuProbe !== undefined ? { gpuProbe: rest.gpuProbe } : {}),
+      ...(spawnWorker !== undefined ? { spawnWorker } : {}),
+      ...(urlApi !== undefined ? { urlApi } : {}),
+      ...(abortGraceMs !== undefined ? { abortGraceMs } : {}),
+    });
   }
-  return '';
-}
-
-export function createTransformersAdapter(opts: TransformersAdapterOptions): TransformersAdapter {
   return new TransformersAdapter(opts);
 }

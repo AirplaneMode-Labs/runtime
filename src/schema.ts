@@ -192,10 +192,19 @@ export function validateSchema(schema: JsonSchema, value: unknown): SchemaResult
   return { ok: errors.length === 0, errors };
 }
 
+/** Keys that would reach Object.prototype if a consumer ever copied them with a naive loop. */
+const FORBIDDEN_KWARGS_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
 /**
- * Validates a model descriptor: the JSON Schema, then the two rules JSON Schema cannot express
- * (`files` sorted by path in byte order with unique paths; `devices` sorted). Ordering errors are
- * reported with keyword `sorted` or `unique` at the offending index.
+ * Validates a model descriptor: the JSON Schema, then the rules JSON Schema cannot express:
+ * `files` sorted by path in byte order with unique paths, `devices` sorted, `modelLib` and
+ * `runtimeWasm` each naming one of the `files[].path`, and no `__proto__`, `constructor` or
+ * `prototype` key in `generation.chatTemplateKwargs`. These are reported with keyword `sorted`,
+ * `unique`, `membership` and `forbidden_key` at the offending path.
  */
 export function validateModelDescriptor(value: unknown): SchemaResult {
   const result = validateSchema(SCHEMAS.modelDescriptor, value);
@@ -220,7 +229,29 @@ export function validateModelDescriptor(value: unknown): SchemaResult {
             message: `files not sorted by path: ${JSON.stringify(cur)} after ${JSON.stringify(prev)}`,
           });
       }
+      const listed = new Set<string>();
+      for (const f of files) {
+        const p = (f as { path?: unknown } | null)?.path;
+        if (typeof p === 'string') listed.add(p);
+      }
+      for (const key of ['runtimeWasm', 'modelLib'] as const) {
+        const target = (value as Record<string, unknown>)[key];
+        if (typeof target === 'string' && !listed.has(target))
+          errors.push({
+            path: `/${key}`,
+            keyword: 'membership',
+            message: `${key} names a path that is not listed in files`,
+          });
+      }
     }
+    // the schema bans a property with type null, which still lets an explicit null through
+    for (const key of ['runtimeWasm', 'modelLib', 'sessionOptions'] as const)
+      if (key in value && (value as Record<string, unknown>)[key] === null)
+        errors.push({
+          path: `/${key}`,
+          keyword: 'null_presence',
+          message: `${key} must be absent, not null`,
+        });
     const devices = (value as { devices?: unknown }).devices;
     if (Array.isArray(devices)) {
       for (let i = 1; i < devices.length; i++) {
@@ -233,6 +264,17 @@ export function validateModelDescriptor(value: unknown): SchemaResult {
             message: 'devices not sorted',
           });
       }
+    }
+    const kwargs = (value as { generation?: { chatTemplateKwargs?: unknown } | null }).generation
+      ?.chatTemplateKwargs;
+    if (kwargs !== null && typeof kwargs === 'object' && !Array.isArray(kwargs)) {
+      for (const k of Object.keys(kwargs))
+        if (FORBIDDEN_KWARGS_KEYS.has(k))
+          errors.push({
+            path: `/generation/chatTemplateKwargs/${k}`,
+            keyword: 'forbidden_key',
+            message: `chatTemplateKwargs key ${JSON.stringify(k)} is not allowed`,
+          });
     }
   }
   return { ok: errors.length === 0, errors };

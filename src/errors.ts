@@ -1,7 +1,24 @@
 /** Errors raised by the asset manager. */
 
 export type AssetErrorCode =
-  'hash_mismatch' | 'quota' | 'network' | 'aborted' | 'not_verified' | 'store' | 'policy';
+  | 'hash_mismatch'
+  | 'quota'
+  | 'network'
+  | 'aborted'
+  | 'not_verified'
+  | 'store'
+  | 'policy'
+  /** acquire({ cacheOnly: true }) found no verified, fully stored file (nothing was requested). */
+  | 'not_cached';
+
+/**
+ * Why getBlob() refused a stored file (AssetError code 'not_verified', `reason`): the file is gone
+ * ('file_missing': also a read that failed with NotFoundError), its size no longer matches the row
+ * ('size_changed'), it could not be read ('unreadable': for example the OPFS snapshot changed under
+ * a NotReadableError) or its bytes no longer match the hash ('hash_mismatch'). Adapters map
+ * 'file_missing' to 'not_cached' and the other three to 'integrity'.
+ */
+export type NotVerifiedReason = 'file_missing' | 'size_changed' | 'unreadable' | 'hash_mismatch';
 
 /** Sub-reasons for `network` errors. */
 export type NetworkReason = 'oversize' | 'status' | 'content-length' | 'aborted-stream' | 'fetch';

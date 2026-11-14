@@ -103,6 +103,11 @@ export interface EnsureOptions {
   onProgress?: (p: DownloadProgress) => void;
 }
 
+/** What ensureCore() takes beyond EnsureOptions: acquire()'s cache-only switch. */
+interface CoreOptions extends EnsureOptions {
+  cacheOnly?: boolean;
+}
+
 export interface LoadManifestOptions {
   allowDowngrade?: boolean;
   /** Base URL for relative entry URLs when a manifest object is passed. */
@@ -471,11 +476,12 @@ export class AssetManager implements AssetSource {
    * `airplanemode-held:<sha>` lock are taken before the asset:<sha> lock is released, so there is
    * no window in which the verified asset can be evicted between being ensured and being held.
    */
-  private async ensureCore(entryId: string, opts: EnsureOptions, hold: boolean): Promise<Handle> {
+  private async ensureCore(entryId: string, opts: CoreOptions, hold: boolean): Promise<Handle> {
     await this.ready();
     const entry = this.getEntry(entryId);
-    const url = this.resolveUrl(entry);
     const sha = entry.sha256;
+    if (opts.cacheOnly === true) return this.acquireCacheOnly(entry, hold);
+    const url = this.resolveUrl(entry);
     return this.locks.request(`asset:${sha}`, async () => {
       const row = await this.getRow(sha);
       if (row && row.verifiedAt && (await this.store.fileSize(sha)) === row.size) {
@@ -524,6 +530,25 @@ export class AssetManager implements AssetSource {
   }
 
   /**
+   * acquire({ cacheOnly: true }): inside the asset lock, a verified row AND a committed file of exactly
+   * entry.size, otherwise AssetError 'not_cached'. Nothing is fetched, no download policy is evaluated
+   * (so no asset.download.blocked either), and no part data, state, row or file is read, written,
+   * committed, resumed or removed: a `.part`, complete or partial, is never looked at. The R2 re-hash
+   * happens later, at getBlob(id, { rehash: true }).
+   */
+  private async acquireCacheOnly(entry: ManifestEntry, hold: boolean): Promise<Handle> {
+    const sha = entry.sha256;
+    return this.locks.request(`asset:${sha}`, async () => {
+      const row = await this.getRow(sha);
+      const stored = row?.verifiedAt ? await this.store.fileSize(sha) : undefined;
+      if (!row || !row.verifiedAt || row.size !== entry.size || stored !== entry.size)
+        throw new AssetError('not_cached', `asset ${entry.id} is not stored in full`);
+      await this.touch(sha, entry.id);
+      return this.handleFor(entry, hold);
+    });
+  }
+
+  /**
    * Handle for a verified entry. Called inside the asset:<sha> lock: when `hold` is set it takes the
    * refcount and the shared cross-instance lock before returning, and release() undoes both.
    */
@@ -555,8 +580,9 @@ export class AssetManager implements AssetSource {
    * the asset meanwhile (S1-021). May download through this manager.
    */
   async acquire(entryId: string, opts: AcquireOptions = {}): Promise<AssetHandle> {
-    const ensureOpts: EnsureOptions = {};
+    const ensureOpts: CoreOptions = {};
     if (opts.signal) ensureOpts.signal = opts.signal;
+    if (opts.cacheOnly === true) ensureOpts.cacheOnly = true;
     const onProgress = opts.onProgress;
     if (onProgress)
       ensureOpts.onProgress = (p) =>
@@ -578,6 +604,7 @@ export class AssetManager implements AssetSource {
       throw new AssetError(
         'not_verified',
         `asset ${entryId}: stored size ${size ?? 'none'} differs from ${row.size}`,
+        { reason: size === undefined ? 'file_missing' : 'size_changed' },
       );
     }
     let blob: Blob;
@@ -586,22 +613,38 @@ export class AssetManager implements AssetSource {
     } catch (e) {
       await this.invalidate(sha, entry.id, 'size_changed');
       throw new AssetError('not_verified', `asset ${entryId}: cannot read stored file`, {
+        reason:
+          (e as { name?: unknown } | null)?.name === 'NotFoundError'
+            ? 'file_missing'
+            : 'unreadable',
         cause: e,
       });
     }
     if (opts.rehash) {
       const h = new Sha256();
-      const reader = blob.stream().getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        h.update(value);
+      try {
+        const reader = blob.stream().getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          h.update(value);
+        }
+      } catch (e) {
+        // S1-073: a file that changed or cannot be read mid-hash is an integrity failure, not a backend error
+        const name = (e as { name?: unknown } | null)?.name;
+        const missing = name === 'NotFoundError';
+        await this.invalidate(sha, entry.id, 'size_changed');
+        throw new AssetError('not_verified', `asset ${entryId}: cannot read stored file`, {
+          reason: missing ? 'file_missing' : 'unreadable',
+          cause: e,
+        });
       }
       if (h.digestHex() !== sha) {
         await this.invalidate(sha, entry.id, 'hash_mismatch');
         throw new AssetError(
           'not_verified',
           `asset ${entryId}: stored bytes no longer match ${sha}`,
+          { reason: 'hash_mismatch' },
         );
       }
     }

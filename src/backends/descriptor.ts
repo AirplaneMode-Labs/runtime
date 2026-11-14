@@ -23,12 +23,14 @@ import type { ManifestEntry } from '../../spec/manifest';
 import {
   MODEL_DESCRIPTOR_MAX_BYTES,
   MODEL_DESCRIPTOR_MEDIA_TYPE,
-  MODEL_DESCRIPTOR_SPEC,
+  MODEL_DESCRIPTOR_SPECS_ACCEPTED,
+  type DescriptorRejectReason,
   type ModelDescriptor,
 } from '../../spec/model-descriptor';
 import { ManifestError, checkParsed } from '../manifest';
 import { satisfies } from '../satisfies';
 import { validateModelDescriptor } from '../schema';
+import { forEntry } from './entry-error';
 
 export interface ResolvedFile {
   /** Path inside the model, as the descriptor lists it. */
@@ -56,34 +58,90 @@ export interface DescriptorContext {
   held: AssetHandle[];
   signal?: AbortSignal | undefined;
   onProgress?: ((p: { entryId: string; received: number; total: number }) => void) | undefined;
+  /** Passed to acquire(): resolve only for files already stored in full (LoadOptions.cacheOnly). */
+  cacheOnly?: boolean | undefined;
+  /** Receives the time the descriptor's own acquire and re-hash took (the load phases acquire and verify). */
+  timer?: { add(phase: 'acquire' | 'verify', ms: number, bytes?: number): void } | undefined;
 }
 
-const bad = (message: string, cause?: unknown): AdapterError =>
-  new AdapterError('bad_descriptor', message, cause === undefined ? undefined : { cause });
+/** An AdapterError 'bad_descriptor' that names which rule rejected the descriptor. */
+export class DescriptorError extends AdapterError {
+  readonly reason: DescriptorRejectReason;
+  constructor(reason: DescriptorRejectReason, message: string, options?: { cause?: unknown }) {
+    super('bad_descriptor', message, options);
+    this.reason = reason;
+  }
+}
 
-/** Strict canonical parse of descriptor text plus the schema and ordering rules. */
+const bad = (
+  message: string,
+  cause?: unknown,
+  reason: DescriptorRejectReason = 'schema',
+): DescriptorError =>
+  new DescriptorError(reason, message, cause === undefined ? undefined : { cause });
+
+/** Code-checked rules (JSON Schema cannot express them) and the reason each one reports. */
+const CODE_RULE_REASON: Readonly<Record<string, DescriptorRejectReason>> = {
+  unique: 'duplicate_paths',
+  forbidden_key: 'invalid_key',
+};
+
+/**
+ * Strict canonical parse of descriptor text plus the schema, ordering and membership rules. A
+ * rejection is a DescriptorError (an AdapterError 'bad_descriptor') whose `reason` is one of
+ * DESCRIPTOR_REJECT_REASONS. Both wire strings (0.1 and 0.2) are accepted.
+ */
 export function parseDescriptor(text: string): ModelDescriptor {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch (e) {
-    throw bad('the model descriptor is not valid JSON', e);
+    throw bad('the model descriptor is not valid JSON', e, 'invalid_json');
   }
   try {
     checkParsed(value, '');
   } catch (e) {
-    if (e instanceof ManifestError)
-      throw bad(`the model descriptor breaks the canonical JSON rules (${e.reason})`, e);
+    if (e instanceof ManifestError) {
+      const reason = (
+        ['float', 'bigint', 'digit_key', 'invalid_key', 'lone_surrogate'] as const
+      ).find((r) => r === e.reason);
+      throw bad(
+        `the model descriptor breaks the canonical JSON rules (${e.reason})`,
+        e,
+        reason ?? 'schema',
+      );
+    }
     throw e;
   }
   if (value === null || typeof value !== 'object' || Array.isArray(value))
     throw bad('the model descriptor must be a JSON object');
-  if ((value as { spec?: unknown }).spec !== MODEL_DESCRIPTOR_SPEC)
-    throw bad('the model descriptor has an unknown spec string');
+  const spec = (value as { spec?: unknown }).spec;
+  if (
+    typeof spec !== 'string' ||
+    !(MODEL_DESCRIPTOR_SPECS_ACCEPTED as readonly string[]).includes(spec)
+  )
+    throw bad('the model descriptor has an unknown spec string', undefined, 'bad_spec');
   const result = validateModelDescriptor(value);
   if (!result.ok) {
-    const first = result.errors[0]!;
-    throw bad(`the model descriptor is invalid at ${first.path || '/'} (${first.keyword})`);
+    // a JSON Schema fault wins; otherwise the first code-checked rule names the reason
+    const schemaFault = result.errors.find(
+      (e) => !['sorted', 'unique', 'forbidden_key'].includes(e.keyword),
+    );
+    const first = schemaFault ?? result.errors[0]!;
+    let reason: DescriptorRejectReason = 'schema';
+    if (!schemaFault) {
+      reason =
+        first.keyword === 'sorted'
+          ? first.path.startsWith('/devices')
+            ? 'unsorted_devices'
+            : 'unsorted_files'
+          : (CODE_RULE_REASON[first.keyword] ?? 'schema');
+    }
+    throw bad(
+      `the model descriptor is invalid at ${first.path || '/'} (${first.keyword})`,
+      undefined,
+      reason,
+    );
   }
   return value as ModelDescriptor;
 }
@@ -128,12 +186,28 @@ export async function loadDescriptor(
   const acquireOpts: {
     signal?: AbortSignal;
     onProgress?: NonNullable<DescriptorContext['onProgress']>;
+    cacheOnly?: boolean;
   } = {};
   if (ctx.signal) acquireOpts.signal = ctx.signal;
   if (ctx.onProgress) acquireOpts.onProgress = ctx.onProgress;
-  ctx.held.push(await ctx.assets.acquire(entry.id, acquireOpts));
+  if (ctx.cacheOnly === true) acquireOpts.cacheOnly = true;
+  const acquire = ctx.assets.acquire.bind(ctx.assets);
+  const clock = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const acquireStart = clock();
+  try {
+    ctx.held.push(await forEntry(entry.id, () => acquire(entry.id, acquireOpts)));
+  } finally {
+    ctx.timer?.add('acquire', clock() - acquireStart);
+  }
 
-  const blob = await ctx.assets.getBlob(entry.id, { rehash: true });
+  const verifyStart = clock();
+  let blob: Blob;
+  try {
+    blob = await forEntry(entry.id, () => ctx.assets.getBlob(entry.id, { rehash: true }));
+  } finally {
+    ctx.timer?.add('verify', clock() - verifyStart);
+  }
+  ctx.timer?.add('verify', 0, blob.size);
   if (blob.size > MODEL_DESCRIPTOR_MAX_BYTES)
     throw bad(`the stored model descriptor is larger than ${MODEL_DESCRIPTOR_MAX_BYTES} bytes`);
   let text: string;

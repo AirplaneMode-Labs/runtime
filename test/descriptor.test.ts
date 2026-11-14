@@ -168,7 +168,7 @@ describe('loadDescriptor: parse and schema (after acquire)', () => {
       },
     ],
     ['transformers-js without runtimeWasm', { descriptor: (d) => delete d['runtimeWasm'] }],
-    ['a bad spec string', { descriptor: (d) => (d['spec'] = 'airplanemode.model/0.2') }],
+    ['a bad spec string', { descriptor: (d) => (d['spec'] = 'airplanemode.model/0.3') }],
     ['invalid UTF-8', { descriptorBytes: new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]) }],
   ];
   for (const [label, o] of bad) {
@@ -259,7 +259,7 @@ describe('loadDescriptor: cross-checks bound to the manifest of this AssetManage
 });
 
 describe('loadDescriptor: tamper after verification', () => {
-  it('one flipped byte in the stored descriptor makes getBlob(rehash) reject not_verified', async () => {
+  it('one flipped byte in the stored descriptor makes getBlob(rehash) fail and loadDescriptor reports integrity (T1-S2-07)', async () => {
     const w = await makeWorld();
     const h = await w.mgr.ensure('m.descriptor');
     h.release();
@@ -272,8 +272,10 @@ describe('loadDescriptor: tamper after verification', () => {
       await loadDescriptor(w.descriptorEntry, ctxOf(w));
       expect.unreachable('should have rejected');
     } catch (e) {
-      expect(e).toBeInstanceOf(AssetError);
-      expect(['not_verified', 'hash_mismatch']).toContain((e as AssetError).code);
+      expect(e).toBeInstanceOf(AdapterError);
+      expect((e as AdapterError).code).toBe('integrity');
+      expect(((e as AdapterError).cause as AssetError).code).toBe('not_verified');
+      expect((e as unknown as { entryId: string }).entryId).toBe('m.descriptor');
     }
   });
 });
@@ -283,5 +285,92 @@ describe('parseDescriptor', () => {
     const d = parseDescriptor(JSON.stringify(descriptorJson()));
     expect(d.engine).toBe('transformers-js');
     expect(d.generation?.chatTemplateKwargs).toEqual({ enable_thinking: false });
+  });
+});
+
+describe('parseDescriptor 0.2.0 (D1-01)', () => {
+  const base = () => JSON.parse(JSON.stringify(descriptorJson())) as Record<string, unknown>;
+  const reason = (d: unknown): string => {
+    try {
+      parseDescriptor(typeof d === 'string' ? d : JSON.stringify(d));
+    } catch (e) {
+      expect(e).toBeInstanceOf(AdapterError);
+      expect((e as AdapterError).code).toBe('bad_descriptor');
+      return (e as unknown as { reason: string }).reason;
+    }
+    return 'accepted';
+  };
+
+  it('accepts both wire strings; writers emit 0.2', () => {
+    expect(reason(base())).toBe('accepted'); // helpers still emit 0.1
+    const v2 = { ...base(), spec: 'airplanemode.model/0.2' };
+    expect(reason(v2)).toBe('accepted');
+    expect(reason({ ...base(), spec: 'airplanemode.model/0.3' })).toBe('bad_spec');
+    expect(reason({ ...base(), spec: 'airplanemode.model/0.1.0' })).toBe('bad_spec');
+    expect(reason({ ...base(), spec: 7 })).toBe('bad_spec');
+  });
+
+  it('puts the reason on the AdapterError: invalid_json, float, bigint, digit_key, invalid_key, lone_surrogate', () => {
+    expect(reason('{nope')).toBe('invalid_json');
+    expect(reason('[]')).toBe('schema');
+    expect(reason('null')).toBe('schema');
+    expect(
+      reason(JSON.stringify(base()).replace('"contextLength":2048', '"contextLength":2048.5')),
+    ).toBe('float');
+    expect(
+      reason(
+        JSON.stringify(base()).replace('"contextLength":2048', '"contextLength":9007199254740993'),
+      ),
+    ).toBe('bigint');
+    const digit = JSON.stringify(base()).replace('"generation":{', '"generation":{"1a":1,');
+    expect(reason(digit)).toBe('digit_key');
+    const badKey = JSON.stringify(base()).replace('"generation":{', '"generation":{"a-b":1,');
+    expect(reason(badKey)).toBe('invalid_key');
+    const lone = JSON.stringify(base()).replace('"licence":"Apache-2.0"', '"licence":"\\ud800"');
+    expect(reason(lone)).toBe('lone_surrogate');
+  });
+
+  it('checks ordering and uniqueness: unsorted_files, duplicate_paths, unsorted_devices', () => {
+    const d = base();
+    const files = d['files'] as { path: string; entryId: string }[];
+    expect(reason({ ...d, files: [files[1], files[0], ...files.slice(2)] })).toBe('unsorted_files');
+    expect(
+      reason({
+        ...d,
+        files: [files[0], { ...files[1]!, path: files[0]!.path }, ...files.slice(2)],
+      }),
+    ).toBe('duplicate_paths');
+    expect(reason({ ...d, devices: ['webgpu', 'wasm'] })).toBe('unsorted_devices');
+  });
+
+  it('requires modelLib and runtimeWasm to be listed in files (schema), and bans the other engine branch even with null', () => {
+    const d = base();
+    expect(reason({ ...d, runtimeWasm: 'runtime/not-listed.wasm' })).toBe('schema');
+    const tjs = { ...d, spec: 'airplanemode.model/0.2' };
+    expect(reason({ ...tjs, modelLib: 'runtime/ort-test.asyncify.wasm' })).toBe('schema');
+    expect(reason({ ...tjs, modelLib: null })).toBe('schema');
+    expect(reason({ ...tjs, sessionOptions: null })).toBe('schema');
+    const v1 = { ...d, sessionOptions: { graphOptimizationLevel: 'disabled' } };
+    expect(reason(v1)).toBe('schema');
+  });
+
+  it('rejects the prototype-polluting chatTemplateKwargs keys with invalid_key', () => {
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      const text = JSON.stringify(base()).replace(
+        '"chatTemplateKwargs":{',
+        `"chatTemplateKwargs":{${JSON.stringify(key)}:true,`,
+      );
+      expect(reason(text), key).toBe('invalid_key');
+    }
+  });
+
+  it('sessionOptions: only graphOptimizationLevel with a known level', () => {
+    const tjs = { ...base(), spec: 'airplanemode.model/0.2' };
+    expect(reason({ ...tjs, sessionOptions: { graphOptimizationLevel: 'disabled' } })).toBe(
+      'accepted',
+    );
+    expect(reason({ ...tjs, sessionOptions: { externalData: [] } })).toBe('schema');
+    expect(reason({ ...tjs, sessionOptions: { graphOptimizationLevel: 'turbo' } })).toBe('schema');
+    expect(reason({ ...tjs, sessionOptions: {} })).toBe('accepted');
   });
 });

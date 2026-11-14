@@ -11,6 +11,8 @@
 // writes <cache>/test-models/manifest.json and <cache>/test-models/smollm2-135m-instruct.descriptor.json;
 // with --hindi, <cache>/hindi-smoke/manifest.json for the local Qwen3-1.7B smoke run (hindi-smoke.spec.ts)
 
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { RFC8032_SEED_HEX, signManifest } from '../tools/lib.mjs';
@@ -99,11 +101,101 @@ export function buildHindiSmokeFixture({ cacheDir = resolve(repoRoot, '.cache/mo
   });
 }
 
+export const ISOLATION_MANIFEST_ID = 'dev.airplanemode.isolation';
+export const ISOLATION_BAD_DESCRIPTOR_ENTRY = 'smollm2-135m-instruct.bad-webgpu.descriptor';
+export const ISOLATION_WASM_DESCRIPTOR_ENTRY = 'smollm2-135m-instruct.wasm.descriptor';
+
+/**
+ * The per-rung isolation fixture (T1-S2-01, R7): one manifest, correctly signed with the RFC 8032 test
+ * key, that lists the SmolLM2 test model twice. The WebGPU descriptor names a model file that is
+ * garbage (the entry hash is the hash of the garbage, so verification passes and the engine, not the
+ * asset manager, rejects it when it creates the session); the WebAssembly descriptor names the real
+ * weights. With models [bad, wasm] the WebGPU rung fails after its worker has started, and the
+ * WebAssembly rung must still answer in the same page. Loopback tests only.
+ */
+export function buildIsolationFixture({ cacheDir = resolve(repoRoot, '.cache/models') } = {}) {
+  const base = buildTestModelFixture({ cacheDir });
+  const outDir = resolve(cacheDir, 'isolation');
+  mkdirSync(outDir, { recursive: true });
+  const garbage = Buffer.from(Array.from({ length: 4096 }, (_, i) => (i * 31 + 7) & 0xff));
+  writeFileSync(resolve(outDir, 'garbage.onnx'), garbage);
+  const signedAt = '2026-11-09T00:00:00Z';
+  const baseDescriptor = JSON.parse(readFileSync(base.descriptorPath, 'utf8'));
+  const garbageEntryId = 'isolation.garbage-onnx';
+  const realOnnxEntryId = 'smollm2-135m-instruct.onnx-q4';
+  const make = (id, devices, onnxEntryId) => {
+    const d = {
+      ...baseDescriptor,
+      id,
+      devices,
+      files: baseDescriptor.files.map((f) =>
+        f.entryId === realOnnxEntryId ? { ...f, entryId: onnxEntryId } : f,
+      ),
+    };
+    return Buffer.from(JSON.stringify(d, null, 2) + '\n', 'utf8');
+  };
+  const descriptors = [
+    [
+      ISOLATION_BAD_DESCRIPTOR_ENTRY,
+      'bad-webgpu.descriptor.json',
+      make('smollm2-135m-instruct.bad-webgpu', ['webgpu'], garbageEntryId),
+    ],
+    [
+      ISOLATION_WASM_DESCRIPTOR_ENTRY,
+      'wasm.descriptor.json',
+      make('smollm2-135m-instruct.wasm', ['wasm'], realOnnxEntryId),
+    ],
+  ];
+  const entries = base.entries.filter((e) => e.id !== TEST_MODEL_DESCRIPTOR_ENTRY);
+  entries.push({
+    id: garbageEntryId,
+    kind: 'model',
+    url: 'garbage.onnx',
+    sha256: createHash('sha256').update(garbage).digest('hex'),
+    size: garbage.length,
+    version: '1.0.0',
+    licence: 'Apache-2.0',
+    minProfile: {},
+  });
+  for (const [id, file, bytes] of descriptors) {
+    writeFileSync(resolve(outDir, file), bytes);
+    entries.push({
+      id,
+      kind: 'model',
+      mediaType: 'application/vnd.airplanemode.model+json',
+      url: file,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      size: bytes.length,
+      version: '1.0.0',
+      licence: 'Apache-2.0',
+      minProfile: {},
+    });
+  }
+  entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const body = {
+    spec: 'airplanemode.manifest/0.1',
+    id: ISOLATION_MANIFEST_ID,
+    version: '0.1.0',
+    publisher: 'Airplane Mode Labs (isolation fixture, RFC 8032 test key)',
+    createdAt: signedAt,
+    entries,
+    signatures: [],
+  };
+  body.signatures = [signManifest(body, RFC8032_SEED_HEX, signedAt)];
+  const manifestPath = resolve(outDir, 'manifest.json');
+  writeFileSync(manifestPath, JSON.stringify(body, null, 2) + '\n');
+  return { manifestPath, entries };
+}
+
 const isMain = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 if (isMain) {
   const i = process.argv.indexOf('--cache');
   const cacheDir = i >= 0 ? resolve(process.argv[i + 1]) : resolve(repoRoot, '.cache/models');
   try {
+    if (process.argv.includes('--isolation')) {
+      const iso = buildIsolationFixture({ cacheDir });
+      console.log(`signed ${iso.entries.length} isolation entries -> ${iso.manifestPath}`);
+    }
     const r = process.argv.includes('--hindi')
       ? buildHindiSmokeFixture({ cacheDir })
       : buildTestModelFixture({ cacheDir });

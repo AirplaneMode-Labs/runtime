@@ -26,12 +26,19 @@
  * recorded as failed with reason 'load_failed' without a download question and without a load, and the
  * refusal message adds one sentence telling the user to reload the page and choose WebAssembly.
  *
- * Consent (S1-053, interim). A file counts as present only when the store holds a verified row AND a
- * stored file of exactly the manifest size; anything else counts toward the rung's bytes, so
- * beforeDownload is asked (or the rung is declined in cache-only mode). 'Nothing was downloaded' is
- * said only when no asset.download.start was observed (on the asset source's event bus or the chain's
- * own sink); when the chain can observe neither, an approval keeps the claim off. Enforcing cache-only
- * inside acquire() (AcquireOptions.cacheOnly) is a Sprint 3 backend-adapter minor.
+ * Consent (S1-053). A file counts as present only when the store holds a verified row AND a stored
+ * file of exactly the manifest size; anything else counts toward the rung's bytes, so beforeDownload
+ * is asked (or the rung is declined in cache-only mode). 'Nothing was downloaded' is said only when no
+ * asset.download.start was observed (on the asset source's event bus or the chain's own sink); when the
+ * chain can observe neither, an approval keeps the claim off. A rung whose plan counts 0 bytes loads
+ * with LoadOptions.cacheOnly (backend adapter 0.3.0, R10): acquire() itself refuses to fetch, so a file
+ * that vanishes between the plan and the load is a 'not_cached' (recorded declined) and not a download.
+ *
+ * Integrity (T1-S2-07, R9). A file that failed its hash check in this call (an `integrity` error that
+ * names the entry, or an asset.verify.failed event on a bus the chain watches) is never acquired
+ * again in the same call: a later rung that needs it is recorded failed with reason 'integrity'
+ * without a consent question and without a load, and the message says a downloaded file failed its
+ * integrity check instead of "could not be started".
  */
 
 import {
@@ -62,7 +69,8 @@ export type AttemptReason =
   | 'load_failed'
   | 'declined'
   | 'forced'
-  | 'not_allowed';
+  | 'not_allowed'
+  | 'integrity';
 
 export interface Attempt {
   rung: Rung;
@@ -147,6 +155,7 @@ const REASON_TEXT: Readonly<Record<AttemptReason, string>> = {
   declined: 'the download was not approved',
   forced: 'skipped because a lower option was chosen',
   not_allowed: 'not enabled',
+  integrity: 'a downloaded file failed its integrity check',
 };
 
 export class BackendRefusedError extends AdapterError {
@@ -166,19 +175,29 @@ export class BackendRefusedError extends AdapterError {
 export function createDefaultAdapters(opts: {
   ortFactoryUrl: string;
   verifiedPrefix?: string;
-  /** Passed to both engine adapters; see TransformersAdapterOptions.sessionOptions. */
+  /**
+   * Deprecated since model descriptor 0.2.0, which carries the same option in the signed descriptor.
+   * Passed to both engine adapters; see TransformersAdapterOptions.sessionOptions.
+   */
   sessionOptions?: SessionOptions;
+  /**
+   * URL of the engine worker script (@airplanemode/runtime/worker, or your bundler's output for it).
+   * When given, both Transformers.js rungs run their engine in a dedicated worker (host 'worker'): the
+   * page does not freeze on WebAssembly, an abort lands promptly and a rung that fails cannot poison
+   * the next one. Without it the engines run on the main thread.
+   */
+  workerUrl?: string;
 }): BackendAdapter[] {
   const common = {
     ortFactoryUrl: opts.ortFactoryUrl,
     ...(opts.verifiedPrefix !== undefined ? { verifiedPrefix: opts.verifiedPrefix } : {}),
     ...(opts.sessionOptions !== undefined ? { sessionOptions: opts.sessionOptions } : {}),
   };
-  return [
-    createTransformersAdapter({ ...common, device: 'webgpu' }),
-    createTransformersAdapter({ ...common, device: 'wasm' }),
-    createChromePromptAdapter(),
-  ];
+  const make = (device: 'webgpu' | 'wasm'): BackendAdapter =>
+    opts.workerUrl !== undefined
+      ? createTransformersAdapter({ ...common, device, workerUrl: opts.workerUrl })
+      : createTransformersAdapter({ ...common, device });
+  return [make('webgpu'), make('wasm'), createChromePromptAdapter()];
 }
 
 function isAbort(e: unknown): boolean {
@@ -216,14 +235,21 @@ function skipReason(
 function watchDownloads(opts: LoadWithFallbackOptions): {
   approved(): void;
   mayHaveDownloaded(): boolean;
+  /** Manifest entry ids that failed verification during this call (R9). */
+  failedEntries: Set<string>;
   stop(): void;
 } {
   let started = false;
   let approvedAny = false;
   let observable = false;
+  const failedEntries = new Set<string>();
   const unsubscribe: (() => void)[] = [];
   const watch = (e: Event): void => {
     if (e.name === 'asset.download.start') started = true;
+    if (e.name === 'asset.verify.failed') {
+      const id = e.attrs?.['entryId'];
+      if (typeof id === 'string') failedEntries.add(id);
+    }
   };
   for (const bus of [opts.events, opts.assets.events] as const) {
     const subscribe = (bus as { subscribe?: (l: (e: Event) => void) => () => void } | undefined)
@@ -242,6 +268,7 @@ function watchDownloads(opts: LoadWithFallbackOptions): {
     },
     // observed: a download started or it did not; unobserved: an approval is the only evidence there is
     mayHaveDownloaded: () => (observable ? started : approvedAny),
+    failedEntries,
     stop: () => {
       for (const u of unsubscribe.splice(0)) {
         try {
@@ -325,26 +352,36 @@ async function runChain(
     adapter: BackendAdapter,
     entry: ManifestEntry,
     model: string | null,
+    cacheOnly = false,
   ): Promise<LoadWithFallbackResult | undefined> => {
     const loadOpts: LoadOptions = { assets: opts.assets, profile: opts.profile };
     if (opts.signal) loadOpts.signal = opts.signal;
     if (opts.events) loadOpts.events = opts.events;
     if (opts.onProgress) loadOpts.onProgress = opts.onProgress;
+    loadOpts.cacheOnly = cacheOnly;
     try {
       await adapter.load(entry, loadOpts);
     } catch (e) {
       await adapter.unload().catch(() => undefined);
       if (isAbort(e))
         throw e instanceof Error ? e : new AdapterError('aborted', 'the load was aborted');
-      const reason: AttemptReason =
-        e instanceof AdapterError && e.code === 'unsupported_profile' ? 'profile' : 'load_failed';
-      record({
-        rung,
-        adapter: adapter.id,
-        model,
-        outcome: reason === 'profile' ? 'skipped' : 'failed',
-        reason,
-      });
+      const code = e instanceof AdapterError ? e.code : undefined;
+      let reason: AttemptReason = 'load_failed';
+      let outcome: AttemptOutcome = 'failed';
+      if (code === 'unsupported_profile') {
+        reason = 'profile';
+        outcome = 'skipped';
+      } else if (code === 'integrity') {
+        reason = 'integrity';
+        // R9: the entry that failed is never acquired again in this call
+        const id = (e as { entryId?: unknown }).entryId;
+        if (typeof id === 'string') downloads.failedEntries.add(id);
+      } else if (code === 'not_cached') {
+        // R10: the file vanished after the plan; nothing was fetched
+        reason = 'declined';
+        outcome = 'declined';
+      }
+      record({ rung, adapter: adapter.id, model, outcome, reason });
       return undefined;
     }
     record({ rung, adapter: adapter.id, model, outcome: 'selected', reason: 'ok' });
@@ -445,6 +482,18 @@ async function runChain(
           });
           continue;
         }
+        if (plan.needs.some((id) => downloads.failedEntries.has(id))) {
+          // R9: no consent question, no download and no load for a file that already failed
+          record({
+            rung,
+            adapter: adapterId,
+            model: modelId,
+            outcome: 'failed',
+            reason: 'integrity',
+          });
+          continue;
+        }
+        let approvedDownload = false;
         if (plan.bytes > 0) {
           const approved = opts.beforeDownload
             ? await opts.beforeDownload({ rung, model: modelId, bytes: plan.bytes })
@@ -460,9 +509,11 @@ async function runChain(
             continue;
           }
           downloads.approved();
+          approvedDownload = true;
         }
         throwIfAborted();
-        const outcome = await tryLoad(rung, adapter, entry, modelId);
+        // R10: a rung that needs no download must not start one if a file vanished since the plan
+        const outcome = await tryLoad(rung, adapter, entry, modelId, !approvedDownload);
         if (outcome) return outcome;
       }
     }
@@ -495,6 +546,11 @@ interface DownloadPlan {
   bytes: number;
   /** True when the descriptor was readable and the count is exact. */
   exact: boolean;
+  /**
+   * Manifest entry ids this load needs: the descriptor entry, and its files when the descriptor was
+   * readable (otherwise only the descriptor entry is known).
+   */
+  needs: string[];
   /** True when the (cached) descriptor says it is not for this adapter. */
   mismatch(adapter: BackendAdapter): boolean;
 }
@@ -527,6 +583,7 @@ async function planDownload(assets: ChainAssets, entry: ManifestEntry): Promise<
       return {
         bytes: await sum(files),
         exact: true,
+        needs: [entry.id, ...files.map((f) => f.id)],
         mismatch: (adapter) =>
           descriptor.engine !== adapter.id ||
           (adapter.device !== 'builtin' && !descriptor.devices.includes(adapter.device)),
@@ -539,5 +596,5 @@ async function planDownload(assets: ChainAssets, entry: ManifestEntry): Promise<
   const candidates = all
     ? all.filter((e) => e.id === entry.id || e.mediaType !== MODEL_DESCRIPTOR_MEDIA_TYPE)
     : [entry];
-  return { bytes: await sum(candidates), exact: false, mismatch: () => false };
+  return { bytes: await sum(candidates), exact: false, needs: [entry.id], mismatch: () => false };
 }

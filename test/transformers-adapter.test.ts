@@ -296,6 +296,135 @@ describe('TransformersAdapter: sessionOptions (memory-hungry models)', () => {
   });
 });
 
+describe('D1-03: descriptor sessionOptions drive the ONNX Runtime session options', () => {
+  const v2 = (sessionOptions?: Record<string, unknown>) => ({
+    descriptor: (d: Record<string, unknown>) => {
+      d['spec'] = 'airplanemode.model/0.2';
+      if (sessionOptions !== undefined) d['sessionOptions'] = sessionOptions;
+    },
+  });
+  const sessionOf = (r: Rig) =>
+    r.engine.pipelineCalls[0]!.options['session_options'] as Record<string, unknown> | undefined;
+
+  it('a 0.2 descriptor with graphOptimizationLevel disabled reaches the engine with no application option', async () => {
+    const r = await rig({ world: v2({ graphOptimizationLevel: 'disabled' }) });
+    await r.load();
+    const so = sessionOf(r)!;
+    expect(so).toEqual({ graphOptimizationLevel: 'disabled' });
+    expect(Object.getPrototypeOf(so)).toBe(Object.prototype);
+    expect(Object.keys(so)).toEqual(['graphOptimizationLevel']);
+    expect(Object.getOwnPropertyNames(so)).toHaveLength(1);
+  });
+
+  it('a 0.1 descriptor, or a 0.2 descriptor without sessionOptions, passes none', async () => {
+    const a = await rig();
+    await a.load();
+    expect(sessionOf(a)).toBeUndefined();
+    const b = await rig({ world: v2() });
+    await b.load();
+    expect(sessionOf(b)).toBeUndefined();
+    const c = await rig({ world: v2({}) });
+    await c.load();
+    expect(sessionOf(c)).toBeUndefined();
+  });
+
+  it('the deprecated application option wins when it names a level, and the descriptor fills in when it does not', async () => {
+    for (const [app, expected] of [
+      [{ graphOptimizationLevel: 'basic' as const }, 'basic'],
+      [{}, 'disabled'],
+    ] as const) {
+      const w = await makeWorld(v2({ graphOptimizationLevel: 'disabled' }));
+      const engine = mockEngine();
+      const a = createTransformersAdapter({
+        device: 'webgpu',
+        ortFactoryUrl: ORT_FACTORY_URL,
+        verifiedPrefix: PREFIX,
+        pins: pinsFor(),
+        sessionOptions: app,
+        engine: async () => engine.module as never,
+      });
+      created.push(a);
+      await a.load(w.descriptorEntry, {
+        assets: w.mgr as AssetSource,
+        profile: profileOf('webgpu-f16'),
+      });
+      const so = engine.pipelineCalls[0]!.options['session_options'] as Record<string, unknown>;
+      expect(so).toEqual({ graphOptimizationLevel: expected });
+      expect(Object.getPrototypeOf(so)).toBe(Object.prototype);
+    }
+  });
+
+  it('every allowed level is passed through; an unknown key or level is bad_descriptor (schema) after the descriptor and before any other acquire()', async () => {
+    for (const level of ['disabled', 'basic', 'extended', 'layout', 'all']) {
+      const r = await rig({ world: v2({ graphOptimizationLevel: level }) });
+      await r.load();
+      expect(sessionOf(r)).toEqual({ graphOptimizationLevel: level });
+    }
+    for (const bad of [
+      { externalData: [] },
+      { graphOptimizationLevel: 'turbo' },
+      { executionProviders: ['webgpu'] },
+    ]) {
+      const r = await rig({ world: v2(bad) });
+      const acquire = vi.spyOn(r.w.mgr, 'acquire');
+      await expect(r.load()).rejects.toMatchObject({ code: 'bad_descriptor', reason: 'schema' });
+      expect(acquire).toHaveBeenCalledTimes(1); // the descriptor itself, no model file
+      expect(r.engine.pipeline).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a __proto__, constructor or prototype key in chatTemplateKwargs is bad_descriptor (invalid_key) before any file is acquired', async () => {
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      const text = JSON.stringify(descriptorJson()).replace(
+        '"chatTemplateKwargs":{',
+        `"chatTemplateKwargs":{${JSON.stringify(key)}:true,`,
+      );
+      const r = await rig({ world: { descriptorText: text } });
+      const acquire = vi.spyOn(r.w.mgr, 'acquire');
+      await expect(r.load(), key).rejects.toMatchObject({
+        code: 'bad_descriptor',
+        reason: 'invalid_key',
+      });
+      expect(acquire).toHaveBeenCalledTimes(1);
+      expect(r.engine.pipeline).not.toHaveBeenCalled();
+    }
+  });
+
+  it('chatTemplateKwargs reaches the chat template as a fresh plain object over the validated keys only', async () => {
+    const r = await rig({
+      world: {
+        descriptor: (d) => {
+          (d['generation'] as Record<string, unknown>)['chatTemplateKwargs'] = {
+            enable_thinking: false,
+            style: 'plain',
+            level: 2,
+          };
+        },
+      },
+    });
+    await r.load();
+    await r.adapter.generate('hi', { maxTokens: 2 });
+    const kw = r.engine.generateCalls[0]!.options['tokenizer_encode_kwargs'] as Record<
+      string,
+      unknown
+    >;
+    expect(kw).toEqual({ enable_thinking: false, style: 'plain', level: 2 });
+    expect(Object.getPrototypeOf(kw)).toBe(Object.prototype);
+    const parsed = (r.w.descriptor.generation as { chatTemplateKwargs: object }).chatTemplateKwargs;
+    expect(kw).not.toBe(parsed);
+  });
+
+  it('src/backends/transformers.ts never assigns, spreads or iterates the parsed descriptor into the engine options', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/backends/transformers.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/Object\.assign\(/);
+    expect(src).not.toMatch(
+      /\.\.\.\s*(d|descriptor|this\.sessionOptions|templateKwargs|st\.descriptor)\b/,
+    );
+    expect(src).not.toMatch(/for\s*\(\s*(const|let|var)\s+\w+\s+in\s/);
+  });
+});
+
 describe('TransformersAdapter: load (R1, R2)', () => {
   it('loads through pipeline(task, descriptor entry id, {device, dtype}), emits model.load with verified:true and holds every file', async () => {
     const r = await rig();
@@ -314,6 +443,8 @@ describe('TransformersAdapter: load (R1, R2)', () => {
       files: 6,
       tier: 'wasm',
       verified: true,
+      loadId: expect.stringMatching(/^[0-9a-f]{16}$/),
+      host: 'main',
     });
     expect(e!.bytes).toBe(r.w.totalBytes);
     expect(e!.durationMs).toBeGreaterThanOrEqual(0);
@@ -415,7 +546,7 @@ describe('TransformersAdapter: tamper before use (R2): no engine call on a chang
     ['the onnx file', 'm.onnx-q4'],
     ['the ORT wasm', 'ort.wasm'],
   ] as const) {
-    it(`one flipped byte in ${label} after verification: load fails not_verified, pipeline() call count 0, every handle released`, async () => {
+    it(`one flipped byte in ${label} after verification: load fails integrity, pipeline() call count 0, every handle released`, async () => {
       const r = await rig();
       for (const entryId of [...r.w.fileIds, 'm.descriptor'])
         (await r.w.mgr.ensure(entryId)).release();
@@ -429,8 +560,9 @@ describe('TransformersAdapter: tamper before use (R2): no engine call on a chang
       } catch (e) {
         error = e;
       }
-      expect(error).toBeInstanceOf(AssetError);
-      expect(['not_verified', 'hash_mismatch']).toContain((error as AssetError).code);
+      expect(error).toBeInstanceOf(AdapterError);
+      expect((error as AdapterError).code).toBe('integrity');
+      expect(((error as AdapterError).cause as AssetError).code).toBe('not_verified');
       expect(r.engine.pipeline).not.toHaveBeenCalled();
       expect(Object.values(await refcounts(r.w)).every((n) => n === 0)).toBe(true);
       expect(eventsNamed(r.events, 'model.load.failed')).toHaveLength(1);
@@ -478,6 +610,8 @@ describe('TransformersAdapter: failure handling (R5)', () => {
       model: 'm.descriptor',
       device: 'wasm',
       code: 'backend',
+      loadId: expect.stringMatching(/^[0-9a-f]{16}$/),
+      host: 'main',
     });
     expect(JSON.stringify(r.events.snapshot())).not.toContain('SENTINEL');
     expect(Object.values(await refcounts(r.w)).every((n) => n === 0)).toBe(true);
@@ -534,6 +668,8 @@ describe('TransformersAdapter: generate (R4)', () => {
         'decodeMs',
         'device',
         'finishReason',
+        'firstTokenMs',
+        'host',
         'inTokens',
         'outTokens',
         'prefillMs',

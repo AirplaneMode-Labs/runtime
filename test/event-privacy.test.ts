@@ -98,6 +98,8 @@ describe('events and errors never carry prompt text, output text or engine messa
       model: 'm.descriptor',
       device: 'wasm',
       code: 'backend',
+      loadId: expect.stringMatching(/^[0-9a-f]{16}$/),
+      host: 'main',
     });
   });
 

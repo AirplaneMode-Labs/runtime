@@ -25,6 +25,8 @@ const PATTERNS: [string, RegExp][] = [
 
 const ALLOWED: Record<string, string[]> = {
   'src/asset-manager.ts': ['fetch('],
+  // the worker egress guard names every API it refuses (R3w) and the one it replaces; it calls none
+  'src/worker/egress-guard.ts': ['XMLHttpRequest', 'WebSocket', 'importScripts', 'EventSource'],
 };
 
 function walk(dir: string): string[] {
@@ -78,12 +80,15 @@ describe('no network egress in library code', () => {
       const rel = relative(repoDir, f);
       const text = readFileSync(f, 'utf8');
       const named = /@huggingface\/transformers|@mlc-ai\/web-llm/.test(text);
-      if (rel === 'src/backends/transformers.ts') expect(named, rel).toBe(true);
+      // the engine packages are named only by the adapters that import them (the worker host's
+      // tjs-engine is the engine side of the Transformers.js worker adapter)
+      if (rel === 'src/backends/transformers.ts' || rel === 'src/worker/tjs-engine.ts')
+        expect(named, rel).toBe(true);
       else expect(named, rel).toBe(false);
     }
     const index = readFileSync(resolve(srcDir, 'index.ts'), 'utf8');
     expect(index).not.toMatch(
-      /backends\/(transformers|chain|chrome-prompt|descriptor|verified-files)/,
+      /backends\/(transformers|chain|chrome-prompt|descriptor|verified-files|worker-adapter)|worker\//,
     );
   });
 
