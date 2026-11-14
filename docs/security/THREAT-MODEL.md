@@ -309,3 +309,87 @@ the glyphsift installer drift (S1-065) and the install-script wording (S1-067).
 Each has an owner and a target; none
 lets an attacker who controls the network, a model host or the engine library put unverified
 bytes in front of an engine or reach a third-party origin from the runtime demo.
+
+## 8. Sprint 3 update: the engine worker, the DevTools extension, packaging and WebLLM staging
+
+Reviewed 14 November 2026 (findings S1-068 to S1-077 in `FINDINGS.md`, "Sprint 3 review"; S1-072 and
+S1-073 Fixed and S1-078 to S1-080 added in "Sprint 3 fix round 1 re-verification").
+
+### 8.1 New assets and trust boundaries
+
+- **The engine worker** (`src/worker/*`, started by `src/backends/worker-adapter.ts`). A fresh dedicated
+  module worker per `load()`, booted from a `blob:` URL whose source is one static import of a same-origin
+  worker script. It runs Transformers.js and ONNX Runtime and is treated as **untrusted**: it holds the
+  prompt and the verified model bytes but may only answer through validated messages (R13). Its network
+  function is the verified-file shim behind the egress guard (R3w). The page keeps the trust decisions:
+  R1 (descriptor), R2 (acquire and re-hash) and every event are built on the page.
+- **The worker message boundary.** Page to worker: the init message with the same Blob objects that
+  `getBlob(id, {rehash: true})` returned, the absolute verified prefix and the ORT factory URL, both
+  resolved and origin-checked on the page. Worker to page: plain payloads only (phase, memory, ready,
+  token, done, error code, egress origin), each checked for type, keys, ranges and enums.
+- **The Trusted Types policy** `airplanemode-worker` (one per page, exact-URL Set) is the only way a
+  script URL reaches `new Worker()` on `models.html`.
+- **The DevTools hook and extension.** `exposeDevtoolsHook()` (opt-in, only the demo calls it) puts a
+  frozen `{version, snapshot()}` on the page global; the MV3 extension (zero permissions, `connect-src
+'none'`) reads it with one constant expression through `inspectedWindow.eval`. The page is untrusted
+  from the extension's side; the extension is a same-machine developer tool from the page's side.
+- **Packaged artifacts.** npm tarballs (runtime, glyphsift, localdata, pagetriage) and macOS arm64 wheels
+  (glyphsift, pagetriage), proven offline from locally built files. Registry names are still unreserved.
+
+### 8.2 STRIDE: engine worker and egress guard
+
+| Threat                 | Scenario                                                                                                                  | Control                                                                                                                                                                                                                                                                                                                                                          | Residual                                                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spoofing               | The engine (or a dependency) posts messages pretending to be the runtime, or forges phases, memory figures or error codes | R13 validator: exact key sets, enums, finite ranges, a phase at most once per load, unknown type or bad shape = crash and terminate; error codes outside AdapterErrorCode become `backend`; `cause` dropped                                                                                                                                                      | A hostile engine can still report false but in-range numbers (timings, memory), and a host-grammar `egress.origin` (S1-074)                                                                                      |
+| Tampering              | Bytes reach the engine that were not verified                                                                             | Page re-hashes and posts the same Blobs; worker checks `blob.size === entry.size`; the shim serves only registered verified files; engines start only if the guard sentinel is present                                                                                                                                                                           | OPFS snapshot TOCTOU fails closed (S1-070); own-`fetch` shadowing inside the worker (S1-072) is Fixed: `self` always owns a locked `fetch`; an unreadable posted Blob is reported as `integrity` (S1-073, Fixed) |
+| Tampering              | A crafted `workerUrl` injects code into the bootstrap                                                                     | `resolveWorkerUrl` (same origin, http(s), no query or fragment, safe character set) runs before `URL.createObjectURL`; source is `import <JSON.stringify(abs)>;`; TT policy accepts only URLs in its own Set                                                                                                                                                     | None found                                                                                                                                                                                                       |
+| Information disclosure | The engine sends the prompt or document text off the device                                                               | Guard replaces `fetch` on every prototype owner and refuses XHR, WebSocket, WebSocketStream, WebTransport, EventSource, importScripts, Worker, SharedWorker, `serviceWorker.register`, `Cache.add`/`addAll` (locked, non-configurable); `import()` and FontFace are stopped by the inherited CSP (S1-068, S1-069); `connect-src 'self'`                          | On Pages the CSP is a meta tag (row 23 for pilots)                                                                                                                                                               |
+| Information disclosure | Prompt or document text reaches events, the DevTools snapshot or the DOM                                                  | Only token and result text reach the app; events built on the page from enums and validated numbers; sentinel tests (fuzz, T1 privacy scan)                                                                                                                                                                                                                      | S1-074 (origin host channel, on-device only)                                                                                                                                                                     |
+| Denial of service      | The engine hangs, crashes or floods messages                                                                              | 250 ms abort-then-terminate; crash path on `error`/`messageerror`; size caps on token (64 Ki chars), result (8 Mi chars), cause (10 k chars); holds, bootstrap URL and session released after every terminate                                                                                                                                                    | A hung WASM decode step is ended only by terminate (the model must be reloaded)                                                                                                                                  |
+| Elevation of privilege | Later engine code undoes the guard                                                                                        | Replacements `writable:false, configurable:false`; guard is the first import, has no side-effect imports, `sideEffects` keeps it in consumer bundles, a sentinel test checks the order in the built worker; `self` owns a locked `fetch` even where only `WorkerGlobalScope.prototype` did (S1-072, Fixed in fix round 1; `defineProperty` throws in Chrome 157) | None known in JS beyond `import()` and FontFace (S1-069)                                                                                                                                                         |
+
+### 8.3 STRIDE: DevTools extension and hook
+
+| Threat                 | Scenario                                                                                               | Control                                                                                                                                                                                                                                                                                                | Residual                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Spoofing / Tampering   | A hostile page shows fake figures in the panel                                                         | Every event schema-validated; text-only rendering                                                                                                                                                                                                                                                      | The panel shows what the page asserts (S1-076); not an audit record (checklist row 25) |
+| Elevation of privilege | A hostile page runs code in the extension (HTML in strings, getters, Proxy, huge or throwing snapshot) | Constant expression reading through property descriptors (getter counter 0); size and type rechecked in the extension; JSON parsed there; `createElement`/`textContent` only with an attribute allow-list; extension CSP `default-src 'none'; script-src 'self'; connect-src 'none'`; zero permissions | None found                                                                             |
+| Information disclosure | The extension leaks page data                                                                          | No permissions, no background, no content scripts, `connect-src 'none'`                                                                                                                                                                                                                                | None found                                                                             |
+| Information disclosure | The hook exposes events to other same-origin scripts or extensions with host access                    | Opt-in only; events carry no prompt, output, document text, storage key or value; `ns` and `model` documented as visible                                                                                                                                                                               | Applications must keep personal data out of namespaces and entry ids                   |
+| Denial of service      | A snapshot that never returns                                                                          | One read in flight, a waiting state after 5 s, polling only while shown                                                                                                                                                                                                                                | The page's own main thread is blocked by its own code                                  |
+
+### 8.4 Packaging and install
+
+Install proofs never touch a registry name: tarballs install with `--offline --ignore-scripts` from an
+empty cache, wheels with `--no-index --no-deps` (and `uv --offline`), so an unreserved placeholder name
+cannot be squatted into these proofs. The packages carry no lifecycle scripts, source maps, test data or
+weights; the runtime's engine peer is optional and never installed by default. Residual: the names stay
+squattable until the owner reserves them (checklist row 8), and none of our packages carries registry
+provenance until the owner publishes (row 15).
+
+### 8.5 WebLLM staging (design only; not landed)
+
+R11 is specified but no WebLLM code or dependency exists. The design keeps verified bytes in
+origin-wide CacheStorage between `cache.put` and the engine's read, which on a shared origin is
+reachable by every co-hosted app (S1-071, extending S1-041). Before the rung lands: re-verify in the
+worker or require a dedicated origin (checklist row 24); keep the loadId-scoped keys, the Web Lock, the
+sweep that spares locked loadIds, deletion on every exit path, the headroom check and the rule never to
+call `caches.delete(name)`; T1 must show 0 requests to the staging prefix and to any model host.
+
+### 8.6 Residual risk after Sprint 3
+
+No open finding is Critical, High or Medium. The engine now runs isolated per load with its network
+locked down to verified files, and the two defence-in-depth gaps found in the review (S1-072, S1-073) are
+Fixed after fix round 1. What remains is a documented reliance on the inherited CSP for `import()` and FontFace (S1-069), an on-device text channel
+through the egress origin (S1-074) and the WebLLM staging design (S1-071), which gates that rung. The
+hosting-level controls (headers, dedicated origin, COOP/COEP) and the 8 GB measurements remain pre-pilot.
+
+Close-out addendum (14 November 2026, after the tester round 2 results): the independent T1, T2 and
+T3 re-runs found no control regression. The new close-out findings sit in the packaging and provenance
+boundary of section 8.4, not in the engine or storage boundaries: an artefact can be redistributed without
+the third-party licence texts of what it links (S1-082), and a public provenance statement can drift
+from the pin the code enforces (S1-083). Both are tampering-adjacent in the STRIDE sense only as
+repudiation of provenance: the enforced digests are correct and verified at load. The mitigation is the
+same pattern used for the manifest contract: a test that ties the human-readable record to the machine
+check, so neither can change alone. Throwaway signing keys in evidence folders (S1-081) remain the one
+information-disclosure item at the edge of the trust boundary, outside every repository.
