@@ -1,0 +1,19 @@
+{
+  "manifest-ok.json": {
+    "normative": {
+      "refused": false,
+      "bytesToConsumer": 4096,
+      "getBlob": "resolves",
+      "blobUrl": true
+    },
+    "informative": { "runtimeCode": null, "runtimeReason": null }
+  },
+  "manifest-flip.json": {
+    "normative": { "refused": true, "bytesToConsumer": 0, "getBlob": "rejects", "blobUrl": false },
+    "informative": { "runtimeCode": "hash_mismatch", "runtimeReason": null }
+  },
+  "manifest-truncated.json": {
+    "normative": { "refused": true, "bytesToConsumer": 0, "getBlob": "rejects", "blobUrl": false },
+    "informative": { "runtimeCode": "network", "runtimeReason": "content-length" }
+  }
+}

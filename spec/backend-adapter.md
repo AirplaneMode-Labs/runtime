@@ -1,10 +1,17 @@
-# Backend adapter 0.3.0 (with model descriptor 0.2.0)
+# Backend adapter 0.3.1 (with model descriptor 0.2.1)
 
 Normative definition: `backend-adapter.ts` and, for the descriptor, `model-descriptor.ts` and
 `model-descriptor.schema.json`. One interface over Transformers.js (ONNX Runtime Web), WebLLM and the
 Chrome Prompt API, so the fallback chain WebGPU -> WASM -> Chrome built-in can pick a backend without
 the application changing. `backend-adapter.ts` imports nothing from `model-descriptor.ts`; the two are
 released together and versioned separately.
+
+0.3.1 (spec release 0.4.0, draft) is a patch over 0.3.0: no type changes. R13 is amended: a worker-reported
+egress refusal is recorded per Event 0.1.3 (reporter 'worker', origin 'worker-reported', a count) and the
+host never forwards worker text (S1-074). Model descriptor 0.2.1 pins branch C (webllm) to the 0.2 wire
+string and fixes the reason precedence (see `model-descriptor.ts`). Informative: the WebLLM rung was cut
+from Sprint 4 by team decision TD-08 (not half-landed); R11 stays specified and unimplemented in this
+repository.
 
 0.3.0 (spec release 0.3.0, draft) adds, over 0.2.0: `AcquireOptions.cacheOnly` and
 `LoadOptions.cacheOnly`, the error codes `integrity` and `not_cached`, `GenerateResult.timings.firstTokenMs`
@@ -354,10 +361,20 @@ Every worker message is untrusted. The main thread validates each incoming messa
 - `durationMs` must be finite, 0..86400000;
 - `bytes` and memory figures must be safe integers >= 0 or null;
 - `error.code` must be an `AdapterErrorCode`, otherwise it becomes `backend`;
-- `egress.origin` must match `^(https?|wss?|ftp)://[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$` or
-  `^[a-z][a-z0-9+.-]{0,31}:$` (at most 300 characters), otherwise it is recorded as 'invalid';
+- `egress` carries no usable text: the host reads only that the message is well formed (its `origin`, if
+  present, must be a string of at most 300 characters) and discards the value; the worker's string is
+  never recorded, never forwarded and never compared;
 - only `token.text` and the text of `done.result` reach the application; no worker-provided string reaches
-  `attrs`, `userMessage` or the DOM outside the answer area.
+  `attrs`, `userMessage` or the DOM outside the answer area, without exception.
+
+Worker-reported egress refusals (S1-074, Event 0.1.3). Every valid `egress` message from the worker is
+recorded by the host as one `backend.egress.refused` event with attrs `adapter` (the HOST's own adapter id,
+never a worker value), reporter 'worker', origin 'worker-reported' (a fixed string) and `count`, the
+1-based number of the worker-reported refusal within this `loadId`. At most 16 worker-reported events are
+recorded per `loadId`; later messages are dropped silently (the guard in the worker has already refused the
+request). A refusal by the page's own guard is recorded with reporter 'main' and `origin` equal to
+`new URL(x).origin` as the page computes it (`'null'` when the origin is opaque or the URL does not
+parse), and no `count`. The host never forwards worker text.
 
 Worker RPC (runtime-internal, `src/worker/protocol.ts`, `v: 1`): main to worker `init`, `generate`, `abort`,
 `unload`; worker to main `phase`, `memory`, `ready`, `token`, `done`, `error` (the `cause` never leaves the

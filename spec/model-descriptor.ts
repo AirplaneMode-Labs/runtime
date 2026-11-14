@@ -1,8 +1,13 @@
 /**
- * Model descriptor contract 0.2.0 (airplanemode.model/0.2), part of the backend-adapter 0.3.0
+ * Model descriptor contract 0.2.1 (airplanemode.model/0.2), part of the backend-adapter 0.3.1
  * contract.
  *
- * Normative JSON Schema: model-descriptor.schema.json ($id urn:airplanemode:spec:model-descriptor:0.2.0).
+ * Normative JSON Schema: model-descriptor.schema.json ($id urn:airplanemode:spec:model-descriptor:0.2.1).
+ *
+ * 0.2.1 (spec release 0.4.0, wire-compatible patch): branch C (webllm) pins the 0.2 wire string
+ * (BUG-T2-S3-22: a webllm descriptor with airplanemode.model/0.1 is schema-invalid), a repeated
+ * member name at any depth is invalid_json, and DESCRIPTOR_REJECT_PRECEDENCE fixes which reason wins
+ * when several faults hold (a missing "spec" is bad_spec, duplicate devices are schema; S1-075).
  *
  * 0.2.0 adds `sessionOptions` (transformers-js only) and fixes the shape of the webllm branch:
  * devices exactly ['webgpu'], `modelLib` required, `runtimeWasm` and `sessionOptions` absent.
@@ -50,6 +55,39 @@ export const DESCRIPTOR_REJECT_REASONS = Object.freeze([
   'unsorted_devices',
 ] as const);
 export type DescriptorRejectReason = (typeof DESCRIPTOR_REJECT_REASONS)[number];
+
+/**
+ * Reason precedence (normative): the reason is the first stage below that fails. Shared vectors never
+ * combine two parse-stage faults, so the order inside the first group is not tested.
+ *
+ *  1. parse stage: invalid_json (including a repeated member name at any depth), float, bigint,
+ *     digit_key, invalid_key, lone_surrogate
+ *  2. bad_spec (a missing, non-string or unknown spec)
+ *  3. schema (every JSON Schema fault, including duplicate devices through uniqueItems, `modelLib` or
+ *     `runtimeWasm` not listed in `files`, and an explicit null on a banned property)
+ *  4. unsorted_files
+ *  5. duplicate_paths
+ *  6. unsorted_devices
+ *
+ * `invalid_key` for a prototype-polluting `generation.chatTemplateKwargs` key (`__proto__`,
+ * `constructor`, `prototype`) is a code-checked rule that ranks after unsorted_devices.
+ */
+export const DESCRIPTOR_REJECT_PRECEDENCE: readonly (readonly DescriptorRejectReason[])[] =
+  Object.freeze([
+    Object.freeze([
+      'invalid_json',
+      'float',
+      'bigint',
+      'digit_key',
+      'invalid_key',
+      'lone_surrogate',
+    ] as const),
+    Object.freeze(['bad_spec'] as const),
+    Object.freeze(['schema'] as const),
+    Object.freeze(['unsorted_files'] as const),
+    Object.freeze(['duplicate_paths'] as const),
+    Object.freeze(['unsorted_devices'] as const),
+  ]);
 
 /** `mediaType` of the manifest entry that holds a descriptor. */
 export const MODEL_DESCRIPTOR_MEDIA_TYPE = 'application/vnd.airplanemode.model+json' as const;

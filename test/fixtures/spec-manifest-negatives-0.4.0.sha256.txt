@@ -1,0 +1,4 @@
+4aaef7c651c1e3fac3e317725488e59e08e85ac6305e185aa6c6ac7a8e05d894  vectors/neg-missing-spec.json
+2692eef1523ee8400484e264f6b4f49c1de38d26b1d4c3aab84c1a429c8daaba  vectors/neg-multi-badspec-unsorted.json
+e0a1d7f6f409b068a49230c1732ca7aa5fb4ddd92e18f3ac0f1d6e52651026b9  vectors/neg-multi-badurl-unsorted.json
+613bad022ef433721cad70ff3b8fd659005188394c14acaa608ef648e8f93d56  vectors/neg-duplicate-member.json

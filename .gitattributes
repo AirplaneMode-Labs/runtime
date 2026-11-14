@@ -10,6 +10,7 @@
 *.ico binary
 *.icns binary
 *.pdf binary
+*.bin binary
 *.wasm binary
 *.woff binary
 *.woff2 binary

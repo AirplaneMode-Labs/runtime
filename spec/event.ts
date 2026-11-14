@@ -1,7 +1,14 @@
 /**
- * Event contract 0.1.2 (airplanemode.event/0.1; the wire string never changes on a patch).
+ * Event contract 0.1.3 (airplanemode.event/0.1; the wire string never changes on a patch).
  *
- * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.2).
+ * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.3).
+ *
+ * 0.1.3 (wire-compatible, spec release 0.4.0): backend.egress.refused is re-specified so that no
+ * worker-supplied string ever reaches an event (S1-074): attrs adapter (the host's own adapter id),
+ * reporter ('main' | 'worker'), origin (new URL(x).origin computed by the page, or the fixed string
+ * 'worker-reported') and, for a worker report, count. STORAGE_EVENT_NAMES grows from 4 to 7 with
+ * storage.query, storage.index.open and storage.index.write (localdata vector index). The schema
+ * body is unchanged: only its $id moves.
  *
  * 0.1.2 (wire-compatible, spec release 0.3.0): reserves asset.hold.unknown (S1-066), adds the reason
  * 'integrity' and the adapter 'webllm' to backend.select, adds loadId and host to model.load and
@@ -20,11 +27,11 @@
  * enforces the attrs rules in code (key pattern, 32-key cap, 1024-unit strings, query-string
  * stripping, forbidden key names).
  *
- * Privacy. No prompt, output, document text, storage key or value, storage prefix, engine message,
- * worker-provided string or stack ever appears in an event. The namespace (attr 'ns') and the
- * descriptor entry id (attr 'model') DO appear in events and in the DevTools snapshot.
- * Applications must not encode personal data or document identifiers in namespace names or entry
- * ids.
+ * Privacy. No prompt, output, document text, storage key or value, storage prefix, query vector,
+ * score, engine message, stack, or worker-provided string ever appears in an event: no
+ * worker-provided string, without exception. The namespace (attr 'ns') and the descriptor entry id
+ * (attr 'model') DO appear in events and in the DevTools snapshot. Applications must not encode
+ * personal data or document identifiers in namespace names or entry ids.
  */
 
 export const EVENT_SPEC = 'airplanemode.event/0.1' as const;
@@ -126,9 +133,15 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
   /** kind error. attrs: attempts (integer), reasons (comma-joined reason codes, never engine text) */
   'backend.refused',
   /**
-   * kind error. attrs: adapter, origin. `origin` is scheme://host[:port] for hierarchical URLs,
-   * '<scheme>:' alone for data:, blob:, file: and other schemes, or '' when unparsable; never a
-   * path or a query.
+   * kind error. attrs: adapter, reporter, origin and, for a worker report, count (S1-074, Event 0.1.3).
+   * `adapter` is the HOST's own adapter id ('transformers-js', 'webllm' or 'chrome-prompt-api'), never
+   * a worker value. `reporter` is 'main' (the page's own guard refused a request) or 'worker' (the engine
+   * worker's guard reported a refusal). For reporter 'main', `origin` is new URL(x).origin as the page
+   * computes it: scheme://host[:port], or the string 'null' when the origin is opaque (data:, blob: of an
+   * opaque origin, file:) or the URL does not parse; never a path or a query. For reporter 'worker',
+   * `origin` is the fixed string 'worker-reported': the worker's text never enters an event. `count` is
+   * the 1-based number of the worker-reported refusal within one loadId; at most 16 worker-reported
+   * events are recorded per loadId and later ones are dropped. `count` is absent for reporter 'main'.
    */
   'backend.egress.refused',
   /**
@@ -208,7 +221,8 @@ export type MemorySamplePoint = (typeof MEMORY_SAMPLE_POINTS)[number];
 /**
  * Event names localdata emits (source 'localdata'), through an optional EventSink outside the
  * Storage API contract. The sink is called synchronously inside try/catch and never awaited. No
- * event carries a key, a prefix or a value; the namespace (attr 'ns') does appear.
+ * event carries a key, a prefix, a query vector, a score or a value; the namespace (attr 'ns') does
+ * appear. Seven names since Event 0.1.3.
  */
 export const STORAGE_EVENT_NAMES = Object.freeze([
   /** kind timing. attrs: ns, driver 'opfs' | 'indexeddb' | 'memory', outcome 'ok' | StorageErrorCode; bytes; durationMs. */
@@ -222,6 +236,24 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * namespaces), usage, quota (number or null), needed (0 when emitted by usage()).
    */
   'storage.quota',
+  /**
+   * kind timing; level debug, warn on failure. attrs: ns, driver 'opfs' | 'indexeddb' | 'memory' |
+   * 'custom', outcome ('ok' or a StorageErrorCode), k, candidates (rows that matched the filter),
+   * metric 'cosine' | 'dot', kernel 'simd' | 'scalar' | 'none'; durationMs. Never the query vector,
+   * the filterPrefix, a key, a score or a value.
+   */
+  'storage.query',
+  /**
+   * kind timing; level debug, warn when the index is corrupt. attrs: ns, driver, outcome ('ok' |
+   * 'absent' | a StorageErrorCode), rows, segments, reason ('' or a corrupt reason code), kernel
+   * 'simd' | 'scalar' | 'none'; bytes (index bytes) and durationMs.
+   */
+  'storage.index.open',
+  /**
+   * kind timing; level debug, warn on failure. attrs: ns, driver, outcome ('ok' or a StorageErrorCode),
+   * rows (rows after the call), replaced (rows replaced by the call), segments; bytes and durationMs.
+   */
+  'storage.index.write',
 ] as const);
 
 export type StorageEventName = (typeof STORAGE_EVENT_NAMES)[number];

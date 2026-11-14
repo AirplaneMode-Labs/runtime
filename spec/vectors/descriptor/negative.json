@@ -54,5 +54,29 @@
   {
     "file": "neg-kwargs-proto-key.json",
     "reason": "invalid_key"
+  },
+  {
+    "file": "neg-webllm-spec-0.1.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-missing-spec.json",
+    "reason": "bad_spec"
+  },
+  {
+    "file": "neg-dup-devices.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-multi-badspec-unsorted.json",
+    "reason": "bad_spec"
+  },
+  {
+    "file": "neg-multi-schema-unsorted.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-proto-member.json",
+    "reason": "schema"
   }
 ]

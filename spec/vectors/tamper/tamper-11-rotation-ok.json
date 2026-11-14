@@ -1,0 +1,66 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "tamper-base",
+  "version": "1.1.0",
+  "publisher": "Airplane Mode Labs (vectors)",
+  "createdAt": "2026-11-01T00:00:00Z",
+  "expiresAt": "2027-11-01T00:00:00Z",
+  "entries": [
+    {
+      "id": "m-x",
+      "kind": "data",
+      "url": "assets/m-x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m.x",
+      "kind": "data",
+      "url": "assets/m.x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m_x",
+      "kind": "data",
+      "url": "assets/m_x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "mx",
+      "kind": "data",
+      "url": "assets/mx",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "39f713d0a644253f04529421b9f51b9b08979d08295959c4f3990ee617f5139f",
+      "publicKey": "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=",
+      "sig": "f0CuoKtSAfTtwQ0MZarrQxrEy/VhFBDTiPFqU+JL6UIK7Er11VAzrd04kJtc5CYzJEpnfdCO8eumR6qSnatCDA==",
+      "signedAt": "2026-11-01T00:00:00Z"
+    },
+    {
+      "alg": "ed25519",
+      "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "sig": "zfPbYe0Ju5UnV+NckVsVblXvgboa063dHe3f+YqPXqSp1nMSE4oq0XfYKHNCDjpNSOx+4C2AkWxuSZtRzpNtCA==",
+      "signedAt": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

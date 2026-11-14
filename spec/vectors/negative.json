@@ -63,5 +63,100 @@
     "file": "neg-bad-alg-token.json",
     "reason": "schema",
     "stage": "parse"
+  },
+  {
+    "file": "neg-missing-spec.json",
+    "reason": "bad_spec",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-multi-badspec-unsorted.json",
+    "reason": "bad_spec",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-multi-badurl-unsorted.json",
+    "reason": "bad_url",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-duplicate-member.json",
+    "reason": "invalid_json",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-version-leading-zero.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-version-empty-prerelease-id.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-null-optional.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-unknown-member.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-bad-signedat.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-precedence-digitkey-nosigs.json",
+    "reason": "digit_key",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-proto-member-entry.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-proto-member.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-malformed-keyid-rotation.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-malformed-sig-rotation.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-malformed-pubkey-rotation.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-sig-noncanonical-base64.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-pubkey-noncanonical-base64.json",
+    "reason": "schema",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-url-control-char.json",
+    "reason": "bad_url",
+    "stage": "parse"
+  },
+  {
+    "file": "neg-url-unicode-space.json",
+    "reason": "bad_url",
+    "stage": "parse"
   }
 ]

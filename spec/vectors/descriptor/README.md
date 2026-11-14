@@ -5,12 +5,21 @@ byte into `control-plane/crates/cp-manifest/tests/fixtures/vectors/descriptor/`.
 implementations (TypeScript `parseDescriptor()` and Rust `cp-manifest`) must accept the three
 positive vectors and reject each negative vector with exactly the reason in `negative.json`.
 Revisions and entry ids in the vectors are synthetic. Added in spec release 0.3.0 (model descriptor
-0.2.0).
+0.2.0); five negatives added in spec release 0.4.0 (model descriptor 0.2.1) and one more by the fix round 2
+amendment (TD-29, `neg-proto-member`): 20 in all.
 
 Reasons (`DESCRIPTOR_REJECT_REASONS`): `invalid_json`, `float`, `bigint`, `digit_key`,
 `invalid_key`, `lone_surrogate`, `bad_spec`, `schema`, `unsorted_files`, `duplicate_paths`,
-`unsorted_devices`. A JSON Schema fault takes precedence over the ordering reasons; `bad_spec` is
-checked before the schema.
+`unsorted_devices`.
+
+Reason precedence (`DESCRIPTOR_REJECT_PRECEDENCE` in `model-descriptor.ts`): the reason is the first stage
+that fails: the parse stage (`invalid_json`, which includes duplicate members at any depth, `float`,
+`bigint`, `digit_key`, `invalid_key`, `lone_surrogate`), then `bad_spec` (a missing, non-string or unknown
+`spec`), then `schema` (every JSON Schema fault, duplicate `devices` through `uniqueItems`, `modelLib` or
+`runtimeWasm` not listed in `files`, an explicit `null` on a banned property), then `unsorted_files`, then
+`duplicate_paths`, then `unsorted_devices`. A prototype-polluting `chatTemplateKwargs` key (`invalid_key`) is
+a code-checked rule that ranks after `unsorted_devices`. Shared vectors never combine two parse-stage
+faults.
 
 ## Positive
 
@@ -22,22 +31,28 @@ checked before the schema.
 
 ## Negative
 
-| File                      | Reason            | Why it is rejected                                                              |
-| ------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| neg-session-unknown-key   | `schema`          | `sessionOptions` carries a key other than `graphOptimizationLevel`              |
-| neg-session-bad-level     | `schema`          | `graphOptimizationLevel` is not one of disabled, basic, extended, layout, all   |
-| neg-session-on-webllm     | `schema`          | `sessionOptions` on a webllm descriptor (transformers-js only)                  |
-| neg-session-in-0.1        | `schema`          | `sessionOptions` under the 0.1 wire string                                      |
-| neg-webllm-wasm-device    | `schema`          | a webllm descriptor whose devices are not exactly `["webgpu"]`                  |
-| neg-webllm-no-modellib    | `schema`          | a webllm descriptor without `modelLib`                                          |
-| neg-path-traversal        | `schema`          | a `files[].path` of `../etc/passwd`                                             |
-| neg-unsorted-files        | `unsorted_files`  | `files` not sorted by `path` in byte order (every other rule holds)             |
-| neg-dup-paths             | `duplicate_paths` | two `files` entries with one `path` (sorted, every other rule holds)            |
-| neg-bad-spec              | `bad_spec`        | wire string `airplanemode.model/0.3`                                            |
-| neg-tjs-modellib          | `schema`          | a transformers-js descriptor with `modelLib`                                    |
-| neg-webllm-runtimewasm    | `schema`          | a webllm descriptor with `runtimeWasm`                                          |
-| neg-modellib-not-in-files | `schema`          | `modelLib` names a path that is not in `files` (checked in code, not by schema) |
-| neg-kwargs-proto-key      | `invalid_key`     | `generation.chatTemplateKwargs` has the key `__proto__` (raw text in the file)  |
+| File                       | Reason            | Why it is rejected                                                                                                  |
+| -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| neg-session-unknown-key    | `schema`          | `sessionOptions` carries a key other than `graphOptimizationLevel`                                                  |
+| neg-session-bad-level      | `schema`          | `graphOptimizationLevel` is not one of disabled, basic, extended, layout, all                                       |
+| neg-session-on-webllm      | `schema`          | `sessionOptions` on a webllm descriptor (transformers-js only)                                                      |
+| neg-session-in-0.1         | `schema`          | `sessionOptions` under the 0.1 wire string                                                                          |
+| neg-webllm-wasm-device     | `schema`          | a webllm descriptor whose devices are not exactly `["webgpu"]`                                                      |
+| neg-webllm-no-modellib     | `schema`          | a webllm descriptor without `modelLib`                                                                              |
+| neg-path-traversal         | `schema`          | a `files[].path` of `../etc/passwd`                                                                                 |
+| neg-unsorted-files         | `unsorted_files`  | `files` not sorted by `path` in byte order (every other rule holds)                                                 |
+| neg-dup-paths              | `duplicate_paths` | two `files` entries with one `path` (sorted, every other rule holds)                                                |
+| neg-bad-spec               | `bad_spec`        | wire string `airplanemode.model/0.3`                                                                                |
+| neg-tjs-modellib           | `schema`          | a transformers-js descriptor with `modelLib`                                                                        |
+| neg-webllm-runtimewasm     | `schema`          | a webllm descriptor with `runtimeWasm`                                                                              |
+| neg-modellib-not-in-files  | `schema`          | `modelLib` names a path that is not in `files` (checked in code, not by schema)                                     |
+| neg-kwargs-proto-key       | `invalid_key`     | `generation.chatTemplateKwargs` has the key `__proto__` (raw text in the file)                                      |
+| neg-webllm-spec-0.1        | `schema`          | a webllm descriptor with wire string 0.1 (branch C pins 0.2; BUG-T2-S3-22)                                          |
+| neg-missing-spec           | `bad_spec`        | no `spec` member: a missing `spec` is `bad_spec`, never `schema`                                                    |
+| neg-dup-devices            | `schema`          | `devices` is `["wasm","wasm"]` (`uniqueItems`; S1-075, BUG-T2-S3-23-R2)                                             |
+| neg-multi-badspec-unsorted | `bad_spec`        | wire string 0.3 AND unsorted `files`: the earlier stage names the reason                                            |
+| neg-multi-schema-unsorted  | `schema`          | an invalid `dtype` AND unsorted `files`: the earlier stage names the reason                                         |
+| neg-proto-member           | `schema`          | an own `"__proto__"` member at the top level (raw text; BUG-T2-S4-11): an undeclared member of any name is `schema` |
 
 Four rules are checked in code because JSON Schema cannot express them: file ordering and path
 uniqueness, `devices` ordering, `modelLib` and `runtimeWasm` naming a listed path, and the
@@ -45,7 +60,6 @@ uniqueness, `devices` ordering, `modelLib` and `runtimeWasm` naming a listed pat
 given the type `null` in the schema; an implementation also rejects them when they are present
 with an explicit `null` value (reason `schema`).
 
-Signer-only rules (the control-plane `cp-manifest` check, not shared vectors): duplicate object keys
-at any depth are `invalid_json`, and an input over 1 MiB is `schema`. The JavaScript runtime parses
-with `JSON.parse` (the last duplicate key wins), so `cp-sign check-descriptor` is the authoring gate
-before signing.
+Duplicate object keys at any depth are `invalid_json` in every implementation since model descriptor 0.2.1
+(the runtime scans the text before `JSON.parse`; `cp-manifest` rejects them in its deserializer). An input
+over 1 MiB is `schema` (signer-only check in `cp-sign check-descriptor`, not a shared vector).

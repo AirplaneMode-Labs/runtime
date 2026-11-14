@@ -5,6 +5,147 @@ All notable changes to the open contracts. The format is based on
 Semantic Versioning: the wire discriminator `airplanemode.<name>/<major>.<minor>` changes only on
 major or minor, never on patch.
 
+## [0.4.0] - 2026-11-14 (untagged)
+
+The plan's 'manifest spec v0.1' is the manifest contract on wire airplanemode.manifest/0.1. Release 0.4.0
+publishes it as manifest 0.1.1 in MANIFEST.md, status published: future changes are additive patches or a
+new wire string. Other contracts: draft. In short, manifest 0.1.1: published; other contracts: draft. The
+files are committed; public after the owner's push.
+
+The 0.3.1 patch planned in Sprint 3 is folded into 0.4.0 because storage API 0.2.0 is a minor change. The
+release numbering rule is new in the README: the release minor bumps when any contract takes a minor bump,
+and the patch bumps otherwise; the wire discriminator changes only on a contract major or minor.
+
+Spec release 0.4.0 ships: manifest 0.1.1 (published), capability profile 0.1.0 (unchanged, draft), event
+0.1.3 (draft), storage API 0.2.0 (draft), backend adapter 0.3.1 (draft) and model descriptor 0.2.1
+(draft). Wire strings are unchanged: `airplanemode.manifest/0.1`, `airplanemode.capability/0.1`,
+`airplanemode.event/0.1`, `airplanemode.model/0.2` (0.1 still accepted).
+
+### Added
+
+- `MANIFEST.md`: the standalone, normative manifest spec v0.1 (scope, shape, canonicalisation, duplicate
+  members, signing, trust roots, verification order, reason precedence, downgrade, test keys, tamper
+  vectors, security considerations, conformance). `README.md` keeps a summary and a link.
+- The status vocabulary and the release numbering rule (README, Versioning): each contract is "draft" or
+  "published"; `SPEC_RELEASE` and `SPEC_STATUS` in `index.ts`.
+- Manifest 0.1.1: the duplicate-member rule (a repeated member name at any depth is `invalid_json`; the
+  runtime scans text before `JSON.parse`); the explicit S < L rule (RFC 8032 section 5.1.7); the reason
+  precedence (`MANIFEST_REJECT_PRECEDENCE`, a missing `spec` is `bad_spec`, never `schema`); all five RFC 8032
+  section 7.1 test keys in the test-key rule (`RFC8032_TEST_PUBLIC_KEYS_HEX`, `RFC8032_TEST_KEY_IDS`), matched by
+  keyId and by raw key bytes, with `allowTestKeys === true` as a strict boolean (TD-22).
+- Manifest vectors: four negatives (`neg-missing-spec`, `neg-multi-badspec-unsorted`,
+  `neg-multi-badurl-unsorted`, `neg-duplicate-member`; 13 + 4 = 17, then six more with the TD-26 amendment
+  below, 23 in all), `vectors/tamper/` (fifteen tamper
+  vectors and `tamper.json`) and `vectors/tamper-assets/` (three signed manifests over one asset, runtime-
+  specific, with `expect.json` separating normative from informative fields). The five positive vectors and
+  the thirteen Sprint 3 negatives are byte-identical to release 0.3.0.
+- Storage API 0.2.0 (minor): `query()` is implemented (brute-force top-k, `cosine` or `dot`, bit-exact f32
+  scoring), `putVectors()` and `indexInfo()`, `VectorRow`, `VectorMetric`, `PutVectorsResult`,
+  `VectorIndexInfo`, `QueryOptions.metric` and `values`, `UsageResult.vectorRows` and `vectorBytes`, the
+  constants `VECTOR_DIM_MAX`, `VECTOR_KEY_UTF8_MAX` and `VECTOR_VALUE_BYTES_MAX`, the error code `corrupt`,
+  the reserved driver prefix `__ld_` and the namespace `'__ld_vec.' + ns`. `storage-api.md` specifies the
+  all-or-nothing write, the nine-step query validation order, the scoring, the ordering, corruption and
+  the error-hygiene rule.
+- Event 0.1.3: `STORAGE_EVENT_NAMES` grows from four to seven names (`storage.query`,
+  `storage.index.open`, `storage.index.write`).
+- Model descriptor 0.2.1: `DESCRIPTOR_REJECT_PRECEDENCE`; five negative vectors (`neg-webllm-spec-0.1`,
+  `neg-missing-spec`, `neg-dup-devices`, `neg-multi-badspec-unsorted`, `neg-multi-schema-unsorted`; 14 + 5 = 19).
+
+### Amended in place before the first push (team decisions TD-26 and TD-29, 14 Nov 2026)
+
+Manifest 0.1.1 is amended in place before the first push: it is still manifest 0.1.1, still release 0.4.0 and still on wire string
+`airplanemode.manifest/0.1`, because nothing had left the machine and freezing a known lock-in bug in a
+"published" contract would have forced a new wire string later (BUG-T2-S4-02 to -05, S1-089, S1-091).
+
+- Version grammar: `Manifest.version` and `ManifestEntry.version` take strict SemVer 2.0, no build
+  metadata (`SEMVER_PATTERN`; a leading zero or an empty prerelease identifier is `schema`), one grammar
+  everywhere, so an accepted manifest can never lock its id into reason `state` (a version the schema took
+  but the downgrade-state reader refused). Numeric identifiers are compared exactly, as integers of any size.
+- The published Signature schema is applied at the schema stage to every `signatures[]` item
+  (additionalProperties false, the required members, the `alg`, `keyId`, `publicKey`, `sig` and `signedAt`
+  patterns, a calendar-valid `signedAt`): reason `schema`. An `alg` token that is not `ed25519` stays
+  schema-valid and is ignored (`unknown_alg`). `malformed_key_id` and `malformed_sig` stay defined for a
+  signature object that did not pass the schema.
+- The parse stage runs over the whole document, signatures[] included; a missing or non-array
+  `signatures` member is judged after the parse stage, so `MANIFEST_REJECT_PRECEDENCE` holds.
+- Test keys fail closed: a trust object that is not a Map, or cannot be iterated, is refused with
+  `test_key_refused` unless `allowTestKeys === true`, and the signature loop refuses a trusted test key by
+  `keyId` or by raw bytes for the key it actually uses.
+- `allowDowngrade` is documented as an explicit rollback that lowers the stored state and must be reachable
+  only from an authenticated admin action. No code change.
+- Six new manifest negatives (`neg-version-leading-zero`, `neg-version-empty-prerelease-id`,
+  `neg-null-optional`, `neg-sig-unknown-member`, `neg-sig-bad-signedat`, `neg-precedence-digitkey-nosigs`)
+  take `vectors/negative.json` from 17 to 23 rows and the Conformance count with it. The five positive
+  vectors and the 17 existing negatives are byte-identical.
+- `storage-api.md` (prose only, `storage-api.ts` and `event.ts` untouched): the key rule of 1024 UTF-16 code
+  units applies to vector keys too and dominates; 4096 UTF-8 bytes is the on-disk bound (BUG-T2-S4-10).
+
+Fix round 2 (team decision TD-29): the last amendment before the push, after which manifest 0.1.1 is frozen.
+Each item below changes what a verifier accepts, which is why it is made now: after the push it would change what
+a "published" contract accepts and need a new wire string. Still manifest 0.1.1, still release 0.4.0, still wire
+string `airplanemode.manifest/0.1`.
+
+- BUG-T2-S4-11 (high), unknown members: a member that no schema declares is `schema` under ANY name and at every
+  level (the manifest, an entry, `minProfile`, a signature), `__proto__`, `constructor`, `toString`,
+  `hasOwnProperty` and `valueOf` included. The runtime tested members with `k in props`, which counts every name
+  inherited from `Object.prototype` as declared, and its canonicaliser assigned `out[key]` on a plain object, so
+  an own `__proto__` member set a prototype and was never serialised: a validly signed manifest could carry
+  unsigned data (`{"pin": true, "url": ...}`) that a consumer then read. Both are fixed (own-property tests
+  everywhere, null-prototype canonical objects); MANIFEST.md Shape and Duplicate members say so. The same
+  names are `schema` in a model descriptor.
+- BUG-T2-S4-13, malformed signature members: the Signature schema applies to every `signatures[]` item, so a
+  malformed `keyId`, `sig` or `publicKey` in ANY item refuses the manifest with `schema`, even when another item
+  is valid and trusted (vectors below). No rule changed; the vectors pin the behaviour for cp-manifest.
+- BUG-T2-S4-14, one accepted encoding: `sig` is `^[A-Za-z0-9+/]{85}[AQgw]==$` and `publicKey` is
+  `^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$` (canonical padded base64, RFC 4648 section 3.5, pad bits zero);
+  anything else is `schema`. The patterns are exported as `SIGNATURE_SIG_PATTERN` and
+  `SIGNATURE_PUBLIC_KEY_PATTERN`. Before the fix the TypeScript verifier accepted every non-zero pad-bit spelling
+  of a valid signature and the Rust one refused it.
+- BUG-T2-S4-15 and S1-095, url characters: the forbidden characters of an entry `url` are one explicit set, not
+  `\s`: `?`, `#`, U+0000 to U+0020, U+007F to U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F,
+  U+3000 and U+FEFF (`ENTRY_URL_PATTERN`, reason `bad_url`). Both verifiers implement exactly this list.
+- Nine manifest negatives take `vectors/negative.json` from 23 to 32 rows and the Conformance count with it:
+  `neg-proto-member-entry`, `neg-sig-proto-member`, `neg-sig-malformed-keyid-rotation`,
+  `neg-sig-malformed-sig-rotation`, `neg-sig-malformed-pubkey-rotation`, `neg-sig-noncanonical-base64`,
+  `neg-pubkey-noncanonical-base64`, `neg-url-control-char`, `neg-url-unicode-space`. Each has exactly one fault and
+  is validly signed apart from it. One descriptor negative, `neg-proto-member`, takes `vectors/descriptor` from 19
+  to 20 (`schema`). The five positive vectors, the 13 Sprint 3 negatives, the six TD-26 negatives, `tamper/`,
+  `tamper-assets/`, `storage-api.ts` and `event.ts` are byte-identical to their state before this round (all 15
+  tamper rows keep their tabled result).
+- `manifest.schema.json` (`$id` unchanged): the `url`, `sig` and `publicKey` patterns and descriptions.
+
+### Changed
+
+- Event 0.1.3, S1-074: `backend.egress.refused` carries `adapter` (the host's own adapter id, never a worker
+  value), `reporter` (`main` | `worker`), `origin` (`new URL(x).origin` for the page's own guard, `'null'`
+  when opaque; the fixed string `worker-reported` for a worker report) and, for a worker report, `count`
+  (1 to 16 per `loadId`; later reports are dropped). No worker-provided string, without exception, reaches an
+  event. Backend adapter 0.3.1 amends R13 to match; no type changed. Informative: the WebLLM rung was cut from
+  Sprint 4 (team decision TD-08), R11 stays specified and unimplemented.
+- Model descriptor 0.2.1: branch C (webllm) pins the wire string `airplanemode.model/0.2` (BUG-T2-S3-22).
+- Schema `$id` values: manifest `urn:airplanemode:spec:manifest:0.1.1`, event
+  `urn:airplanemode:spec:event:0.1.3`, model descriptor `urn:airplanemode:spec:model-descriptor:0.2.1`; the
+  manifest and event schema bodies are unchanged.
+- `README.md` and `vectors/README.md` describe the new vectors; the manifest section of the README is now a
+  summary of `MANIFEST.md`.
+
+### Fixed
+
+- S1-075 and BUG-T2-S3-23-R2: duplicate `devices` in a descriptor have a vector (`neg-dup-devices`, reason
+  `schema`) and are specified, so both implementations agree.
+- A document with several faults has one defined reason (the two precedence lists), instead of whichever
+  check an implementation ran first.
+- The `[0.1.0]` date below: the heading said 2026-11-22, a date after the file's own later entries; the
+  spec 0.1.0 commit in `git log` is dated 2026-11-09.
+
+### Security
+
+- A repeated member name is refused (a signature over the parsed value could pass for a document whose
+  first member differs from the one signed); a non-canonical signature (S >= L) is refused before WebCrypto;
+  all five RFC 8032 test keys are refused by keyId and by raw bytes unless `allowTestKeys === true`.
+- The downgrade state is written only after a valid signature and a passed downgrade check.
+- No worker-provided string enters an event (S1-074).
+
 ## [0.3.0] - 2026-11-14 (draft)
 
 Spec release 0.3.0 ships: manifest 0.1.0 (unchanged, files and vectors byte-identical), capability
@@ -94,7 +235,10 @@ accounted bytes)` names its source; `quota` stays the estimate or the `quotaByte
   `{version: valid SemVer, createdAt: calendar-valid}` is treated as an unreadable store, reason `state`,
   event attrs.reason `state_unavailable`; only `allowDowngrade` bypasses it (S1-031).
 
-## [0.1.0] - 2026-11-22 (draft)
+## [0.1.0] - 2026-11-09 (draft)
+
+The date was written as 2026-11-22 in the first draft of this file; it is corrected to the date of the spec
+0.1.0 commit in `git log` (2026-11-09).
 
 ### Added
 

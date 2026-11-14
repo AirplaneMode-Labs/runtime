@@ -7,28 +7,32 @@ touching the open code. This directory is the source of truth; every other repo 
 `// Vendored from AirplaneMode-Labs/runtime spec/<file> @ <that contract's own version>; source of
 truth is runtime/spec; do not edit here`. Mismatches are fixed on the consumer side.
 
-Spec release **0.3.0 (draft)** ships these versions together (each contract keeps its own version, so a
-vendored file carries the version of its own contract, not the release number).
+Spec release **0.4.0** (2026-11-14, untagged) ships these versions together (each contract keeps its own
+version, so a vendored file carries the version of its own contract, not the release number):
+manifest 0.1.1: published; other contracts: draft. The plan's "manifest spec v0.1" is the manifest contract
+on wire `airplanemode.manifest/0.1`, published as manifest 0.1.1 in [`MANIFEST.md`](MANIFEST.md); it is
+committed; public after the owner's push.
 
 The contracts are published under Apache-2.0 and never move behind the control-plane licence.
 
-| Contract           | Files                                                     | Version | Status |
-| ------------------ | --------------------------------------------------------- | ------- | ------ |
-| Manifest           | `manifest.schema.json`, `manifest.ts`                     | 0.1.0   | draft  |
-| Capability profile | `capability-profile.schema.json`, `capability-profile.ts` | 0.1.0   | draft  |
-| Event              | `event.schema.json`, `event.ts`                           | 0.1.2   | draft  |
-| Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.1.0   | draft  |
-| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.3.0   | draft  |
-| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.2.0   | draft  |
+| Contract           | Files                                                     | Version | Status    |
+| ------------------ | --------------------------------------------------------- | ------- | --------- |
+| Manifest           | `MANIFEST.md`, `manifest.schema.json`, `manifest.ts`      | 0.1.1   | published |
+| Capability profile | `capability-profile.schema.json`, `capability-profile.ts` | 0.1.0   | draft     |
+| Event              | `event.schema.json`, `event.ts`                           | 0.1.3   | draft     |
+| Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.2.0   | draft     |
+| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.3.1   | draft     |
+| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.2.1   | draft     |
 
-`index.ts` re-exports everything and carries `SPEC_VERSIONS`. Examples live in `examples/`, the
-shared canonicalisation vectors in `vectors/`, and the change history in `CHANGELOG.md`.
+`index.ts` re-exports everything and carries `SPEC_RELEASE`, `SPEC_VERSIONS` and `SPEC_STATUS` (one key per
+contract). Examples live in `examples/`, the shared vectors in `vectors/` (canonicalisation, negative,
+`tamper/`, `tamper-assets/`, `descriptor/`), and the change history in `CHANGELOG.md`.
 
 ## Versioning
 
 Each schema has `"$schema": "https://json-schema.org/draft/2020-12/schema"` and
 `"$id": "urn:airplanemode:spec:<name>:<full version>"` (the event schema is
-`urn:airplanemode:spec:event:0.1.2`); each instance carries a `spec` discriminator
+`urn:airplanemode:spec:event:0.1.3`); each instance carries a `spec` discriminator
 `airplanemode.<name>/<major>.<minor>` (patch never changes the wire format; the model descriptor's is
 `airplanemode.model/0.2`, and consumers also accept `airplanemode.model/0.1`). Consumers reject unknown spec strings. All object keys match
 `^[A-Za-z_][A-Za-z0-9_]{0,63}$` (never digit-leading; see canonicalisation);
@@ -39,131 +43,72 @@ Each schema has `"$schema": "https://json-schema.org/draft/2020-12/schema"` and
 The `$id` URNs become `https://` URLs once a domain is reserved; the URN form stays valid as an
 alias.
 
-## Manifest 0.1.0
+### Status
+
+Each contract has a status, "draft" or "published". "published" means frozen on its wire string: later
+changes are additive patches that change no accepted or refused input, or a new wire string. "draft" may
+change in a minor version. Release 0.4.0: manifest 0.1.1 is published; every other contract is a draft.
+
+### Release numbering
+
+A spec release bundles one version of each contract. The release number follows one rule: the release
+minor bumps when any contract takes a minor bump, and the patch bumps otherwise; the wire discriminator
+changes only on a contract major or minor. Release 0.4.0 bumps the minor because storage API 0.2.0 is a
+minor change; manifest 0.1.1, event 0.1.3, backend adapter 0.3.1 and model descriptor 0.2.1 are patches
+and keep their wire strings. The planned 0.3.1 patch release was folded into 0.4.0 for that reason.
+
+## Manifest 0.1.1 ("manifest spec v0.1", published)
 
 A `Manifest` lists each model or data file with its SHA-256, size, version, licence and minimum
-capability profile, and is signed with Ed25519. The runtime verifies the signature and every hash
-before any consumer can read a byte. Shapes: `manifest.ts`; validation: `manifest.schema.json`.
-Entry ids are unique and the `entries` array is sorted by id in byte order (checked by code, not by
-the schema). `ManifestEntry.url` is an absolute `https://` URL, an absolute `http://` URL whose
-host is exactly `127.0.0.1`, `[::1]` or `localhost` (tests only), or a relative reference without a
-scheme resolved against the manifest URL; no query string, no fragment; `data:`, `blob:`, `file:`,
-`javascript:` and every other scheme are schema-invalid.
+capability profile, and is signed with Ed25519. The runtime verifies the signature and every hash before
+any consumer can read a byte. The full normative text is [`MANIFEST.md`](MANIFEST.md): scope, shape,
+canonicalisation, the duplicate-member rule, signing, trust roots, the verification order, the reason
+precedence, the downgrade rule, the test keys, the tamper vectors, security considerations and
+conformance. Shapes: `manifest.ts`; validation: `manifest.schema.json`.
 
-### Unauthenticated fields
+Summary:
 
-signedAt, alg, keyId and publicKey are NOT covered by the signature, because the signatures member
-is removed before canonicalisation; a verifier MUST NOT use signedAt for any decision; createdAt and
-expiresAt in the body are the only authenticated timestamps.
+- `signedBytes = UTF-8("airplanemode-manifest-v1\n") || canonical(manifest without "signatures")`, where
+  `canonical()` is RFC 8785 JCS restricted to this profile (sorted keys, no whitespace, integers 0 to
+  2^53-1, no floats, keys `^[A-Za-z_][A-Za-z0-9_]{0,63}$`). Pure Ed25519; S must be less than L.
+- An object with a repeated member name, at any depth, is `invalid_json`.
+- The trust set (keyId to raw public key) is application configuration and is never fetched with the
+  manifest. `signedAt`, `alg`, `keyId` and `publicKey` are unauthenticated; one valid signature is enough.
+- The reason of a refusal is the first stage that fails (`MANIFEST_REJECT_PRECEDENCE`); a missing `spec` is
+  `bad_spec`. A downgrade (lower version, or the same version with an earlier `createdAt`) is refused; the
+  state store is written only after a valid signature.
+- A trust set holding any of the five RFC 8032 section 7.1 test keys, by keyId or by raw bytes, is refused
+  with `test_key_refused` unless `allowTestKeys === true`.
 
-### Signing scheme
+0.1.1 is an additive patch of 0.1.0 (published means frozen on the wire string): duplicate members,
+the explicit S < L rule, the reason precedence, and all five test keys are written down. It was amended in
+place before the first push (team decision TD-26, 14 Nov 2026; nothing had left the machine): both version
+members take the strict SemVer 2.0 grammar (no leading zeros, no empty identifier), the published Signature
+schema is applied to every `signatures[]` item (reason `schema`), and a missing or non-array `signatures`
+member is judged after the parse stage. A second amendment before the push (team decision TD-29, 14 Nov 2026,
+fix round 2) freezes the contract: a member that no table declares is `schema` under any name (`__proto__`,
+`constructor`, ...; BUG-T2-S4-11), `sig` and `publicKey` have one accepted encoding each (canonical padded base64;
+BUG-T2-S4-14) and the forbidden url characters are one explicit list (BUG-T2-S4-15). The schema body is
+otherwise unchanged and its `$id` moves; the contract version, the release and the wire string do not.
 
-signedBytes = UTF-8("airplanemode-manifest-v1\n") || canonical(Manifest with the "signatures"
-member removed). canonical() = RFC 8785 JCS restricted to our profile: members sorted by key in
-ASCII byte order, no whitespace, strings exactly as JSON.stringify (escape only `"` `\` and
-U+0000..U+001F using `\b` `\t` `\n` `\f` `\r` else `\u00xx` lowercase; `/` not escaped), integers as
-plain decimal, floats forbidden, literals true/false/null.
+### Shared vectors
 
-KEY RULE: every object key MUST match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`;
-digit-leading keys are rejected because JavaScript enumerates array-index-like keys ("0", "10") in
-numeric order before string keys regardless of sorting, so a key such as "123" would canonicalise
-differently in JSON.stringify and serde_json BTreeMap; `canonicalize()` throws and cp-manifest
-`canonical_bytes()` returns Err; both repos carry a test vector with keys {"b","10","a"} asserting
-rejection.
-
-STRING RULE: string values MUST be well-formed Unicode (no lone surrogates); TS checks
-`String.prototype.isWellFormed()` and rejects, serde_json rejects lone surrogate escapes natively
-(the request for a lone-surrogate vector is therefore a NEGATIVE vector on both sides, not a
-canonical output vector).
-
-NUMBER RULE: integers only, and only within 0..2^53-1 (u64 above 2^53-1 rejected by Rust; JS cannot
-round-trip them); any f64 anywhere rejected before canonicalisation. Negative zero is rejected as a
-float on both sides.
-
-ACCEPTED ASYMMETRY: JavaScript's JSON.parse cannot distinguish 1.0 or 1e3 from 1, so TS accepts
-those spellings while Rust rejects them; since canonical output is identical whenever both accept,
-signatures still interoperate. serde_json with default features (BTreeMap, preserve_order OFF) and
-JavaScript JSON.stringify over recursively key-sorted objects produce exactly this form; no JCS
-library is needed on either side.
-
-Signature = pure Ed25519 (RFC 8032, no prehash, no context). Ed25519 is deterministic, so identical
-key + canonical bytes => identical sig; this is the cross-repo interop check (`vectors/`).
-
-`keyId` = lowercase hex SHA-256 of the raw 32-byte Ed25519 public key. `publicKey` (standard
-padded base64 of the raw key) is informational only and never a source of trust. `alg` is any token
-matching `^[a-z0-9][a-z0-9-]{0,31}$` at the schema level so a manifest can carry signatures made
-with future algorithms; `ed25519` is the only value a 0.1 verifier verifies. Verifiers IGNORE
-signatures with an unknown `alg` and reject the manifest if none remaining verifies (reason
-`no_valid_signature`, at verify stage, not parse stage); `"none"` is never valid.
-
-### Trust roots
-
-The trust set (Map keyId -> raw 32-byte public key) is application configuration compiled into or
-installed with the app; it MUST never be fetched from the same origin or URL as the manifest or
-alongside it, and the embedded publicKey is never added to the trust set. dockit contains no
-trust-set loading code this sprint beyond a typed constant.
-
-### Verification order
-
-parse (reject lone surrogates, floats, integers > 2^53-1, digit-leading keys) -> schema validation
-(spec const, patterns, url scheme rule, calendar-valid `createdAt`/`expiresAt`/`signedAt`
-timestamps, entries sorted and unique) -> if expiresAt present require expiresAt > now -> for each
-signature: if alg != "ed25519" ignore; if keyId malformed or not in the
-trust set, invalid; if publicKey present and != trusted key bytes for that keyId, invalid (reason
-key_mismatch), never silently accepted; recompute keyId from the trusted key and require equality;
-decode sig and require exactly 64 bytes, else invalid; verify over signedBytes. Malformed inputs
-count as invalid signatures and never throw out of verifyManifest. Require >= 1 valid -> downgrade
-rule (below) -> only then are entries usable; every entry's bytes are hashed in full and compared
-to sha256 before any consumer can read them; no partial file is ever exposed.
-
-Test-key rule: a trust set containing keyId sha256(d75a98...511a) (the RFC 8032 vector) is refused
-unless `opts.allowTestKeys === true`.
-
-### Downgrade rule
-
-State is keyed by manifest id and holds {version, createdAt} of the last accepted manifest. Compare
-versions per SemVer 2.0: numeric major.minor.patch; a prerelease is lower than the corresponding
-release; prerelease identifiers compared per SemVer section 11 (numeric identifiers numerically,
-alphanumeric lexically, numeric lower than alphanumeric, fewer identifiers lower when all preceding
-are equal). A candidate is refused with reason 'downgrade' if version < state.version, or
-version == state.version and createdAt < state.createdAt, unless {allowDowngrade: true}, which
-accepts and replaces the state. If the state store cannot be read (or written after acceptance)
-the verifier fails closed with reason `state` (event `manifest.verify.failed` with attrs.reason
-`state_unavailable`); `{allowDowngrade: true}` bypasses an unavailable state store as well.
-
-Rejection reasons (`ManifestRejectReason`): parse stage `invalid_json`, `float`, `bigint`,
-`digit_key`, `invalid_key`, `lone_surrogate`; schema stage `bad_spec`, `bad_url`, `schema`
-(including calendar-invalid timestamps), `unsorted_entries`, `duplicate_entries`; verify stage
-`expired`, `no_valid_signature`, `downgrade`, `state`; and `test_key_refused`, the only one that
-throws. `verifyManifest` re-runs the parse and schema stages on its input, so an unparsed or
-hostile object is a rejection with one of these reasons, never an exception.
-
-Accepted risks recorded by the security consultant in `runtime/docs/security/FINDINGS.md` with
-target sprints: no revocation, no transparency log, no Sigstore, single-signature threshold,
-browser clock trusted for expiresAt.
+`vectors/` holds five positive vectors (`01-unsigned-example`, `02-escapes`, `03-devanagari`,
+`04-minprofile-full`, `05-four-entries`), each as `<n>.json` with `<n>.canonical.txt` (expected signed
+bytes including the prefix) and `<n>.sig.txt` (Ed25519 signature under the RFC 8032 seed); thirty-two negative
+vectors `neg-*.json` with their rejection reason and stage (`parse` or `verify`) in `vectors/negative.json`;
+`vectors/tamper/` (fifteen tamper vectors and `tamper.json`); and `vectors/tamper-assets/` (three signed
+manifests over one asset, runtime-specific). They are generated by `test/tools/make-vectors.mjs` and
+`test/tools/make-tamper-vectors.mjs` and vendored byte for byte into
+`control-plane/crates/cp-manifest/tests/fixtures/vectors/`.
 
 ### Test key
 
-`examples/TEST-KEY.md` documents that the signed example uses RFC 8032 section 7.1 test vector 1
-(seed 9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60, public key
-d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a), a published non-secret vector
-that must never be trusted outside tests; keyId = sha256(public key bytes); verifyManifest refuses
-it unless allowTestKeys, cp-sign refuses it unless --allow-test-key. The resulting sig is published
-in `examples/manifest.signed.example.json` (body identical to the unsigned example, no expiresAt,
-so cp-sign reproduces it with `sign --allow-test-key --no-expiry`); cp-sign must reproduce it byte
-for byte.
-
-### Shared canonicalisation vectors
-
-`vectors/` holds five positive vectors (`01-unsigned-example`, `02-escapes`, `03-devanagari`,
-`04-minprofile-full`, `05-four-entries`), each as `<n>.json` with `<n>.canonical.txt` (expected
-signed bytes including the prefix) and `<n>.sig.txt` (Ed25519 signature under the RFC 8032 seed),
-plus thirteen negative vectors `neg-*.json` with their rejection reasons and stage (`parse` or
-`verify`) in `vectors/negative.json`; `neg-unknown-alg-only` is schema-valid and is rejected at
-verify stage with `no_valid_signature`, and `neg-bad-alg-token` (a correct signature whose `alg` is the
-non-token `ED25519`) is rejected at parse stage with `schema` (spec release 0.2.0).
-They are generated by `test/tools/make-vectors.mjs` and vendored byte for byte into
-`control-plane/crates/cp-manifest/tests/fixtures/vectors/`.
+`examples/TEST-KEY.md` documents the RFC 8032 section 7.1 test keys: TEST 1 signs the examples and the
+positive vectors (seed `9d61b19d...ae7f60`, public key `d75a9801...07511a`), and TEST 2 is the second key of
+the tamper vectors. All five are published, non-secret vectors that must never be trusted outside tests;
+`cp-sign` refuses their seeds unless `--allow-test-key`. The signed example `sig` is reproduced byte for
+byte by `cp-sign sign --allow-test-key --no-expiry`.
 
 ## Capability profile 0.1.0
 
@@ -175,7 +120,7 @@ and `maxComputeInvocationsPerWorkgroup`; adapter description and device strings 
 (driver-version fingerprint); `navigator.userAgent` and `navigator.userAgentData` are never read;
 no personal data. `satisfies(profile, minProfile)` implements the MinProfile rule above.
 
-## Event 0.1.2
+## Event 0.1.3
 
 One JSON shape for logs, timings, memory, model-load and asset records. `attrs` is flat, at most
 32 keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`, string values at most 1024 UTF-16 units, never
@@ -207,11 +152,23 @@ exports `STORAGE_EVENT_NAMES` (`storage.set`, `storage.get`, `storage.delete`, `
 descriptor entry id (attr `model`) DO appear in events and in the DevTools snapshot; applications must
 not encode personal data or document identifiers in namespace names or entry ids.
 
-## Storage API 0.1.0
+0.1.3 is a patch (the wire string stays `airplanemode.event/0.1`; only the schema `$id` moves to
+`urn:airplanemode:spec:event:0.1.3`; spec release 0.4.0): `backend.egress.refused` is re-specified for
+S1-074. It carries `adapter` (the host's own adapter id), `reporter` (`main` | `worker`), `origin`
+(`new URL(x).origin` for the page's own guard, `'null'` when opaque; the fixed string `worker-reported` for a
+worker report) and, for a worker report, `count` (1 to 16 per `loadId`; later reports are dropped); no
+worker-provided string, without exception, reaches an event. `STORAGE_EVENT_NAMES` grows from four to seven
+with `storage.query`, `storage.index.open` and `storage.index.write`.
 
-See `storage-api.md` and the normative `storage-api.ts`.
+## Storage API 0.2.0
 
-## Backend adapter 0.3.0
+See `storage-api.md` and the normative `storage-api.ts`. 0.2.0 is a minor change (draft): `query()` is
+implemented (brute-force top-k, `cosine` or `dot`, bit-exact f32 scoring), `putVectors()` and `indexInfo()`
+are new, a vector index sits beside the key-value data in each namespace, writes are all-or-nothing,
+`UsageResult` gains `vectorRows` and `vectorBytes`, and the error code `corrupt` is new. The prefix `__ld_`
+is reserved for the SDK's own driver namespaces. The on-disk format is localdata-internal.
+
+## Backend adapter 0.3.1
 
 See `backend-adapter.md` (rules R1 to R6: descriptor, verify-on-hand-off, no egress, generate, error
 hygiene, Chrome built-in model; R2w and R3w for an engine in a worker; R7 to R13: isolation, abort and
@@ -221,9 +178,12 @@ the normative `backend-adapter.ts`. 0.3.0 adds `AcquireOptions.cacheOnly` and `L
 `GenerateResult.timings.firstTokenMs` and `BackendAdapter.host`. 0.2.0 had added `ExecutionDevice`,
 `BackendAdapter.device` and `available()`, `AcquireOptions` and the cross-instance hold on
 `AssetSource.acquire()`, `LoadOptions.onProgress`, and the error codes `unavailable`, `bad_descriptor`
-and `egress_refused`. `load(entry)` takes the descriptor's manifest entry.
+and `egress_refused`. `load(entry)` takes the descriptor's manifest entry. 0.3.1 (a patch; spec release
+0.4.0) changes no type: R13 is amended so a worker-reported egress refusal is recorded per Event 0.1.3 and
+the host never forwards worker text (S1-074). Informative: the WebLLM rung was cut from Sprint 4 (team
+decision TD-08); R11 stays specified and unimplemented.
 
-## Model descriptor 0.2.0
+## Model descriptor 0.2.1
 
 `model-descriptor.schema.json` and `model-descriptor.ts` (no imports from other spec files; examples are
 `examples/model-descriptor.example.json` and `examples/model-descriptor.webllm.example.json`). A
@@ -236,12 +196,13 @@ descriptor is a small JSON file (at most 65536 bytes) that is itself a manifest 
 revision: provenance only, never fetched) and `licence`. The manifest signature and per-entry SHA-256
 cover the descriptor and every file it names. Wire format `airplanemode.model/0.2` (written);
 `airplanemode.model/0.1` is still accepted and never carries `sessionOptions`. The schema is an `anyOf`
-of three branches: A transformers-js 0.2, B transformers-js 0.1, C webllm; a banned property is given
-the type `null`.
+of three branches: A transformers-js 0.2, B transformers-js 0.1, C webllm (which pins the 0.2 wire string
+since 0.2.1, BUG-T2-S3-22); a banned property is given the type `null`. A repeated member name at any depth
+is `invalid_json`, and `DESCRIPTOR_REJECT_PRECEDENCE` fixes which reason wins when several faults hold.
 
 Checked outside JSON Schema (by `validateModelDescriptor()` and `parseDescriptor()` in the runtime and by
 cp-manifest): `files` sorted and unique, `devices` sorted, `modelLib` and `runtimeWasm` each equal to a
 `files[].path`, no `__proto__`, `constructor` or `prototype` key in `chatTemplateKwargs`. Rejection
 reasons: `invalid_json`, `float`, `bigint`, `digit_key`, `invalid_key`, `lone_surrogate`, `bad_spec`,
 `schema`, `unsorted_files`, `duplicate_paths`, `unsorted_devices`. Shared vectors: `vectors/descriptor/`
-(3 positive, 14 negative, `negative.json`, `README.md`).
+(3 positive, 20 negative, `negative.json`, `README.md`).

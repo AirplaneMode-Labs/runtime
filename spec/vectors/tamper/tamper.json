@@ -1,0 +1,182 @@
+[
+  {
+    "file": "tamper-01-entry-sha-byte.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["bad_signature"]
+    }
+  },
+  {
+    "file": "tamper-02-entry-size.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["bad_signature"]
+    }
+  },
+  {
+    "file": "tamper-03-sig-bitflip.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["bad_signature"]
+    }
+  },
+  {
+    "file": "tamper-04-swapped-key.json",
+    "trust": ["rfc8032-1", "rfc8032-2"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["bad_signature"]
+    }
+  },
+  {
+    "file": "tamper-05-publickey-mismatch.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["key_mismatch"]
+    }
+  },
+  {
+    "file": "tamper-06-untrusted-key.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["untrusted_key"]
+    }
+  },
+  {
+    "file": "tamper-07-truncated.txt",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": { "valid": false, "stage": "parse", "reason": "invalid_json" }
+  },
+  {
+    "file": "tamper-08-rollback.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": { "version": "1.1.0", "createdAt": "2026-11-01T00:00:00Z" },
+    "requiresState": true,
+    "expect": { "valid": false, "stage": "verify", "reason": "downgrade", "signatures": ["valid"] }
+  },
+  {
+    "file": "tamper-09-replay-older-createdAt.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": { "version": "1.1.0", "createdAt": "2026-11-01T00:00:00Z" },
+    "requiresState": true,
+    "expect": { "valid": false, "stage": "verify", "reason": "downgrade", "signatures": ["valid"] }
+  },
+  {
+    "file": "tamper-10-expired.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": { "valid": false, "stage": "verify", "reason": "expired" }
+  },
+  {
+    "file": "tamper-11-rotation-ok.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": { "valid": true, "signatures": ["untrusted_key", "valid"] }
+  },
+  {
+    "file": "tamper-12-stripped.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": []
+    }
+  },
+  {
+    "file": "tamper-13-alg-none.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["unknown_alg"]
+    }
+  },
+  {
+    "file": "tamper-14-test-key-refused.json",
+    "trust": ["rfc8032-2"],
+    "allowTestKeys": false,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": { "valid": false, "reason": "test_key_refused" }
+  },
+  {
+    "file": "tamper-15-noncanonical-s.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature",
+      "signatures": ["bad_signature"]
+    }
+  }
+]

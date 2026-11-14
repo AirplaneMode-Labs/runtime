@@ -45,10 +45,10 @@ async function verifyEd25519(message: Uint8Array, sig: Uint8Array, pub: Uint8Arr
 describe('spec: schemas', () => {
   it('every schema is JSON Schema 2020-12 with the urn $id of its own contract version', () => {
     const ids: Record<string, string> = {
-      manifest: 'urn:airplanemode:spec:manifest:0.1.0',
+      manifest: 'urn:airplanemode:spec:manifest:0.1.1',
       capabilityProfile: 'urn:airplanemode:spec:capability-profile:0.1.0',
-      event: 'urn:airplanemode:spec:event:0.1.2',
-      modelDescriptor: 'urn:airplanemode:spec:model-descriptor:0.2.0',
+      event: 'urn:airplanemode:spec:event:0.1.3',
+      modelDescriptor: 'urn:airplanemode:spec:model-descriptor:0.2.1',
     };
     expect(Object.keys(SCHEMAS).sort()).toEqual(Object.keys(ids).sort());
     for (const [name, schema] of Object.entries(SCHEMAS)) {
@@ -57,14 +57,14 @@ describe('spec: schemas', () => {
     }
   });
 
-  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.3.0 release values', () => {
+  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.4.0 release values', () => {
     expect(SPEC_VERSIONS).toEqual({
-      manifest: '0.1.0',
+      manifest: '0.1.1',
       capabilityProfile: '0.1.0',
-      event: '0.1.2',
-      storageApi: '0.1.0',
-      backendAdapter: '0.3.0',
-      modelDescriptor: '0.2.0',
+      event: '0.1.3',
+      storageApi: '0.2.0',
+      backendAdapter: '0.3.1',
+      modelDescriptor: '0.2.1',
     });
     expect(SPEC_WIRE).toEqual({
       manifest: 'airplanemode.manifest/0.1',
@@ -223,13 +223,13 @@ describe('spec: shared vectors', () => {
   const negative = readJson<{ file: string; reason: string; stage: 'parse' | 'verify' }[]>(
     resolve(vectors, 'negative.json'),
   );
-  it('negative.json lists the thirteen negative vectors, each with a stage', () => {
+  it('negative.json lists the thirty-two negative vectors, each with a stage', () => {
     expect(negative.map((n) => n.file).sort()).toEqual(
       readdirSync(vectors)
         .filter((f) => f.startsWith('neg-'))
         .sort(),
     );
-    expect(negative).toHaveLength(13);
+    expect(negative).toHaveLength(32);
     for (const n of negative) expect(['parse', 'verify']).toContain(n.stage);
     expect(negative.find((n) => n.file === 'neg-unknown-alg-only.json')).toEqual({
       file: 'neg-unknown-alg-only.json',
@@ -395,7 +395,7 @@ describe('spec: model descriptor 0.2.0', () => {
       resolve(specDir, 'model-descriptor.schema.json'),
     );
     expect(SCHEMAS.modelDescriptor).toEqual(onDisk);
-    expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.0');
+    expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.1');
   });
 
   it('plain validateSchema (no ordering checks) already rejects the schema-expressible faults', () => {
@@ -405,7 +405,7 @@ describe('spec: model descriptor 0.2.0', () => {
   });
 });
 
-describe('spec: event 0.1.1 names (still reserved in 0.1.2)', () => {
+describe('spec: event 0.1.1 names (still reserved in 0.1.3)', () => {
   const names = [
     'backend.select',
     'backend.refused',
@@ -473,9 +473,23 @@ describe('spec: event 0.1.1 names (still reserved in 0.1.2)', () => {
       {
         kind: 'error',
         level: 'error',
-        attrs: { adapter: 'transformers-js', origin: 'https://huggingface.co' },
+        attrs: { adapter: 'transformers-js', reporter: 'main', origin: 'https://huggingface.co' },
       },
-      { kind: 'error', level: 'error', attrs: { adapter: 'transformers-js', origin: 'data:' } },
+      {
+        kind: 'error',
+        level: 'error',
+        attrs: { adapter: 'transformers-js', reporter: 'main', origin: 'null' },
+      },
+      {
+        kind: 'error',
+        level: 'error',
+        attrs: {
+          adapter: 'transformers-js',
+          reporter: 'worker',
+          origin: 'worker-reported',
+          count: 16,
+        },
+      },
     ],
     'model.load': [
       {
@@ -559,8 +573,8 @@ describe('spec: event 0.1.1 names (still reserved in 0.1.2)', () => {
     expect(text).toContain('verified');
   });
 
-  it('the event schema carries the 0.1.2 $id and an unchanged body (wire string stays 0.1)', () => {
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.2');
+  it('the event schema carries the 0.1.3 $id and an unchanged body (wire string stays 0.1)', () => {
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.3');
     expect(
       (SCHEMAS.event as { properties: { spec: { const: string } } }).properties.spec.const,
     ).toBe('airplanemode.event/0.1');

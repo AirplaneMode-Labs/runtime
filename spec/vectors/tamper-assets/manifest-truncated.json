@@ -1,0 +1,28 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "tamper-assets",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs (vectors)",
+  "createdAt": "2026-11-01T00:00:00Z",
+  "entries": [
+    {
+      "id": "asset-ok",
+      "kind": "data",
+      "url": "asset-truncated.bin",
+      "sha256": "d41d438c379110c7f7b2c561b1f04f26c1b4549110791f8e022f48974280c13e",
+      "size": 4096,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "sig": "BH8kF91YnJbidQE+rQGg2hZvD3xxhhQMQ8D1gzKJ78esJsTAIHtapeMDlV0vsjaZlVxdnIh3OQzwARcVFrFWDg==",
+      "signedAt": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

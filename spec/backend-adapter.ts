@@ -1,5 +1,8 @@
 /**
- * Backend adapter contract 0.3.0 (see backend-adapter.md for prose).
+ * Backend adapter contract 0.3.1 (see backend-adapter.md for prose).
+ *
+ * 0.3.1 (spec release 0.4.0, patch): no type changed; backend-adapter.md amends R13 (worker-reported
+ * egress refusals are recorded per Event 0.1.3, and the host never forwards worker text; S1-074).
  *
  * One interface over Transformers.js, WebLLM and the Chrome Prompt API. An adapter never fetches
  * the network itself: every byte comes from an AssetSource (the runtime asset manager), which only

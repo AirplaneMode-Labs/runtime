@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:model-descriptor:0.2.0",
+  "$id": "urn:airplanemode:spec:model-descriptor:0.2.1",
   "title": "ModelDescriptor",
   "description": "A small JSON file, itself an entry of a signed manifest (kind model, mediaType application/vnd.airplanemode.model+json, at most 65536 bytes), that lists the other manifest entries an engine needs (weights, tokenizer, configs, WASM runtime or model library) and how to run them. Never carries a URL; nothing in it is fetched. Files MUST be sorted by path in byte order with unique paths and devices MUST be sorted; modelLib and runtimeWasm MUST each equal one of the files[].path; generation.chatTemplateKwargs MUST NOT use the keys __proto__, constructor or prototype (all verified outside JSON Schema by validateModelDescriptor / the descriptor loader). Wire formats accepted: airplanemode.model/0.1 and airplanemode.model/0.2; writers emit 0.2.",
   "type": "object",
@@ -177,9 +177,12 @@
       }
     },
     {
-      "description": "C: webllm: devices exactly ['webgpu'], modelLib required, runtimeWasm and sessionOptions absent.",
+      "description": "C: webllm, wire 0.2 only (0.1 predates webllm): devices exactly ['webgpu'], modelLib required, runtimeWasm and sessionOptions absent.",
       "required": ["modelLib"],
       "properties": {
+        "spec": {
+          "const": "airplanemode.model/0.2"
+        },
         "engine": {
           "const": "webllm"
         },

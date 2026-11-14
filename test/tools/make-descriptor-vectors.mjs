@@ -144,6 +144,62 @@ const negative = [
       2,
     ).replace('"marker": true', '"__proto__": true'),
   ],
+  // Spec release 0.4.0 (model descriptor 0.2.1).
+  // Branch C (webllm) pins the 0.2 wire string (BUG-T2-S3-22): 0.1 predates webllm.
+  [
+    'neg-webllm-spec-0.1',
+    'schema',
+    edit(webllm, (d) => {
+      d.spec = 'airplanemode.model/0.1';
+    }),
+  ],
+  // A missing "spec" is bad_spec, never schema.
+  [
+    'neg-missing-spec',
+    'bad_spec',
+    edit(tjs, (d) => {
+      delete d.spec;
+    }),
+  ],
+  // Duplicate devices fail the schema (uniqueItems) in every implementation (S1-075, BUG-T2-S3-23-R2).
+  [
+    'neg-dup-devices',
+    'schema',
+    edit(tjs, (d) => {
+      d.devices = ['wasm', 'wasm'];
+    }),
+  ],
+  // Reason precedence (README): the earlier stage names the reason. Each pair is one fault of an
+  // earlier stage and one ordering fault; shared vectors never combine two parse-stage faults.
+  [
+    'neg-multi-badspec-unsorted',
+    'bad_spec',
+    edit(tjs, (d) => {
+      d.spec = 'airplanemode.model/0.3';
+      [d.files[0], d.files[1]] = [d.files[1], d.files[0]];
+    }),
+  ],
+  [
+    'neg-multi-schema-unsorted',
+    'schema',
+    edit(tjs, (d) => {
+      d.dtype = 'Q4!';
+      [d.files[0], d.files[1]] = [d.files[1], d.files[0]];
+    }),
+  ],
+  // Fix round 2 (TD-29, BUG-T2-S4-11): a member that the schema does not declare is `schema`, whatever its
+  // name. Own "__proto__" member at the top level: JSON.parse makes it an own member, `k in props` found it
+  // through Object.prototype, so the old validator accepted a descriptor carrying unsigned-by-schema data.
+  // Raw text, because JSON.stringify of an object literal would turn the key into a prototype.
+  [
+    'neg-proto-member',
+    'schema',
+    JSON.stringify(
+      edit(tjs, () => {}),
+      null,
+      2,
+    ).replace(/^\{\n/, '{\n  "__proto__": { "engine": "webllm" },\n'),
+  ],
 ];
 
 // The files are committed prettier-formatted (the repository's fmt:check covers them), so the

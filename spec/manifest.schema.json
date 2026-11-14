@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:manifest:0.1.0",
+  "$id": "urn:airplanemode:spec:manifest:0.1.1",
   "title": "Manifest",
   "description": "A signed list of model or data files. Each entry carries the SHA-256, size, version, licence and minimum capability profile of one file. The manifest body (every member except `signatures`) is canonicalised per the restricted RFC 8785 profile described in spec/README.md and signed with Ed25519. Wire format: airplanemode.manifest/0.1.",
   "type": "object",
@@ -18,8 +18,8 @@
     },
     "version": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
-      "description": "SemVer 2.0 version of the manifest (no build metadata). Compared with the precise SemVer rule for downgrade protection."
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-(0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+      "description": "Strict SemVer 2.0 version of the manifest (no build metadata, no leading zeros, no empty identifier). The same grammar as every entry version and as the stored downgrade state. Compared with the precise SemVer rule (numeric identifiers compared exactly) for downgrade protection."
     },
     "publisher": {
       "type": "string",
@@ -84,8 +84,8 @@
         },
         "url": {
           "type": "string",
-          "pattern": "^(https://[^\\s?#]+|http://(127\\.0\\.0\\.1|\\[::1\\]|localhost)(:[0-9]{1,5})?/[^\\s?#]*|(?![a-zA-Z][a-zA-Z0-9+.-]*:)[^\\s?#]+)$",
-          "description": "Either an absolute https:// URL, an absolute http:// URL whose host is exactly 127.0.0.1, [::1] or localhost (tests only), or a relative reference without a scheme that is resolved against the manifest URL. No query string, no fragment. data:, blob:, file:, javascript: and every other scheme are invalid."
+          "pattern": "^(https://[^?#\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+|http://(127\\.0\\.0\\.1|\\[::1\\]|localhost)(:[0-9]{1,5})?/[^?#\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*|(?![a-zA-Z][a-zA-Z0-9+.-]*:)[^?#\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+)$",
+          "description": "Either an absolute https:// URL, an absolute http:// URL whose host is exactly 127.0.0.1, [::1] or localhost (tests only), or a relative reference without a scheme that is resolved against the manifest URL. No query string, no fragment. data:, blob:, file:, javascript: and every other scheme are invalid. The forbidden characters are explicit, not \\s: '?', '#', U+0000 to U+0020, U+007F to U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF (reason bad_url); every other code point is allowed."
         },
         "sha256": {
           "type": "string",
@@ -100,7 +100,8 @@
         },
         "version": {
           "type": "string",
-          "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-(0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+          "description": "Strict SemVer 2.0 version of the file (same grammar as the manifest version)."
         },
         "licence": {
           "type": "string",
@@ -144,13 +145,13 @@
         },
         "publicKey": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9+/]{43}=$",
-          "description": "Standard padded base64 of the raw 32-byte public key. Informational only, never a source of trust; a verifier compares it with the trusted key for keyId and treats a mismatch as an invalid signature."
+          "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$",
+          "description": "Canonical standard padded base64 of the raw 32-byte public key (RFC 4648 section 3.5: the pad bits of the last character are zero; any other encoding of the same bytes is a schema fault). Informational only, never a source of trust; a verifier compares it with the trusted key for keyId and treats a mismatch as an invalid signature."
         },
         "sig": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9+/]{86}==$",
-          "description": "Standard padded base64 of the 64-byte Ed25519 signature over signedBytes."
+          "pattern": "^[A-Za-z0-9+/]{85}[AQgw]==$",
+          "description": "Canonical standard padded base64 of the 64-byte Ed25519 signature over signedBytes: the pad bits of the last character are zero (RFC 4648 section 3.5), and any other encoding of the same bytes is a schema fault."
         },
         "signedAt": {
           "type": "string",

@@ -19,24 +19,87 @@ canonical body (the manifest with `signatures` removed), with no trailing newlin
 Negative vectors (`neg-*.json`) must be rejected by both implementations with the reason and at
 the stage named in `negative.json` (`stage` is `parse` or `verify`):
 
-| File                      | Reason               | Stage  |
-| ------------------------- | -------------------- | ------ |
-| neg-digit-key.json        | `digit_key`          | parse  |
-| neg-float.json            | `float`              | parse  |
-| neg-bigint.json           | `bigint` (2^53)      | parse  |
-| neg-lone-surrogate.json   | `lone_surrogate`     | parse  |
-| neg-unsorted-entries.json | `unsorted_entries`   | parse  |
-| neg-dup-entries.json      | `duplicate_entries`  | parse  |
-| neg-bad-url-http.json     | `bad_url`            | parse  |
-| neg-bad-url-data.json     | `bad_url`            | parse  |
-| neg-bad-url-blob.json     | `bad_url`            | parse  |
-| neg-bad-spec.json         | `bad_spec`           | parse  |
-| neg-bad-date.json         | `schema`             | parse  |
-| neg-unknown-alg-only.json | `no_valid_signature` | verify |
-| neg-bad-alg-token.json    | `schema`             | parse  |
+| File                                   | Reason               | Stage  |
+| -------------------------------------- | -------------------- | ------ |
+| neg-digit-key.json                     | `digit_key`          | parse  |
+| neg-float.json                         | `float`              | parse  |
+| neg-bigint.json                        | `bigint` (2^53)      | parse  |
+| neg-lone-surrogate.json                | `lone_surrogate`     | parse  |
+| neg-unsorted-entries.json              | `unsorted_entries`   | parse  |
+| neg-dup-entries.json                   | `duplicate_entries`  | parse  |
+| neg-bad-url-http.json                  | `bad_url`            | parse  |
+| neg-bad-url-data.json                  | `bad_url`            | parse  |
+| neg-bad-url-blob.json                  | `bad_url`            | parse  |
+| neg-bad-spec.json                      | `bad_spec`           | parse  |
+| neg-bad-date.json                      | `schema`             | parse  |
+| neg-unknown-alg-only.json              | `no_valid_signature` | verify |
+| neg-bad-alg-token.json                 | `schema`             | parse  |
+| neg-missing-spec.json                  | `bad_spec`           | parse  |
+| neg-multi-badspec-unsorted.json        | `bad_spec`           | parse  |
+| neg-multi-badurl-unsorted.json         | `bad_url`            | parse  |
+| neg-duplicate-member.json              | `invalid_json`       | parse  |
+| neg-version-leading-zero.json          | `schema`             | parse  |
+| neg-version-empty-prerelease-id.json   | `schema`             | parse  |
+| neg-null-optional.json                 | `schema`             | parse  |
+| neg-sig-unknown-member.json            | `schema`             | parse  |
+| neg-sig-bad-signedat.json              | `schema`             | parse  |
+| neg-precedence-digitkey-nosigs.json    | `digit_key`          | parse  |
+| neg-proto-member-entry.json            | `schema`             | parse  |
+| neg-sig-proto-member.json              | `schema`             | parse  |
+| neg-sig-malformed-keyid-rotation.json  | `schema`             | parse  |
+| neg-sig-malformed-sig-rotation.json    | `schema`             | parse  |
+| neg-sig-malformed-pubkey-rotation.json | `schema`             | parse  |
+| neg-sig-noncanonical-base64.json       | `schema`             | parse  |
+| neg-pubkey-noncanonical-base64.json    | `schema`             | parse  |
+| neg-url-control-char.json              | `bad_url`            | parse  |
+| neg-url-unicode-space.json             | `bad_url`            | parse  |
 
-Parse-level reasons (`digit_key`, `float`, `bigint`, `lone_surrogate`) take precedence over schema
-reasons, which take precedence over the ordering checks. `neg-bad-date` carries
+Thirty-two negative vectors since spec release 0.4.0 (manifest 0.1.1): the thirteen of release 0.2.0, byte
+for byte, then four rows of release 0.4.0, six rows added by the TD-26 amendment and nine rows added by the TD-29
+amendment of fix round 2 (the five positive vectors and the twenty-three earlier negatives are byte-identical). Reason precedence (`MANIFEST.md`, Reason
+precedence): parse-level reasons (`invalid_json`, `lone_surrogate`, `float`, `bigint`, `digit_key`,
+`invalid_key`) take precedence over `bad_spec`, then `bad_url`, `schema`, `unsorted_entries`,
+`duplicate_entries`. Shared vectors never combine two parse-stage faults: each `neg-multi-*` vector
+pairs one earlier-stage fault with an ordering fault (`unsorted_entries`), and the earlier stage names
+the reason.
+
+The six TD-26 rows (the first five are VALIDLY SIGNED with key 1, so the only fault is the one named and the
+schema stage refuses each before any signature is looked at): `neg-version-leading-zero` (`01.0.0`) and
+`neg-version-empty-prerelease-id` (`1.0.0-a..b`) fail the strict SemVer 2.0 grammar of `version`;
+`neg-null-optional` has an explicit `null` for the optional `expiresAt`; `neg-sig-unknown-member` is a signature
+object with an extra member `x` and `neg-sig-bad-signedat` one whose `signedAt` is `garbage`, both refused by the
+Signature schema applied to every `signatures[]` item; `neg-precedence-digitkey-nosigs` has no `signatures`
+member (schema) AND a top-level key `1x` (parse stage), so the parse stage wins: `digit_key`.
+
+`neg-missing-spec` has no `spec` member: a missing `spec` is `bad_spec`, never `schema`.
+`neg-duplicate-member` is vector 05 with a valid signature (key 1) and an extra, earlier `"sha256"`
+member in `entries[1]`: `JSON.parse` keeps the last member, so the parsed value is exactly vector 05 and
+its signature verifies, and only a duplicate-member scan rejects it (`invalid_json`, `MANIFEST.md`,
+Duplicate members).
+
+The nine TD-29 rows (fix round 2; each has exactly one fault and is VALIDLY SIGNED with key 1 apart from it, so the
+schema stage refuses it before any signature is looked at):
+
+- `neg-proto-member-entry`: vector 05 with a valid signature, plus `"__proto__": {"pin": true}` as the first member
+  of `entries[0]` (BUG-T2-S4-11). `JSON.parse` makes it an own member, the signature covers the body without it,
+  and the old runtime verified the manifest as valid. A member no schema declares is `schema`, whatever its name.
+- `neg-sig-proto-member`: `signatures[0]` gains `"constructor": "x"` (the unsigned region; `schema`).
+- `neg-sig-malformed-keyid-rotation`, `neg-sig-malformed-sig-rotation`, `neg-sig-malformed-pubkey-rotation`:
+  `tamper/tamper-11-rotation-ok.json` (a valid signature of the untrusted key 2, then a valid one of the trusted key
+  1. with the FIRST signature's `keyId` upper-cased, its `sig` re-encoded from 63 bytes, or its `publicKey`
+     set to `AAAA`. The second signature is untouched and valid, so a verifier that merely skips a malformed signature
+     would accept the manifest; the Signature schema applies to every `signatures[]` item, so it is `schema`
+     (BUG-T2-S4-13).
+- `neg-sig-noncanonical-base64`, `neg-pubkey-noncanonical-base64`: a valid signature (or key) whose last base64
+  character before the padding has a non-zero pad bit, for example `g` written as `h`. A lenient decoder gives the
+  correct bytes; the schema pattern (`[AQgw]==` for `sig`, `[AEIMQUYcgkosw048]=` for `publicKey`) refuses the
+  spelling (BUG-T2-S4-14).
+- `neg-url-control-char` (`assets/a\u0001b`) and `neg-url-unicode-space` (`assets/a\u00a0b`, written with the escape in
+  the file): `bad_url`; the forbidden characters are one explicit set (BUG-T2-S4-15, MANIFEST.md Shape).
+
+`tamper/` (fifteen tamper vectors and `tamper.json`) and `tamper-assets/` (three signed manifests over one
+asset) are generated by `test/tools/make-tamper-vectors.mjs` (`--check` verifies); see their READMEs.
+`descriptor/` holds the model-descriptor vectors. `neg-bad-date` carries
 `createdAt: 2026-99-99T00:00:00Z`, which matches the RFC 3339 pattern but is not calendar-valid.
 `neg-unknown-alg-only` is **schema-valid** (`alg` is any `^[a-z0-9][a-z0-9-]{0,31}$` token): it
 parses, and its single signature is a correct Ed25519 signature under the RFC 8032 seed labelled
