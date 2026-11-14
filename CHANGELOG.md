@@ -98,6 +98,15 @@ placeholder. Entries below the Sprint 3 groups are the Sprint 1 and 2 work that 
 - S1-053: cache-only was enforced in the chain only; `acquire()` could still download a file that vanished
   between the plan and the load (D1-02).
 - S1-066: `asset.hold.unknown` was emitted but not reserved in `RUNTIME_EVENT_NAMES` (D1-01).
+- `dist-pack/` and `*.tgz` are ignored by git and Prettier, so `npm run pack:check` and `npm pack` leave no
+  untracked file in a clone (T3-S3-018).
+- README Install reads the exact "Not published yet" sentence with registry commands only under "After the
+  owner publishes", and every Benchmarks 8 GB Windows no-GPU laptop cell reads "not measured" (T3-S3-019).
+- README packed-size figures match the final tarball: 159,991 B in 31 files, 567,785 B unpacked
+  (T3-S3-020).
+- `demo/THIRD-PARTY-NOTICES.txt` quoted the digests of the replaced 1.31.0-dev ONNX Runtime pin; it now
+  quotes the 1.31.1 factory and wasm digests of `src/backends/ort-pins.ts`, and a unit test fails if the two
+  drift apart (S1-083, T3-S3-031).
 
 ### Security
 
@@ -117,6 +126,8 @@ placeholder. Entries below the Sprint 3 groups are the Sprint 1 and 2 work that 
   `Object.assign`, `for...in` or spread, and prototype-polluting keys are refused (D1-03).
 - The packed `dist/` is checked for engine-default endpoints (huggingface.co, raw.githubusercontent.com,
   cdn.jsdelivr.net, unpkg.com) by an allow-list that is empty (D1-10).
+- The release dry run's throwaway ed25519 key and signed manifest were deleted from the sprint scratch;
+  only `release-dry-run.log` is kept as evidence, and no key is in the repository (S1-080).
 
 ### Earlier work that the alpha ships (Sprint 1 and 2)
 
