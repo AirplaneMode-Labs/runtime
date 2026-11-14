@@ -1,4 +1,4 @@
-# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface
+# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface (updated through Sprint 4)
 
 Version 0.3 (Sprint 1, 9 to 22 November 2026, updated after fix round 1 on 9 November; Sprint 2 update of 9 November 2026 in section 7). Written by the security consultant (lane S1).
 Scope: `@airplanemode/runtime` (manifest verification, asset manager, capability profile, events),
@@ -393,3 +393,153 @@ repudiation of provenance: the enforced digests are correct and verified at load
 same pattern used for the manifest contract: a test that ties the human-readable record to the machine
 check, so neither can change alone. Throwaway signing keys in evidence folders (S1-081) remain the one
 information-disclosure item at the edge of the trust boundary, outside every repository.
+
+## 9. Sprint 4 update: manifest spec v0.1, the Tamper lab and the localdata vector index
+
+Review date: 14 November 2026. Findings: `FINDINGS.md`, "Sprint 4 review". WebLLM was cut from Sprint 4
+(TD-08), so section 8.5 is unchanged and S1-071 stays the gate for that rung.
+
+### 9.1 Manifest spec v0.1 (manifest 0.1.1, published)
+
+What changed at the trust boundary: the manifest contract is frozen on wire `airplanemode.manifest/0.1`
+(`spec/MANIFEST.md`). Additions are a duplicate-member rule (a repeated JSON member at any depth is
+`invalid_json`, so every parser acts on the same value; S1-087), an explicit S < L check before the
+Ed25519 verify in both implementations, a normative reason precedence, refusal of all five RFC 8032
+section 7.1 keys by keyId and by raw bytes unless `allowTestKeys === true` (TD-22), and 15 tamper
+vectors plus three asset-tamper cases.
+
+| Threat      | Scenario                                                                                                      | Control                                                                                                                                                                                      | Residual                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spoofing    | A manifest signed with a public test key is trusted in production                                             | Trust set refused before parsing when it holds a test keyId or test public-key bytes; strict boolean opt-in; AssetManager refuses before any fetch; cp-sign refuses to sign with a test seed | S1-089: a non-`Map` trust object whose iterator throws defeats the pre-scan; fix pending                                                                         |
+| Spoofing    | A signature from an untrusted key is presented with a trusted keyId or an embedded publicKey (tamper-04, -05) | Trust set is application configuration, never fetched; embedded `publicKey` informational only and must equal the trusted bytes; keyId recomputed from the trusted key                       | No revocation and no transparency log (MANIFEST.md Security considerations)                                                                                      |
+| Tampering   | Two parsers read different values from one document (duplicate members)                                       | Duplicate scan before `JSON.parse` (runtime) and a strict visitor (cp-manifest); identical verdicts on S1's 10-variant probe                                                                 | None known                                                                                                                                                       |
+| Tampering   | A malleable signature (S + L) verifies in one engine and not another                                          | S < L checked before WebCrypto and before `verify_strict`; tamper-15                                                                                                                         | None known                                                                                                                                                       |
+| Tampering   | Rollback or replay of an older validly signed manifest (tamper-08, -09)                                       | Downgrade state keyed by manifest id, written only after a valid signature and a passed check; fail closed on an unreadable store                                                            | First-use and per-profile: a fresh profile accepts any older version; without `expiresAt` replay is unbounded; `allowDowngrade` lowers the stored state (S1-091) |
+| Tampering   | Mix-and-match: a validly signed manifest for another product is served                                        | Consumer duty stated in MANIFEST.md (check `manifest.id`); pre-pilot checklist row 26                                                                                                        | No `expectId` option until Sprint 5                                                                                                                              |
+| Tampering   | Asset bytes flipped or truncated after a valid manifest (tamper-assets)                                       | Full-file hash before any consumer read; `getBlob` rejects; no blob: URL; one request per flipped asset                                                                                      | Integrity is relative to the signed manifest; the trust root is configuration                                                                                    |
+| Repudiation | `signedAt`, `alg`, `keyId` are relied on as authenticated                                                     | MANIFEST.md lists them as unauthenticated; only `createdAt` and `expiresAt` are authenticated                                                                                                | Browser clock trusted for `expiresAt`                                                                                                                            |
+
+The Tamper lab (`demo/tamper-lab.ts`) is a demonstration surface with its own trust set (named RFC test
+keys only), a literal `allowTestKeys: true` in that module only, in-memory downgrade state and a fresh
+memory asset store per case. It cannot be driven from the URL, storage or a pasted root, writes nothing
+persistent and fetches only same-origin fixture files. Its label reads demo-only. Its risk is
+confusion, not compromise: a visitor might read "Accepted" for the test-signed case as an endorsement of
+test keys. The label and the library default (`false`) cover that.
+
+S1-074 (closed): the worker's egress report crosses the page boundary as a bare `{type:'egress'}`. The
+page records `origin: 'worker-reported'`, `reporter: 'worker'`, its own adapter id and a 1-based count,
+at most 16 per load. No worker-provided string enters an event, without exception.
+
+### 9.2 localdata vector index (0.2.0-alpha.0)
+
+Assets:
+
+- Embeddings (f32 vectors), chunk values (document text in a pilot) and keys, stored per namespace in
+  OPFS (or IndexedDB) under the reserved driver namespace `'__ld_vec.' + ns`. Embeddings are
+  invertible enough to leak document content and must be treated as the document.
+- Index integrity: the HEAD record (segment table, tombstones, generation) and the immutable vector,
+  META and value parts. Query results drive what a later pipeline (dockit, Sprint 5) puts in front of a
+  model.
+- Availability of the tab: JS heap, WebAssembly linear memory (about 160 MB for 100,000 x 384), and the
+  origin's storage quota.
+
+Actors:
+
+- A1, a same-origin script: on GitHub Pages every Airplane Mode Labs demo shares one origin (S1-041), and
+  any XSS or malicious dependency on the origin can read and rewrite every namespace.
+- A2, someone with the OS account or the browser profile (another user of a shared laptop, malware, a
+  forensic image): reads the files at rest and can edit them, recomputing CRC-32C.
+- A3, the author of a document that is chunked, embedded and indexed (hostile input to the pipeline).
+- A4, a second tab of the same app (not hostile, but concurrent).
+- A5, the browser itself: eviction, quota, crashes, torn writes.
+
+Controls:
+
+- Parser: every HEAD and META field from storage is untrusted. `ldvec/src/format.rs` computes lengths in
+  checked `u64` (wasm32 `usize` is 32 bits), checks the HEAD size cap and exact length before reading the
+  segment table, bounds counts (4,096 segments, 4,194,304 rows, 131,072 rows per segment, keys <= 4,096
+  bytes per row, values <= 1 MiB) before they size anything, and validates META offsets and UTF-8. The FFI
+  range-checks every pointer and alignment; a trap discards the instance (S1 probe: 19 lying HEADs and
+  200,000 CRC-fixed mutations, 0 panics; T2: over 3.2 million native and 12,000 WASM cases per module).
+- Memory: `maxIndexBytes` (default 1 GiB) is checked against the HEAD's declared vector and META bytes
+  before any WebAssembly block is allocated, and each part's actual length must match before it is
+  copied into linear memory; an allocation failure is `quota_exceeded` `wasm_memory`, never a trap.
+- Integrity: CRC-32C per segment (vectors, META) and per value, checked on read; any structural or
+  checksum failure is `corrupt` with `details {ns, file, reason}`, sticky for that HEAD until `clear(ns)`
+  or a new HEAD, and no hit is ever returned from a corrupt index.
+- Crash safety and concurrency: immutable segments with fresh segIds, HEAD written last; all-or-nothing
+  `putVectors`; Web Lock from the HEAD re-read through the HEAD put; OPFS `refreshIndex` under the lock;
+  generation overflow refused. Per-index driver namespaces (S1-086) so indexes never share `keys.json`.
+- Isolation: callers cannot name a `__ld_` namespace; the ns grammar forbids `/` and a leading `_`.
+- Privacy: no key, filterPrefix, vector component, score or value in `storage.*` events or in any vector
+  `StorageError` (message, details, JSON); a bad row is identified by its position (`details.row`).
+- Egress: `localdata/src` has no network API; the demo CSP is `connect-src 'none'` and adds only
+  `'wasm-unsafe-eval'`.
+
+| Threat                 | Actor      | Scenario                                                                                      | Control / status                                                                                                                                                                                                                      |
+| ---------------------- | ---------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Information disclosure | A1, A2     | Read embeddings, chunks and keys at rest                                                      | Not prevented: stored unencrypted (README Limitations, verbatim). Mitigations are hosting (dedicated origin), full-disk encryption and OS login (checklist rows 11, 12). Encryption at rest needs a key-custody design (deferred).    |
+| Tampering              | A1, A2     | Rewrite parts and recompute CRC-32C to change rankings or values                              | Not prevented: CRC-32C detects accidental corruption only (README states it). A structurally valid edit is indistinguishable from a write. A signed or MACed index needs a key on the device, which A1 and A2 can reach; not planned. |
+| Tampering              | A3         | Index poisoning: a crafted chunk ranks first for many queries, or carries instructions        | Not prevented by a flat index (README states it). Recorded for the Sprint 5 retrieval and prompt-injection review (section 7.8, checklist row 16): provenance of each hit, per-document caps, and treating retrieved text as data.    |
+| Denial of service      | A1, A2     | A crafted HEAD or part exhausts memory or traps the kernel                                    | Bounded by the parser and `maxIndexBytes` before WebAssembly allocation; traps discard the instance. Residual S1-092: an oversized file is read whole into the JS heap before its length is checked.                                  |
+| Denial of service      | A1, A2, A5 | A damaged `keys.json` or an evicted origin makes the index disappear                          | Eviction removes the whole origin (README). Residual S1-092: an unparseable `keys.json` reads as "no index" (empty results) instead of `corrupt`.                                                                                     |
+| Tampering              | A4         | Two tabs write the same or different namespaces                                               | Web Lock plus `refreshIndex`; browser test with two pages: all rows, 0 corrupt. A custom driver without `refreshIndex` is single-writer (README; checklist row 27). Readers in other tabs are stale until reopen.                     |
+| Information disclosure | A1         | Keys, prefixes or scores leak through events or error messages to a log or the DevTools panel | Sentinel tests over events and StorageErrors; the panel does not read localdata in Sprint 4.                                                                                                                                          |
+
+Non-goals for 0.2.0-alpha.0 (recorded, not gates): confidentiality or integrity against A1 or A2;
+poisoning resistance; multi-writer custom drivers; compaction, quantisation and HNSW (HNSW needs a
+build-or-adopt security note first, Sprint 6); behaviour under memory pressure on an 8 GB laptop,
+Windows Defender scanning of OPFS files and Windows eviction (owner measurement).
+
+### 9.3 Packaging and CI (Sprint 4 delta)
+
+glyphsift's artefact-building CI jobs now install tools by hash (`pip --require-hashes
+--only-binary=:all:`) or from a lockfile with integrity (`npm ci --ignore-scripts`), and every cargo and
+maturin build uses `--locked` (S1-079 closed; S1-093 is a pagetriage test job without it). No workflow
+publishes, and write permissions stay in the Pages deploy jobs. The remaining packaging gap is
+attribution, not integrity: the MIT notices of crates compiled into the wheels and the glyphsift tarball
+(S1-090).
+
+### 9.4 Residual risk after Sprint 4
+
+No open finding is Critical, High or Medium. The manifest contract that the paid product will rest on
+is published with negative and tamper vectors that both implementations pass identically. The one new
+verifier finding (S1-089) is a fail-open edge that needs application misconfiguration twice over. The
+vector index adds the largest new asset so far, document-derived data at rest, and its protection
+depends on the origin and the device, not on the library: same-origin isolation on a dedicated pilot
+origin, full-disk encryption and OS login are the controls, and the README says so. Retrieval poisoning
+becomes reachable when a model answers over retrieved chunks (Sprint 5) and is the first item of that
+sprint's review.
+
+### 9.5 Close-out after fix rounds 1 and 2 and the tester round 2 results
+
+This subsection supersedes the statements in 9.3 and 9.4 that S1-089 and S1-090 are open: both were fixed in fix
+round 1 (the test-key refusal fails closed for any trust object that is not a plain `Map`; the MIT texts ship in
+the pagetriage wheel and the glyphsift wheel and tarball, TD-28). Findings: `FINDINGS.md`, "Sprint 4 fix round 1
+re-verification", "Sprint 4 fix round 2 re-verification" and "Sprint 4 close-out after the tester round 2
+results".
+
+Manifest spec v0.1 was amended in place twice before it leaves this machine (TD-26, TD-29), so the frozen
+contract is the amended one: strict SemVer 2.0 with numeric identifiers of any size, the Signature schema applied
+to every `signatures[]` item at the schema stage (a malformed untrusted signature beside a valid trusted one
+refuses the whole manifest), explicit `null` refused, undeclared members of any name refused, canonical padded
+base64 only for `sig` and `publicKey`, and an explicit forbidden-character set for `url`. From the owner's push
+onward a change to what is accepted or refused needs a new wire string.
+
+| Threat    | Scenario                                                                                                                        | Control / status                                                                                                                                                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tampering | Unsigned data rides in a validly signed manifest through a prototype-named member (`__proto__`) and steers `pin` or `chunkSize` | Fixed (S1-099): own-property checks in the schema, null-prototype canonical objects, shared negative vectors; TypeScript and Rust agree on every prototype-related name at every level.                                                                                                                                  |
+| Tampering | Two verifiers disagree on a signature encoding, a url character or a large SemVer number, so one accepts what the other refuses | Fixed (TD-26, TD-29, S1-095): one accepted base64 spelling, an explicit url set, digit-string SemVer comparison; differential sweeps over every Unicode scalar value, 318,000 base64 strings and 20,009 SemVer pairs show 0 differences. The only remaining asymmetry refuses on both sides (S1-008, parse-stage order). |
+| Spoofing  | A signed entry url is a network-path reference (`//host/a.bin`) that leaves the manifest's origin or downgrades to http         | Runtime control holds: the resolved URL passes `isAllowedAssetUrl` and `allowedOrigins` before any fetch (S1-097). The spec sentence that every consumer must re-check the resolved URL is Sprint 5; checklist row 30.                                                                                                   |
+| Tampering | A prototype-named KV key or stored value in localdata loses its accounting row or chooses the prototype of the value read back  | Open, Low (S1-100, S1-101; Sprint 5). Needs a prototype-named key chosen by the app, or a same-origin writer (S1-006) that can already rewrite the value. `clear(ns)` still deletes everything; vector rows are unaffected. Checklist row 29.                                                                            |
+| Denial    | A manifest whose id is `constructor` cannot be loaded by the persistent AssetManager                                            | Open, Info (S1-102; Sprint 5). Fails closed (`state`), no state written.                                                                                                                                                                                                                                                 |
+
+Residual risk after Sprint 4 (final): no open finding is Critical, High or Medium. The verification path that
+the paid product rests on has been probed by three independent differentials and the 13-case Tamper lab in real
+Chrome with no accept-versus-refuse difference left. The largest residual risks are the ones no library can
+remove: document-derived data at rest in the browser profile (dedicated origin, disk encryption and OS login
+are the controls), the absence of key revocation and a transparency log (S1-001, S1-002, short `expiresAt` in
+pilots), and retrieval poisoning and prompt injection, which become reachable when a model answers over
+retrieved chunks in Sprint 5. Nothing has been measured on the 8 GB laptop, so memory-pressure behaviour (WASM
+growth failure, tab discard), Windows Defender scanning of OPFS files and Windows eviction remain unknowns for
+the owner's runbook.
