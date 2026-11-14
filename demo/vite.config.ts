@@ -55,9 +55,38 @@ const dropEmittedWasm = {
 
 // The engine's endpoint defaults are rewritten in the bundle: see ./engine-defaults.ts (T1-S2-08).
 
+// package.json `sideEffects` ("./dist/worker/*.js") describes the published output, so a bundler that
+// reads it would treat src/worker/egress-install.ts as side-effect free and drop the import that
+// installs the egress guard. The guard must run first in the worker, so it is marked as having side
+// effects here (test/browser/guard-order.spec.ts proves the order in the built worker).
+const keepEgressGuard = {
+  name: 'keep-egress-guard',
+  apply: 'build' as const,
+  transform(
+    _code: string,
+    id: string,
+  ): { code: string; map: null; moduleSideEffects: true } | null {
+    if (!/[\\/]src[\\/]worker[\\/]egress-install\.ts$/.test(id)) return null;
+    return { code: _code, map: null, moduleSideEffects: true };
+  },
+};
+
 export default defineConfig({
   root,
-  plugins: [dropEmittedWasm, neutraliseEngineDefaults],
+  plugins: [dropEmittedWasm, neutraliseEngineDefaults, keepEgressGuard],
+  // The engine worker (src/worker/engine-host.ts, imported with ?worker&url): an ES-module worker
+  // with the same plugins, written to app/ beside the page chunks.
+  worker: {
+    format: 'es' as const,
+    plugins: () => [dropEmittedWasm, neutraliseEngineDefaults, keepEgressGuard],
+    rollupOptions: {
+      output: {
+        entryFileNames: 'app/[name]-[hash].js',
+        chunkFileNames: 'app/[name]-[hash].js',
+        assetFileNames: 'app/[name]-[hash][extname]',
+      },
+    },
+  },
   base: './',
   publicDir: 'public',
   define: {

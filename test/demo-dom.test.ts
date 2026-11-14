@@ -25,7 +25,9 @@ const demoFiles = (ext: RegExp) => readdirSync(resolve(repoDir, 'demo')).filter(
 const SPRINT1_INDEX_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const MODELS_CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+  // Sprint 3: the engine runs in a module worker started from a blob: bootstrap (worker-src gains blob:),
+  // and Trusted Types are required for scripts with exactly one policy, airplanemode-worker (D1-09)
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types airplanemode-worker";
 
 const cspOf = (html: string): string => {
   const m = /http-equiv="Content-Security-Policy"\s+content="([^"]*)"/.exec(html);
@@ -60,6 +62,24 @@ describe('the demo pages: markup and policy', () => {
 
   it('models.html carries exactly the specified CSP: connect-src self, no https:, wasm-unsafe-eval for scripts only', () => {
     expect(cspOf(read('demo/models.html'))).toBe(MODELS_CSP);
+  });
+
+  it('models.html requires Trusted Types for scripts with exactly one named policy, no allow-duplicates and no default policy (D1-09)', () => {
+    const csp = cspOf(read('demo/models.html'));
+    expect(csp).toContain("require-trusted-types-for 'script'");
+    expect(csp.match(/trusted-types ([^;]*)/)![1]).toBe('airplanemode-worker');
+    expect(csp).not.toContain('allow-duplicates');
+    expect(csp).not.toMatch(/trusted-types[^;]*\bdefault\b/);
+    // no script sink in the page code: no eval, Function, setTimeout(string), createElement('script')
+    const panel = read('demo/backend-panel.ts');
+    expect(panel).not.toMatch(
+      /\beval\s*\(|new Function|createElement\(['"]script['"]\)|\.srcdoc|document\.write/,
+    );
+    // the one policy lives in the library, created once per page
+    expect(read('src/backends/worker-bootstrap.ts')).toContain(
+      "export const WORKER_POLICY_NAME = 'airplanemode-worker'",
+    );
+    expect(read('src/backends/worker-bootstrap.ts').match(/\btt\.createPolicy\(/g)).toHaveLength(1);
   });
 
   it('models.html has no inline script or style, no external URL and loads backend-panel.ts as a module', () => {
@@ -109,19 +129,53 @@ describe('the demo pages: markup and policy', () => {
     expect(html).toContain('What this demo does not do yet');
     for (const item of [
       'Test model only',
-      'not the Hindi production model'.slice(0, 0) +
-        'the Hindi production model is not hosted or bundled here',
+      'the Hindi production model is not hosted or bundled here',
       'WebGPU is verified only on an Apple-silicon Mac',
-      'WebLLM backend: Sprint 3',
+      // Sprint 3: D1-05 (WebLLM) did not land, so the box says so instead of claiming it
+      'WebLLM rung: not yet',
+      'Memory figures are shown only where Chrome exposes them',
       'No threads',
       'Chrome built-in model is used only if you tick the box',
       'No service worker',
       'signed by a key generated for this build only',
     ])
       expect(html, item).toContain(item);
-    expect(html).toContain('Force WASM');
+    expect(html).toContain('Transformers.js WebAssembly');
     expect(html).toContain('Allow Chrome built-in model');
     expect(html).toContain('Download test model and load');
+    // D1-04 proved the worker host: the two Sprint 2 limitations are gone from the box
+    const box = html.slice(html.indexOf('What this demo does not do yet'));
+    expect(box).not.toMatch(/freezes while WebAssembly generates/);
+    expect(box).not.toMatch(/reload the page and tick/i);
+    expect(box).not.toContain('WebLLM backend: Sprint 3');
+    // conditional claims: nothing about WebLLM as a working rung
+    expect(html).not.toContain('WebLLM (WebGPU)');
+  });
+
+  it('models.html has the engine picker with only the choices that landed, the worker line and the load timing and memory read-out (D1-11)', () => {
+    const raw = read('demo/models.html');
+    const select = /<select id="sel-engine"[^>]*>([\s\S]*?)<\/select>/.exec(raw);
+    expect(select, 'the engine picker').not.toBeNull();
+    const options = [...select![1]!.matchAll(/<option value="([a-z]+)">([^<]*)<\/option>/g)].map(
+      (m) => m[1],
+    );
+    expect(options).toEqual(['auto', 'webgpu', 'wasm']);
+    expect(select![1]).not.toMatch(/webllm/i);
+    expect(raw).toMatch(/id="worker-line"[^>]*class="[^"]*hidden/);
+    expect(raw).toContain('id="readout"');
+    expect(flat(raw.replace(/<[^>]+>/g, ' '))).toContain('Load timing and memory');
+    expect(raw).toContain('devtools/README.md');
+    const panel = read('demo/backend-panel.ts');
+    expect(panel).toContain("from '../devtools/src/render.ts'");
+    expect(panel).toContain('exposeDevtoolsHook');
+    expect(panel).toContain("'sel-engine'");
+    expect(panel).toContain('backend.worker');
+  });
+
+  it('the picker choices map to the chain: auto starts at WebGPU, webgpu offers only the WebGPU adapter, wasm forces the wasm rung', () => {
+    const panel = read('demo/backend-panel.ts');
+    expect(panel).toMatch(/forceRung: 'wasm'/);
+    expect(panel).toMatch(/engine === 'webgpu'/);
   });
 
   it('the not-yet box of index.html no longer says there is no backend adapter and points at the backend page', () => {
@@ -146,7 +200,7 @@ describe('the demo pages: markup and policy', () => {
 describe('redistribution: notices, licences and provenance', () => {
   it('THIRD-PARTY-NOTICES.txt names onnxruntime-web (MIT) and every bundled library with its real licence', () => {
     const text = read('demo/THIRD-PARTY-NOTICES.txt');
-    expect(text).toMatch(/onnxruntime-web 1\.31\.0-dev\.20260914-8d85527a0 \(MIT/);
+    expect(text).toMatch(/onnxruntime-web 1\.31\.1 \(MIT/);
     expect(text).toContain('SmolLM2-135M-Instruct');
     const lines: [string, string][] = [
       ['onnxruntime-web', 'MIT'],

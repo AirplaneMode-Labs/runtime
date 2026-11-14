@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types airplanemode-worker"
     />
     <meta
       name="description"
@@ -38,6 +38,12 @@
             SmolLM2-135M-Instruct (q4), in Chrome on an Apple-silicon Mac only. This is not the
             Hindi production model; Windows and the 8 GB no-GPU laptop are not measured.
           </p>
+          <p class="small">
+            New in Sprint 3: the engine runs in a dedicated worker, so the page stays responsive
+            while WebAssembly generates, and the library ends an aborted answer in about 250 ms
+            (evidence/sprint-3/D1/worker/); this page requires Trusted Types (one policy); and the
+            load timing and memory read-out below shows what the Airplane Mode DevTools panel shows.
+          </p>
           <!-- prettier-ignore -->
           <p class="small">
 Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
@@ -56,19 +62,29 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
               WebGPU is verified only on an Apple-silicon Mac; Windows and the 8 GB no-GPU laptop
               are not measured.
             </li>
-            <li>WebLLM backend: Sprint 3.</li>
             <li>
-              This page freezes while WebAssembly generates: the engine runs on the main thread, so
-              the tab does not repaint or run timers until generation ends, and answers are kept
-              short there. Moving the engine off the main thread is planned for Sprint 3.
+              No Stop button yet: an abort exists in the library, not as a control on this page.
             </li>
             <li>
-              If WebGPU fails after the engine has started (for example out of memory), WebAssembly
-              cannot start in the same page: reload the page and tick Force WASM.
+              WebLLM rung: not yet. The contract and the staging rules describe it, but its adapter
+              and model are not in this build; they are carried to Sprint 4.
+            </li>
+            <li>
+              Memory figures are shown only where Chrome exposes them: the page's JavaScript heap
+              through <code>performance.memory</code>, which is coarse and Chrome-only. Inside the
+              worker they may all be dashes, and there is no GPU-memory figure.
+            </li>
+            <li>
+              Answers are kept short on WebAssembly (at most 24 tokens) so the timing figures come
+              quickly; that is a limit of this page, not of the engine.
             </li>
             <li>
               No threads: GitHub Pages cannot send the COOP and COEP headers, so WebAssembly runs on
               one thread and is slow.
+            </li>
+            <li>
+              The worker's network control is the egress guard plus the Content Security Policy the
+              worker inherits; GitHub Pages sends no headers, so this page's policy is a meta tag.
             </li>
             <li>
               The Chrome built-in model is used only if you tick the box below and the browser
@@ -101,10 +117,12 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
         <h2>Test model</h2>
         <p id="model-status" class="small" aria-live="polite">Checking this build…</p>
         <div class="row">
-          <label class="check">
-            <input id="chk-force-wasm" type="checkbox" />
-            Force WASM (skip WebGPU)
-          </label>
+          <label class="check" for="sel-engine">Engine</label>
+          <select id="sel-engine">
+            <option value="auto">Auto (WebGPU first, then WebAssembly)</option>
+            <option value="webgpu">Transformers.js WebGPU</option>
+            <option value="wasm">Transformers.js WebAssembly</option>
+          </select>
           <label class="check">
             <input id="chk-builtin" type="checkbox" />
             Allow Chrome built-in model (Google's model; not verified by this site)
@@ -116,6 +134,7 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
         </div>
         <p id="progress" class="small" aria-live="polite"></p>
         <p id="refusal" class="note hidden" role="alert"></p>
+        <p id="worker-line" class="small hidden" aria-live="polite"></p>
         <dl id="result" class="result hidden">
           <dt>Rung</dt>
           <dd id="r-rung">?</dd>
@@ -144,6 +163,31 @@ What is the capital of France? Answer in one word.</textarea>
         </div>
         <pre id="out-answer" class="out" aria-live="polite"></pre>
         <p id="out-timing" class="small muted"></p>
+      </section>
+
+      <section id="readout-section">
+        <h2>Load timing and memory</h2>
+        <p class="small">
+          The same table the Airplane Mode DevTools panel shows for this page: five phase durations
+          of the load under one load id, and the memory figures Chrome exposes. This page calls
+          <code>exposeDevtoolsHook()</code>, so the real panel can read it too.
+        </p>
+        <ol class="small">
+          <li>Clone the repository and run <code>npm run devtools:build</code>.</li>
+          <li>
+            In <code>chrome://extensions</code> switch on Developer mode and choose Load unpacked:
+            <code>devtools/dist</code>.
+          </li>
+          <li>Open DevTools on this page and choose the Airplane Mode tab.</li>
+        </ol>
+        <p class="small">
+          Details and limitations are in <code>devtools/README.md</code> (the DevTools panel section
+          of the README). The extension is not on the Chrome Web Store.
+        </p>
+        <div id="readout" class="readout">
+          <p class="muted small" id="readout-empty">Nothing to show before a model is loaded.</p>
+          <div id="readout-body"></div>
+        </div>
       </section>
     </main>
 

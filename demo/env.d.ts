@@ -11,3 +11,9 @@ declare const __DEMO_BUILD__: string;
  * {bundled, keyId, publicKeyHex, manifestPath, descriptorEntryId, totalBytes, modelName}.
  */
 declare const __DEMO_MODELS__: string;
+
+/** The engine worker bundled by Vite (`?worker&url`): the URL of the emitted ES-module worker script. */
+declare module '*?worker&url' {
+  const url: string;
+  export default url;
+}

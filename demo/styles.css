@@ -277,3 +277,28 @@ h3 {
   font-size: 1rem;
   margin-bottom: 0.25rem;
 }
+
+/* load timing and memory read-out (rendered from devtools/src/render.ts) */
+.readout .scroll {
+  overflow-x: auto;
+}
+.readout section[data-role='load'] {
+  margin: 0.5rem 0 1rem;
+}
+.readout td.num,
+.readout td.mono {
+  white-space: nowrap;
+}
+.readout td.num {
+  text-align: right;
+}
+.readout th,
+.readout td {
+  text-align: left;
+  padding: 0.15rem 0.6rem 0.15rem 0;
+  border-bottom: 1px solid var(--line, #d4d8de);
+  vertical-align: top;
+}
+.readout td.num {
+  text-align: right;
+}

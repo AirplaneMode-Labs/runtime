@@ -15,5 +15,14 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["main.ts", "backend-panel.ts", "env.d.ts", "../src/**/*.ts", "../spec/**/*.ts"]
+  "include": [
+    "main.ts",
+    "backend-panel.ts",
+    "env.d.ts",
+    "../src/**/*.ts",
+    "../spec/**/*.ts",
+    "../devtools/src/render.ts",
+    "../devtools/src/validate.ts",
+    "../devtools/src/page-expr.ts"
+  ]
 }

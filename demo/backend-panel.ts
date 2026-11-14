@@ -35,9 +35,13 @@ import {
   type Rung,
 } from '../src/backends/index.ts';
 import { ORT_FACTORY_FILE } from '../src/backends/ort-pins.ts';
+// The engine worker, bundled by Vite as an ES-module worker; the URL is resolved against the page.
+import engineWorkerUrl from '../src/worker/engine-host.ts?worker&url';
 import { maxTokensFor } from './limits.ts';
 import { AdapterError } from '../spec/backend-adapter.ts';
 import { EventBus } from '../src/events.ts';
+import { exposeDevtoolsHook } from '../src/devtools-hook.ts';
+import { buildPanelModel, buildPanelView, mountView } from '../devtools/src/render.ts';
 import type { TransformersAdapter } from '../src/backends/transformers.ts';
 
 const MiB = 1024 * 1024;
@@ -75,6 +79,15 @@ const rungLabel: Record<Rung, string> = {
 
 $('build-id').textContent = __DEMO_BUILD__;
 
+// The page opts in to the Airplane Mode DevTools panel (runtime/devtools): the hook exposes the
+// event bus of the current model session as globalThis.__airplanemodeDevtools. Only this demo calls
+// exposeDevtoolsHook(); the library never does.
+let disposeDevtoolsHook: (() => void) | undefined;
+function publishToDevtools(bus: EventBus): void {
+  disposeDevtoolsHook?.();
+  disposeDevtoolsHook = exposeDevtoolsHook(bus);
+}
+
 /** Message shown for a failure, built from codes only (never from engine or network text). */
 function describeFailure(e: unknown): string {
   if (e instanceof BackendRefusedError) return e.userMessage;
@@ -93,6 +106,17 @@ function describeFailure(e: unknown): string {
 // --- the plan and the device ----------------------------------------------------------------------
 
 const ortFactoryUrl = new URL(`./app/ort/${ORT_FACTORY_FILE}`, location.href).href;
+/** Where the engine runs: the page uses a worker; the loopback test hook can still ask for the main thread. */
+type EngineHost = 'main' | 'worker';
+const adaptersFor = (
+  host: EngineHost,
+  extra: { sessionOptions?: { graphOptimizationLevel: 'disabled' } } = {},
+) =>
+  createDefaultAdapters({
+    ortFactoryUrl,
+    ...(host === 'worker' ? { workerUrl: engineWorkerUrl } : {}),
+    ...extra,
+  });
 let profile: CapabilityProfile | undefined;
 
 function planText(
@@ -102,7 +126,7 @@ function planText(
   allowBuiltin: boolean,
   blocked: boolean,
 ): string {
-  if (forced && rung === 'webgpu') return 'skipped: you chose Force WASM';
+  if (forced && rung === 'webgpu') return 'skipped: you chose Transformers.js WebAssembly';
   if (rung === 'builtin')
     return allowBuiltin
       ? "will be tried last, and only if the browser says its model is already available (this site never starts the browser's own download)"
@@ -126,8 +150,8 @@ async function renderPlan(): Promise<void> {
     `free storage: ${p.storageFreeGb} GB\n` +
     `WebAssembly SIMD: ${p.features.wasmSimd ? 'yes' : 'no'}   threads: ${p.features.wasmThreads ? 'yes' : 'no (no COOP/COEP)'}   ` +
     `shader-f16: ${p.features.shaderF16 ? 'yes' : 'no'}`;
-  const adapters = createDefaultAdapters({ ortFactoryUrl });
-  const forced = $<HTMLInputElement>('chk-force-wasm').checked;
+  const adapters = adaptersFor('worker');
+  const forced = $<HTMLSelectElement>('sel-engine').value === 'wasm';
   const allow = $<HTMLInputElement>('chk-builtin').checked;
   const list = $('plan-list');
   list.replaceChildren();
@@ -147,7 +171,8 @@ async function renderPlan(): Promise<void> {
 
 interface Source {
   manifestUrl: string;
-  descriptorEntryId: string;
+  /** Descriptor entry ids in preference order (the isolation fixture lists two). */
+  descriptorEntryIds: string[];
   trust: TrustSet;
 }
 
@@ -163,7 +188,7 @@ function bundledSource(): Source | undefined {
     return undefined;
   return {
     manifestUrl: new URL(meta.manifestPath, location.href).href,
-    descriptorEntryId: meta.descriptorEntryId,
+    descriptorEntryIds: [meta.descriptorEntryId],
     trust: new Map([[meta.keyId, hexToBytes(meta.publicKeyHex)]]),
   };
 }
@@ -202,7 +227,7 @@ async function loadModel(
   const result = await loadWithFallback({
     profile: p,
     assets: session.mgr,
-    models: [source.descriptorEntryId],
+    models: source.descriptorEntryIds,
     adapters: session.adapters,
     ...(options.forceRung ? { forceRung: options.forceRung } : {}),
     allowBuiltin: options.allowBuiltin,
@@ -217,7 +242,7 @@ async function loadModel(
     if (e.name === 'asset.download.complete') bytesDownloaded += e.bytes ?? 0;
   const diag =
     result.adapter.id === 'transformers-js'
-      ? (result.adapter as TransformersAdapter).diagnostics()
+      ? (result.adapter as unknown as TransformersAdapter).diagnostics()
       : { executionProviders: ['builtin'], dtype: '' };
   return {
     result,
@@ -233,7 +258,7 @@ async function loadModel(
 const btnDownload = $<HTMLButtonElement>('btn-download');
 const btnRun = $<HTMLButtonElement>('btn-run');
 const inPrompt = $<HTMLTextAreaElement>('in-prompt');
-const chkForce = $<HTMLInputElement>('chk-force-wasm');
+const selEngine = $<HTMLSelectElement>('sel-engine');
 const chkBuiltin = $<HTMLInputElement>('chk-builtin');
 
 function showResult(r: LoadReport): void {
@@ -243,6 +268,31 @@ function showResult(r: LoadReport): void {
   $('r-eps').textContent = r.executionProviders.join(', ');
   $('r-load').textContent = `${Math.round(r.loadMs)} ms`;
   $('r-bytes').textContent = fmtBytes(r.bytesDownloaded);
+}
+
+/** The 'Engine runs in a worker' line, driven by backend.worker events (shown only when a worker became ready). */
+function showWorkerLine(events: EventBus): void {
+  const line = $('worker-line');
+  const ready = events
+    .snapshot()
+    .filter((e) => e.name === 'backend.worker' && e.attrs['state'] === 'ready')
+    .pop();
+  if (!ready) {
+    line.classList.add('hidden');
+    return;
+  }
+  const ms = ready.durationMs === undefined ? '' : ` (ready in ${Math.round(ready.durationMs)} ms)`;
+  line.textContent = `The engine runs in a worker${ms}: the page stays responsive while the model answers.`;
+  line.classList.remove('hidden');
+}
+
+/** The load timing and memory read-out: the DevTools panel's own model and view, fed by the hook. */
+function renderReadout(): void {
+  const hook = (globalThis as { __airplanemodeDevtools?: { snapshot(): string } })
+    .__airplanemodeDevtools;
+  const raw = hook ? hook.snapshot() : null;
+  $('readout-empty').classList.add('hidden');
+  mountView(document, $('readout-body'), buildPanelView(buildPanelModel(raw)));
 }
 
 async function onDownloadClick(): Promise<void> {
@@ -255,17 +305,27 @@ async function onDownloadClick(): Promise<void> {
   // The second AssetManager of the demo (index.html has the first): created only here, after the
   // click. allowedOrigins is explicit and test keys are never trusted on this path.
   const events = new EventBus(5000);
+  publishToDevtools(events);
   const mgr = new AssetManager({
     store: 'auto',
     allowedOrigins: [location.origin],
     allowTestKeys: false,
     events,
   });
-  const session: Session = { mgr, events, adapters: createDefaultAdapters({ ortFactoryUrl }) };
+  // The picker: auto starts at WebGPU and falls back to WebAssembly; 'webgpu' offers only the WebGPU
+  // adapter (no fallback, so a device that cannot run it is reported instead of hidden); 'wasm' skips
+  // the WebGPU rung. The engine of every choice runs in a worker.
+  const engine = selEngine.value;
+  const allAdapters = adaptersFor('worker');
+  const session: Session = {
+    mgr,
+    events,
+    adapters: engine === 'webgpu' ? allAdapters.filter((a) => a.device === 'webgpu') : allAdapters,
+  };
   let asked = 0;
   try {
     const report = await loadModel(session, source, {
-      ...(chkForce.checked ? { forceRung: 'wasm' as const } : {}),
+      ...(engine === 'wasm' ? { forceRung: 'wasm' as const } : {}),
       allowBuiltin: chkBuiltin.checked,
       consent: async ({ rung, bytes }) => {
         // The click was the consent for the first question; any later rung asks again.
@@ -285,10 +345,14 @@ async function onDownloadClick(): Promise<void> {
     $('progress').textContent =
       'Model loaded and verified. Every file was hashed against the signed manifest.';
     showResult(report);
+    showWorkerLine(events);
+    renderReadout();
     btnRun.disabled = false;
     inPrompt.disabled = false;
   } catch (e) {
     $('progress').textContent = '';
+    showWorkerLine(events);
+    renderReadout();
     const refusal = $('refusal');
     refusal.textContent = describeFailure(e);
     refusal.classList.remove('hidden');
@@ -304,7 +368,7 @@ async function onRunClick(): Promise<void> {
   $('out-timing').textContent = 'Generating…';
   try {
     const res = await current.result.adapter.generate(inPrompt.value, {
-      // a short answer on WebAssembly: it runs on the main thread and the tab freezes meanwhile
+      // a short answer on WebAssembly keeps the demo quick; the engine runs in a worker, so the page stays responsive
       maxTokens: maxTokensFor(current.result.rung),
       temperature: 0,
       onToken: (t) => {
@@ -317,6 +381,7 @@ async function onRunClick(): Promise<void> {
       `Finish: ${res.finishReason}. Prompt tokens ${res.usage.promptTokens ?? '?'}, generated ${res.usage.completionTokens ?? '?'}. ` +
       `Prefill ${Math.round(t.prefillMs ?? 0)} ms, decode ${Math.round(t.decodeMs ?? 0)} ms` +
       (t.tokensPerSecond ? `, ${t.tokensPerSecond.toFixed(1)} tokens per second.` : '.');
+    renderReadout();
   } catch (e) {
     $('out-timing').textContent = describeFailure(e);
   } finally {
@@ -342,10 +407,31 @@ function initModelSection(): void {
   }
 }
 
-chkForce.addEventListener('change', () => void renderPlan());
+selEngine.addEventListener('change', () => void renderPlan());
 chkBuiltin.addEventListener('change', () => void renderPlan());
 initModelSection();
 void renderPlan();
+
+/** Collects the durations of main-thread long tasks (over 50 ms) until stop(). */
+function observeLongTasks(): { stop(): number[] } {
+  const seen: number[] = [];
+  let observer: PerformanceObserver | undefined;
+  try {
+    observer = new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) seen.push(e.duration);
+    });
+    observer.observe({ type: 'longtask', buffered: false });
+  } catch {
+    observer = undefined; // long-task entries are not available in this browser
+  }
+  return {
+    stop(): number[] {
+      for (const e of observer?.takeRecords() ?? []) seen.push(e.duration);
+      observer?.disconnect();
+      return seen;
+    },
+  };
+}
 
 // --- loopback test hooks (never on a hosted page) -----------------------------------------------------
 
@@ -364,6 +450,13 @@ interface RunOptions {
    * generation (T1-S2-02): abort from onToken works on WebAssembly, and the adapter stays usable.
    */
   abortAfterTokens?: number;
+  /**
+   * Aborts a generation from a timer, this many milliseconds after it started (R8: the worker host must
+   * land the abort promptly even when the engine is busy), then reports how long the abort took.
+   */
+  abortAfterMs?: number;
+  /** Where the engine runs for this run: 'main' (default, the Sprint 1 and 2 specs) or 'worker'. */
+  host?: EngineHost;
 }
 
 interface Generation {
@@ -393,6 +486,15 @@ type HookReport =
         first: Generation & { tokensSeen: number };
         second: Generation;
       };
+      /** Durations of the main-thread long tasks (over 50 ms) that ran while the prompts were answered. */
+      longTasksMs: number[];
+      /** abortAfterMs: the timer abort, its latency in ms, how it ended and what the asset holds were after. */
+      timerAbort?: {
+        latencyMs: number;
+        finishReason: string;
+        refcounts: number[];
+        loaded: boolean;
+      };
       verifyOk: string[];
       egressRefused: number;
       probe: string | null;
@@ -410,9 +512,18 @@ type HookReport =
 if (isLocal) {
   const which = params.get('models');
   const manifestPath =
-    which === 'hindi' ? '/models/hindi-smoke/manifest.json' : '/models/test-models/manifest.json';
-  const descriptorEntryId =
-    which === 'hindi' ? 'qwen3-1.7b.tjs-webgpu-q4f16' : 'smollm2-135m-instruct.descriptor';
+    which === 'hindi'
+      ? '/models/hindi-smoke/manifest.json'
+      : which === 'isolation'
+        ? '/models/isolation/manifest.json'
+        : '/models/test-models/manifest.json';
+  const descriptorEntryIds =
+    which === 'hindi'
+      ? ['qwen3-1.7b.tjs-webgpu-q4f16']
+      : which === 'isolation'
+        ? // the first descriptor's WebGPU weights are garbage: the rung fails after its worker started
+          ['smollm2-135m-instruct.bad-webgpu.descriptor', 'smollm2-135m-instruct.wasm.descriptor']
+        : ['smollm2-135m-instruct.descriptor'];
 
   // Qwen3-1.7B q4f16 (one 1.43 GB file) runs out of the 4 GB WebAssembly heap while ONNX Runtime
   // optimises the graph (std::bad_alloc) unless the optimisation level is 'disabled'; the small test
@@ -427,6 +538,7 @@ if (isLocal) {
     },
     async run(options: RunOptions): Promise<HookReport> {
       const events = new EventBus(5000);
+      publishToDevtools(events);
       const mgr = new AssetManager({
         store: 'auto',
         allowedOrigins: [location.origin],
@@ -437,14 +549,14 @@ if (isLocal) {
       const session: Session = {
         mgr,
         events,
-        adapters: createDefaultAdapters({ ortFactoryUrl, ...hookSessionOptions }),
+        adapters: adaptersFor(options.host ?? 'main', hookSessionOptions),
       };
       const beforeDownload: { rung: Rung; model: string; bytes: number }[] = [];
       const trust: TrustSet = new Map([[RFC8032_TEST_KEY_ID, hexToBytes(RFC8032_TEST_PUBLIC_HEX)]]);
       try {
         const report = await loadModel(
           session,
-          { manifestUrl: new URL(manifestPath, location.href).href, descriptorEntryId, trust },
+          { manifestUrl: new URL(manifestPath, location.href).href, descriptorEntryIds, trust },
           {
             ...(options.forceRung ? { forceRung: options.forceRung } : {}),
             allowBuiltin: options.allowBuiltin === true,
@@ -469,6 +581,7 @@ if (isLocal) {
           }
         }
         const generations: Generation[] = [];
+        const longTasks = observeLongTasks();
         for (const prompt of options.prompts ?? [options.prompt]) {
           const g = await report.result.adapter.generate(prompt, {
             maxTokens: options.maxTokens ?? 16,
@@ -480,6 +593,32 @@ if (isLocal) {
             usage: g.usage,
             timings: g.timings,
           });
+        }
+        const longTasksMs = longTasks.stop();
+        let timerAbort: NonNullable<Extract<HookReport, { ok: true }>['timerAbort']> | undefined;
+        if (options.abortAfterMs !== undefined) {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), options.abortAfterMs);
+          let abortedAt = 0;
+          ctl.signal.addEventListener('abort', () => (abortedAt = performance.now()), {
+            once: true,
+          });
+          const g = await report.result.adapter.generate(options.prompt, {
+            maxTokens: options.maxTokens ?? 64,
+            temperature: 0,
+            signal: ctl.signal,
+          });
+          clearTimeout(timer);
+          const settled = performance.now();
+          timerAbort = {
+            latencyMs: abortedAt === 0 ? 0 : settled - abortedAt,
+            finishReason: g.finishReason,
+            refcounts: (await mgr.list()).map((r) => r.refcount),
+            loaded: await report.result.adapter
+              .generate('', { maxTokens: 1 })
+              .then(() => true)
+              .catch((e: unknown) => !(e instanceof AdapterError && e.code === 'not_loaded')),
+          };
         }
         let abortCheck:
           { first: Generation & { tokensSeen: number }; second: Generation } | undefined;
@@ -533,6 +672,8 @@ if (isLocal) {
           timings: gen.timings,
           generations,
           ...(abortCheck ? { abortCheck } : {}),
+          longTasksMs,
+          ...(timerAbort ? { timerAbort } : {}),
           verifyOk: all
             .filter((e) => e.name === 'asset.verify.ok')
             .map((e) => String(e.attrs['entryId'])),
@@ -540,7 +681,7 @@ if (isLocal) {
           probe,
           beforeDownload,
           events: all
-            .filter((e) => /^(backend|model)\./.test(e.name) || e.name === 'asset.verify.ok')
+            .filter((e) => /^(backend|model|memory)\./.test(e.name) || e.name === 'asset.verify.ok')
             .map((e) => ({
               name: e.name,
               kind: e.kind,
@@ -566,6 +707,7 @@ if (isLocal) {
      */
     async diagnose(
       device: 'webgpu' | 'wasm',
+      host: EngineHost = 'main',
     ): Promise<{ ok: boolean; code?: string; cause?: string }> {
       const events = new EventBus(5000);
       const mgr = new AssetManager({
@@ -577,9 +719,8 @@ if (isLocal) {
       const p = (profile ??= await detectCapabilities());
       const trust: TrustSet = new Map([[RFC8032_TEST_KEY_ID, hexToBytes(RFC8032_TEST_PUBLIC_HEX)]]);
       await mgr.loadManifest(new URL(manifestPath, location.href).href, trust);
-      const adapter = createDefaultAdapters({ ortFactoryUrl, ...hookSessionOptions }).find(
-        (a) => a.device === device,
-      );
+      const descriptorEntryId = descriptorEntryIds[0]!;
+      const adapter = adaptersFor(host, hookSessionOptions).find((a) => a.device === device);
       if (!adapter) return { ok: false, code: 'no_adapter' };
       try {
         await adapter.load(mgr.getEntry(descriptorEntryId), { assets: mgr, profile: p, events });

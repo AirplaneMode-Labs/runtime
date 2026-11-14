@@ -4,7 +4,7 @@ Third-party notices for the Airplane Mode Labs runtime demo
 The built demo (the GitHub Pages artifact and demo/dist) contains the following third-party code and
 files. Each is redistributed under its own licence; nothing was modified.
 
-1. onnxruntime-web 1.31.0-dev.20260914-8d85527a0 (MIT, Copyright (c) Microsoft Corporation)
+1. onnxruntime-web 1.31.1 (MIT, Copyright (c) Microsoft Corporation)
    - app/ort/ort-wasm-simd-threaded.asyncify.mjs: the WebAssembly factory, copied unmodified from the
      npm package after its SHA-256 was checked against src/backends/ort-pins.ts
      (0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611).

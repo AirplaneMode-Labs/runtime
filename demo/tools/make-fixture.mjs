@@ -143,6 +143,32 @@ SOFTWARE.
 
 const sha256File = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
+/**
+ * The ort block of PROVENANCE.json: version, the sha512 integrity of the npm tarball from the lockfile,
+ * whether npm shows a provenance attestation, the wasm and factory sha256 of the pin, and how the build
+ * was cross-checked. It throws when the lockfile does not hold exactly the pinned stable release, so a
+ * provenance file never describes a package that is not the one installed.
+ */
+function ortProvenance(pins) {
+  const lock = JSON.parse(readFileSync(path.resolve(here, '../../package-lock.json'), 'utf8'));
+  const e = lock.packages?.['node_modules/onnxruntime-web'];
+  if (!e || e.version !== pins.version)
+    throw new Error(`package-lock.json does not hold onnxruntime-web ${pins.version}`);
+  if (typeof e.integrity !== 'string' || !e.integrity.startsWith('sha512-'))
+    throw new Error('onnxruntime-web has no sha512 integrity in package-lock.json');
+  return {
+    version: pins.version,
+    npmIntegrity: e.integrity,
+    resolved: e.resolved,
+    attestations: 'absent',
+    attestationsChecked: '2026-11-14',
+    wasmSha256: pins.wasmSha256,
+    factorySha256: pins.factorySha256,
+    crossCheck:
+      'stable release published to npm on 2026-10-26, forced in with package.json overrides; the wasm and the factory re-hash to the pins in src/backends/ort-pins.ts (test/ort-pins.test.ts); the browser model proof (npm run test:model) passes on WebGPU and on forced WebAssembly with these pins',
+  };
+}
+
 /** Copies the pinned ONNX Runtime Web factory to public/app/ort/ after checking it against the pin. */
 function copyOrtFactory() {
   const pins = readOrtPins();
@@ -248,6 +274,10 @@ function bundleModels(signer) {
         sha256: f.sha256,
       })),
     },
+    // S1-055: the runtime is the stable onnxruntime-web release that package.json overrides in. The
+    // tarball integrity is read from package-lock.json (offline); the registry showed no provenance
+    // attestation for the package on 14 Nov 2026 (`npm view onnxruntime-web@1.31.1 dist.attestations`).
+    ort: ortProvenance(pins),
     runtime: {
       package: 'onnxruntime-web',
       version: pins.version,
