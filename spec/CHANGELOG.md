@@ -5,6 +5,52 @@ All notable changes to the open contracts. The format is based on
 Semantic Versioning: the wire discriminator `airplanemode.<name>/<major>.<minor>` changes only on
 major or minor, never on patch.
 
+## [0.3.0] - 2026-11-14 (draft)
+
+Spec release 0.3.0 ships: manifest 0.1.0 (unchanged, files and vectors byte-identical), capability
+profile 0.1.0 (unchanged), event 0.1.2, storage API 0.1.0 (unchanged; `storage-api.md` gains a note),
+backend adapter 0.3.0 and model descriptor 0.2.0.
+
+### Added
+
+- Backend adapter 0.3.0: `AcquireOptions.cacheOnly` and `LoadOptions.cacheOnly`, enforced at `acquire()`
+  (a missing, row-only, truncated or `.part`-only asset rejects `not_cached` before any request; closes the
+  rest of S1-053), the error codes `integrity` and `not_cached`, `GenerateResult.timings.firstTokenMs`
+  and `BackendAdapter.host`. `backend-adapter.md` adds R2w (hand-off across a worker, the absolute
+  `verifiedPrefix` origin check), R3w (egress guard inside workers, the guarded list, the prototype-chain
+  `fetch` rule, the bootstrap rule; dynamic `import()` and FontFace rely on CSP only), R7 (per-load worker
+  isolation, T1-S2-01), R8 (abort and crash, T1-S2-02), R9 (chain integrity, T1-S2-07), R10 (chain
+  cacheOnly), R11 (WebLLM staging keyed by `loadId`), R12 (observability) and R13 (untrusted worker
+  messages).
+- Event 0.1.2 (patch, wire string unchanged): reserves `asset.hold.unknown` (S1-066); `backend.select`
+  gains the reason `integrity` and the adapter `webllm`; `model.load` and `model.load.failed` gain
+  `loadId` and `host`; `model.generate` gains `firstTokenMs` and `host`; new `model.load.phase`,
+  `memory.sample` and `backend.worker`; `STORAGE_EVENT_NAMES`, `MODEL_LOAD_PHASES` and
+  `MEMORY_SAMPLE_POINTS`. The namespace (attr `ns`) and the entry id (attr `model`) DO appear in events:
+  `event.ts` and `storage-api.md` say applications must not encode personal data in them.
+- Model descriptor 0.2.0 (`airplanemode.model/0.2`, `0.1` still accepted): the optional `sessionOptions`
+  `{ graphOptimizationLevel }` for transformers-js, so `createDefaultAdapters()` can load Qwen3-1.7B q4f16
+  without the application passing `sessionOptions` (the sessionOptions item of the Sprint 3 agenda); a
+  three-branch `anyOf` (transformers-js 0.2, transformers-js 0.1, webllm with devices exactly
+  `['webgpu']`); `MODEL_DESCRIPTOR_SPECS_ACCEPTED` and `DESCRIPTOR_REJECT_REASONS`.
+- Shared descriptor vectors `vectors/descriptor/`: 3 positive and 14 negative, `negative.json`, README.
+  Example `model-descriptor.example.json` moves to 0.2; new `model-descriptor.webllm.example.json`.
+
+### Changed
+
+- The "Known limitation" paragraph of `backend-adapter.md` is rewritten for the worker host (T1-S2-02):
+  the main-thread engine adapter keeps the freeze and the slow abort; the worker host removes them.
+- `event.schema.json` `$id` is `urn:airplanemode:spec:event:0.1.2`; the body is unchanged.
+- `model-descriptor.schema.json` `$id` is `urn:airplanemode:spec:model-descriptor:0.2.0`.
+
+### Security
+
+- `generation.chatTemplateKwargs` rejects the keys `__proto__`, `constructor` and `prototype` (reason
+  `invalid_key`), and an adapter copies `chatTemplateKwargs` and `sessionOptions` into fresh object
+  literals, never with `Object.assign`, `for...in` or spread.
+- `modelLib` and `runtimeWasm` must each equal one of `files[].path` (reason `schema`), and each is banned
+  on the other engine's branch.
+
 ## [0.2.0] - 2026-11-09 (draft)
 
 Spec release 0.2.0 ships: manifest 0.1.0 (wire unchanged), capability profile 0.1.0 (unchanged),

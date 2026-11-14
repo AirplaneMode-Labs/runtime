@@ -1,0 +1,58 @@
+[
+  {
+    "file": "neg-session-unknown-key.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-session-bad-level.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-session-on-webllm.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-session-in-0.1.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-webllm-wasm-device.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-webllm-no-modellib.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-path-traversal.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-unsorted-files.json",
+    "reason": "unsorted_files"
+  },
+  {
+    "file": "neg-dup-paths.json",
+    "reason": "duplicate_paths"
+  },
+  {
+    "file": "neg-bad-spec.json",
+    "reason": "bad_spec"
+  },
+  {
+    "file": "neg-tjs-modellib.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-webllm-runtimewasm.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-modellib-not-in-files.json",
+    "reason": "schema"
+  },
+  {
+    "file": "neg-kwargs-proto-key.json",
+    "reason": "invalid_key"
+  }
+]

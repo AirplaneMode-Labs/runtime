@@ -65,3 +65,12 @@ interface StorageDriver {
 
 All methods are async. The SDK does validation, codec and quota accounting above the driver; a
 driver only moves bytes.
+
+## Events (outside the contract)
+
+Events are optional and are not part of this contract: localdata emits `storage.set`, `storage.get`,
+`storage.delete` and `storage.quota` (source `localdata`; Event 0.1.2, `STORAGE_EVENT_NAMES`) through an
+optional `EventSink`. The sink is called synchronously inside a try/catch and never awaited. An event
+never carries a key, a prefix or a value. **Privacy:** the namespace (attr 'ns') DOES appear in events and
+in the DevTools snapshot. Applications must not encode personal data or document identifiers in namespace
+names.

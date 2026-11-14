@@ -1,10 +1,16 @@
 /**
- * Backend adapter contract 0.2.0 (see backend-adapter.md for prose).
+ * Backend adapter contract 0.3.0 (see backend-adapter.md for prose).
  *
- * One interface over Transformers.js, WebLLM (Sprint 3) and the Chrome Prompt API. An adapter never
- * fetches the network itself: every byte comes from an AssetSource (the runtime asset manager),
- * which only hands out files that were fetched and SHA-256-verified against a signed manifest
- * entry (rules R1 to R6 in backend-adapter.md).
+ * One interface over Transformers.js, WebLLM and the Chrome Prompt API. An adapter never fetches
+ * the network itself: every byte comes from an AssetSource (the runtime asset manager), which only
+ * hands out files that were fetched and SHA-256-verified against a signed manifest entry (rules R1
+ * to R13 in backend-adapter.md).
+ *
+ * 0.3.0 changes over 0.2.0: `AcquireOptions.cacheOnly` and `LoadOptions.cacheOnly` (cache-only is
+ * enforced at acquire(), not only in the chain), the error codes 'integrity' and 'not_cached',
+ * `GenerateResult.timings.firstTokenMs` and `BackendAdapter.host`. The prose adds R2w and R3w (an
+ * engine in a worker) and R7 to R13 (isolation, abort and crash, chain integrity, chain cacheOnly,
+ * WebLLM staging, observability, untrusted worker messages).
  *
  * 0.2.0 changes over 0.1.0: `ExecutionDevice`, `AcquireOptions`, `BackendAdapter.device` and
  * `available()`, `LoadOptions.onProgress`, `AssetSource.acquire(entryId, opts)` with a
@@ -34,6 +40,14 @@ export interface AssetHandle {
 export interface AcquireOptions {
   signal?: AbortSignal;
   onProgress?: (p: { entryId: string; received: number; total: number }) => void;
+  /**
+   * When true, acquire() resolves only for an entry that has a verified index row AND a stored,
+   * committed file of exactly `entry.size` bytes. A `.part` file, complete or partial, is never
+   * read, committed, resumed or reconciled under cacheOnly. Otherwise it rejects with code
+   * 'not_cached' before any request: no fetch, no Range header and no asset.download.* event. It
+   * does not re-hash: the R2 re-hash happens at getBlob(id, { rehash: true }).
+   */
+  cacheOnly?: boolean;
 }
 
 export interface AssetSource {
@@ -71,7 +85,13 @@ export interface GenerateResult {
   text: string;
   finishReason: 'stop' | 'length' | 'abort' | 'error';
   usage: { promptTokens?: number; completionTokens?: number };
-  timings: { prefillMs?: number; decodeMs?: number; tokensPerSecond?: number };
+  timings: {
+    prefillMs?: number;
+    decodeMs?: number;
+    tokensPerSecond?: number;
+    /** Milliseconds from the start of generate() to the first generated token; absent when none. */
+    firstTokenMs?: number;
+  };
 }
 
 export interface EmbedResult {
@@ -87,6 +107,8 @@ export interface LoadOptions {
   events?: EventSink;
   /** Download progress of the files acquire() fetches. */
   onProgress?: (p: { entryId: string; received: number; total: number }) => void;
+  /** Passed by the adapter to every acquire() it makes (see AcquireOptions.cacheOnly). */
+  cacheOnly?: boolean;
 }
 
 export interface AdapterCapabilities {
@@ -95,6 +117,7 @@ export interface AdapterCapabilities {
   streaming: boolean;
 }
 
+/** 'webllm' runs on device 'webgpu' with tier 'webgpu-f32'; a q4f16 entry carries minProfile.backendTier 'webgpu-f16'. */
 export type BackendAdapterId = 'webllm' | 'transformers-js' | 'chrome-prompt-api' | (string & {});
 
 export interface BackendAdapter {
@@ -106,6 +129,12 @@ export interface BackendAdapter {
    */
   readonly tier: BackendTier;
   readonly device: ExecutionDevice;
+  /**
+   * Where the engine runs: 'worker' (a dedicated module worker, R2w, R3w and R7 to R13) or 'main'
+   * (the page's main thread). Absent on adapters that never run an engine (MockAdapter, the
+   * Chrome built-in model), which report neither.
+   */
+  readonly host?: 'main' | 'worker';
   capabilities(): AdapterCapabilities;
   /** Cheap: no download and no model creation. */
   available(profile: CapabilityProfile): Promise<boolean>;
@@ -129,7 +158,11 @@ export type AdapterErrorCode =
   | 'backend'
   | 'unavailable'
   | 'bad_descriptor'
-  | 'egress_refused';
+  | 'egress_refused'
+  /** A file failed its SHA-256 check (at download or at the R2 re-hash): never used, never retried in one chain. */
+  | 'integrity'
+  /** cacheOnly was requested and the file is not stored in full, or the stored file disappeared. */
+  | 'not_cached';
 
 export class AdapterError extends Error {
   override readonly name = 'AdapterError';

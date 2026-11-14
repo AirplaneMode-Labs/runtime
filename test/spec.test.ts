@@ -47,8 +47,8 @@ describe('spec: schemas', () => {
     const ids: Record<string, string> = {
       manifest: 'urn:airplanemode:spec:manifest:0.1.0',
       capabilityProfile: 'urn:airplanemode:spec:capability-profile:0.1.0',
-      event: 'urn:airplanemode:spec:event:0.1.1',
-      modelDescriptor: 'urn:airplanemode:spec:model-descriptor:0.1.0',
+      event: 'urn:airplanemode:spec:event:0.1.2',
+      modelDescriptor: 'urn:airplanemode:spec:model-descriptor:0.2.0',
     };
     expect(Object.keys(SCHEMAS).sort()).toEqual(Object.keys(ids).sort());
     for (const [name, schema] of Object.entries(SCHEMAS)) {
@@ -57,22 +57,22 @@ describe('spec: schemas', () => {
     }
   });
 
-  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.2.0 release values', () => {
+  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.3.0 release values', () => {
     expect(SPEC_VERSIONS).toEqual({
       manifest: '0.1.0',
       capabilityProfile: '0.1.0',
-      event: '0.1.1',
+      event: '0.1.2',
       storageApi: '0.1.0',
-      backendAdapter: '0.2.0',
-      modelDescriptor: '0.1.0',
+      backendAdapter: '0.3.0',
+      modelDescriptor: '0.2.0',
     });
     expect(SPEC_WIRE).toEqual({
       manifest: 'airplanemode.manifest/0.1',
       capabilityProfile: 'airplanemode.capability/0.1',
       event: 'airplanemode.event/0.1',
-      modelDescriptor: 'airplanemode.model/0.1',
+      modelDescriptor: 'airplanemode.model/0.2',
     });
-    expect(MODEL_DESCRIPTOR_SPEC).toBe('airplanemode.model/0.1');
+    expect(MODEL_DESCRIPTOR_SPEC).toBe('airplanemode.model/0.2');
     expect(MODEL_DESCRIPTOR_MEDIA_TYPE).toBe('application/vnd.airplanemode.model+json');
     expect(MODEL_DESCRIPTOR_MAX_BYTES).toBe(65536);
   });
@@ -289,7 +289,7 @@ describe('spec: shared vectors', () => {
   }
 });
 
-describe('spec: model descriptor 0.1.0', () => {
+describe('spec: model descriptor 0.2.0', () => {
   const example = () =>
     readJson<Record<string, unknown>>(resolve(examples, 'model-descriptor.example.json'));
   const files = (d: Record<string, unknown>) => d['files'] as { path: string; entryId: string }[];
@@ -344,7 +344,7 @@ describe('spec: model descriptor 0.1.0', () => {
       'an upper-case revision',
       (d) => ((d['source'] as { revision: string }).revision = 'A'.repeat(40)),
     ],
-    ['an unknown spec string', (d) => (d['spec'] = 'airplanemode.model/0.2')],
+    ['an unknown spec string', (d) => (d['spec'] = 'airplanemode.model/0.3')],
     ['unsorted devices', (d) => (d['devices'] = ['webgpu', 'wasm'])],
     ['duplicate devices', (d) => (d['devices'] = ['wasm', 'wasm'])],
     ['an empty devices list', (d) => (d['devices'] = [])],
@@ -375,8 +375,9 @@ describe('spec: model descriptor 0.1.0', () => {
   it('accepts a webllm descriptor with modelLib and no runtimeWasm', () => {
     const d = structuredClone(example());
     d['engine'] = 'webllm';
+    d['devices'] = ['webgpu'];
     delete d['runtimeWasm'];
-    d['modelLib'] = 'runtime/model-lib.wasm';
+    d['modelLib'] = 'runtime/ort-wasm-simd-threaded.asyncify.wasm';
     expect(validateModelDescriptor(d).errors).toEqual([]);
   });
 
@@ -394,7 +395,7 @@ describe('spec: model descriptor 0.1.0', () => {
       resolve(specDir, 'model-descriptor.schema.json'),
     );
     expect(SCHEMAS.modelDescriptor).toEqual(onDisk);
-    expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.1.0');
+    expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.0');
   });
 
   it('plain validateSchema (no ordering checks) already rejects the schema-expressible faults', () => {
@@ -404,7 +405,7 @@ describe('spec: model descriptor 0.1.0', () => {
   });
 });
 
-describe('spec: event 0.1.1', () => {
+describe('spec: event 0.1.1 names (still reserved in 0.1.2)', () => {
   const names = [
     'backend.select',
     'backend.refused',
@@ -558,8 +559,8 @@ describe('spec: event 0.1.1', () => {
     expect(text).toContain('verified');
   });
 
-  it('the event schema carries the 0.1.1 $id and an unchanged body (wire string stays 0.1)', () => {
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.1');
+  it('the event schema carries the 0.1.2 $id and an unchanged body (wire string stays 0.1)', () => {
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.2');
     expect(
       (SCHEMAS.event as { properties: { spec: { const: string } } }).properties.spec.const,
     ).toBe('airplanemode.event/0.1');

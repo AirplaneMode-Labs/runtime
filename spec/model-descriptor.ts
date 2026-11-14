@@ -1,8 +1,13 @@
 /**
- * Model descriptor contract 0.1.0 (airplanemode.model/0.1), part of the backend-adapter 0.2.0
+ * Model descriptor contract 0.2.0 (airplanemode.model/0.2), part of the backend-adapter 0.3.0
  * contract.
  *
- * Normative JSON Schema: model-descriptor.schema.json ($id urn:airplanemode:spec:model-descriptor:0.1.0).
+ * Normative JSON Schema: model-descriptor.schema.json ($id urn:airplanemode:spec:model-descriptor:0.2.0).
+ *
+ * 0.2.0 adds `sessionOptions` (transformers-js only) and fixes the shape of the webllm branch:
+ * devices exactly ['webgpu'], `modelLib` required, `runtimeWasm` and `sessionOptions` absent.
+ * Consumers accept both wire strings (MODEL_DESCRIPTOR_SPECS_ACCEPTED); writers emit 0.2. A 0.1
+ * descriptor never carries `sessionOptions`.
  *
  * A model usually is not one file: weights, tokenizer, configs and a WASM runtime. A descriptor is a
  * small JSON file, itself an entry of a signed manifest (kind 'model', mediaType
@@ -14,9 +19,37 @@
  * This file imports nothing from the other spec files (it is vendored on its own).
  */
 
-/** Wire-format discriminator. Consumers reject any other value. */
-export const MODEL_DESCRIPTOR_SPEC = 'airplanemode.model/0.1' as const;
-export type ModelDescriptorSpec = typeof MODEL_DESCRIPTOR_SPEC;
+/** Wire-format discriminator that writers emit. */
+export const MODEL_DESCRIPTOR_SPEC = 'airplanemode.model/0.2' as const;
+/** Every wire string a consumer accepts; it rejects any other value (reason 'bad_spec'). */
+export const MODEL_DESCRIPTOR_SPECS_ACCEPTED = Object.freeze([
+  'airplanemode.model/0.1',
+  'airplanemode.model/0.2',
+] as const);
+export type ModelDescriptorSpec = (typeof MODEL_DESCRIPTOR_SPECS_ACCEPTED)[number];
+
+/**
+ * Why a descriptor is rejected. `invalid_json` to `lone_surrogate` are the canonical parse rules
+ * shared with the manifest; `bad_spec` is an unknown wire string; `schema` covers every JSON Schema
+ * fault plus the code-checked rule that `modelLib` and `runtimeWasm` name a path listed in `files`;
+ * `unsorted_files`, `duplicate_paths` and `unsorted_devices` are the ordering rules JSON Schema
+ * cannot express; `invalid_key` also covers the prototype-polluting keys `__proto__`, `constructor`
+ * and `prototype` in `generation.chatTemplateKwargs`.
+ */
+export const DESCRIPTOR_REJECT_REASONS = Object.freeze([
+  'invalid_json',
+  'float',
+  'bigint',
+  'digit_key',
+  'invalid_key',
+  'lone_surrogate',
+  'bad_spec',
+  'schema',
+  'unsorted_files',
+  'duplicate_paths',
+  'unsorted_devices',
+] as const);
+export type DescriptorRejectReason = (typeof DESCRIPTOR_REJECT_REASONS)[number];
 
 /** `mediaType` of the manifest entry that holds a descriptor. */
 export const MODEL_DESCRIPTOR_MEDIA_TYPE = 'application/vnd.airplanemode.model+json' as const;
@@ -24,7 +57,7 @@ export const MODEL_DESCRIPTOR_MEDIA_TYPE = 'application/vnd.airplanemode.model+j
 /** A descriptor entry larger than this is refused before anything is downloaded (bad_descriptor). */
 export const MODEL_DESCRIPTOR_MAX_BYTES = 65536 as const;
 
-/** `'webllm'` is reserved and unused until Sprint 3. */
+/** 'webllm' runs on 'webgpu' only (devices is exactly ['webgpu']) and needs `modelLib`. */
 export type ModelEngine = 'transformers-js' | 'webllm';
 export type ModelTask = 'text-generation' | 'feature-extraction';
 /** The execution devices a descriptor supports; 1 or 2 items, unique, sorted ('wasm' < 'webgpu'). */
@@ -48,9 +81,21 @@ export interface ModelGeneration {
   maxNewTokens?: number;
   /**
    * Extra variables for the chat template, for example `{ "enable_thinking": false }` for Qwen3.
-   * Keys match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`; values are strings, integers or booleans.
+   * Keys match `^[A-Za-z_][A-Za-z0-9_]{0,63}$` and are never `__proto__`, `constructor` or
+   * `prototype` (rejected with reason `invalid_key`); values are strings, integers or booleans. An
+   * engine adapter copies them into a fresh object literal, never with Object.assign, for-in or spread.
    */
   chatTemplateKwargs?: Record<string, string | number | boolean>;
+}
+
+/** ONNX Runtime session options a descriptor may set (transformers-js, 0.2 only). */
+export interface ModelSessionOptions {
+  /**
+   * ONNX Runtime graphOptimizationLevel. The planned Qwen3-1.7B q4f16 builds only with 'disabled'
+   * (the default 'all' runs out of the 4 GB WebAssembly heap). 'disabled' is accepted: it changes
+   * only graph transforms, and the descriptor is hash-pinned by the signed manifest.
+   */
+  graphOptimizationLevel?: 'disabled' | 'basic' | 'extended' | 'layout' | 'all';
 }
 
 /** Where the files came from. Provenance only: never fetched, never trusted. */
@@ -73,10 +118,22 @@ export interface ModelDescriptor {
   dtype: string;
   /** 1..256 items sorted by `path` (byte order), paths unique. */
   files: ModelFile[];
-  /** Path (listed in `files`) of the engine's WASM runtime; required for 'transformers-js'. */
+  /**
+   * Path (listed in `files`) of the engine's WASM runtime; required for 'transformers-js' and
+   * absent for 'webllm'.
+   */
   runtimeWasm?: string;
-  /** Path (listed in `files`) of the compiled model library; required for 'webllm'. */
+  /**
+   * Path (listed in `files`) of the compiled model library; required for 'webllm' and absent for
+   * 'transformers-js'.
+   */
   modelLib?: string;
+  /**
+   * 0.2 and transformers-js only; absent for webllm and for wire string 0.1. Reaches ONNX Runtime
+   * session_options as a fresh object literal built from the validated fields; never Object.assign,
+   * for-in or spread of the parsed object. A deprecated application option wins when given.
+   */
+  sessionOptions?: ModelSessionOptions;
   /** Integer 1..1048576. */
   contextLength: number;
   generation?: ModelGeneration;

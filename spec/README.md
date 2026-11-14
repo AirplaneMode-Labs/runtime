@@ -7,7 +7,7 @@ touching the open code. This directory is the source of truth; every other repo 
 `// Vendored from AirplaneMode-Labs/runtime spec/<file> @ <that contract's own version>; source of
 truth is runtime/spec; do not edit here`. Mismatches are fixed on the consumer side.
 
-Spec release **0.2.0 (draft)** ships these versions together (each contract keeps its own version, so a
+Spec release **0.3.0 (draft)** ships these versions together (each contract keeps its own version, so a
 vendored file carries the version of its own contract, not the release number).
 
 The contracts are published under Apache-2.0 and never move behind the control-plane licence.
@@ -16,10 +16,10 @@ The contracts are published under Apache-2.0 and never move behind the control-p
 | ------------------ | --------------------------------------------------------- | ------- | ------ |
 | Manifest           | `manifest.schema.json`, `manifest.ts`                     | 0.1.0   | draft  |
 | Capability profile | `capability-profile.schema.json`, `capability-profile.ts` | 0.1.0   | draft  |
-| Event              | `event.schema.json`, `event.ts`                           | 0.1.1   | draft  |
+| Event              | `event.schema.json`, `event.ts`                           | 0.1.2   | draft  |
 | Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.1.0   | draft  |
-| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.2.0   | draft  |
-| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.1.0   | draft  |
+| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.3.0   | draft  |
+| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.2.0   | draft  |
 
 `index.ts` re-exports everything and carries `SPEC_VERSIONS`. Examples live in `examples/`, the
 shared canonicalisation vectors in `vectors/`, and the change history in `CHANGELOG.md`.
@@ -28,9 +28,9 @@ shared canonicalisation vectors in `vectors/`, and the change history in `CHANGE
 
 Each schema has `"$schema": "https://json-schema.org/draft/2020-12/schema"` and
 `"$id": "urn:airplanemode:spec:<name>:<full version>"` (the event schema is
-`urn:airplanemode:spec:event:0.1.1`); each instance carries a `spec` discriminator
+`urn:airplanemode:spec:event:0.1.2`); each instance carries a `spec` discriminator
 `airplanemode.<name>/<major>.<minor>` (patch never changes the wire format; the model descriptor's is
-`airplanemode.model/0.1`). Consumers reject unknown spec strings. All object keys match
+`airplanemode.model/0.2`, and consumers also accept `airplanemode.model/0.1`). Consumers reject unknown spec strings. All object keys match
 `^[A-Za-z_][A-Za-z0-9_]{0,63}$` (never digit-leading; see canonicalisation);
 `additionalProperties: false` everywhere except `Event.attrs`, `CapabilityProfile.details` and
 `ModelDescriptor.generation.chatTemplateKwargs`, whose keys are constrained by the same pattern via
@@ -175,7 +175,7 @@ and `maxComputeInvocationsPerWorkgroup`; adapter description and device strings 
 (driver-version fingerprint); `navigator.userAgent` and `navigator.userAgentData` are never read;
 no personal data. `satisfies(profile, minProfile)` implements the MinProfile rule above.
 
-## Event 0.1.1
+## Event 0.1.2
 
 One JSON shape for logs, timings, memory, model-load and asset records. `attrs` is flat, at most
 32 keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`, string values at most 1024 UTF-16 units, never
@@ -195,29 +195,53 @@ reserved: `backend.select` (attrs `rung`, `adapter`, `model`, `outcome`, `reason
 `model.load` (now with `verified`: true only for adapters that obey R2), `model.load.failed` and
 `model.generate`. No event ever carries prompt text, output text or an engine error message or stack.
 
+0.1.2 is a patch (the wire string stays `airplanemode.event/0.1`; only the schema `$id` moves to
+`urn:airplanemode:spec:event:0.1.2`; spec release 0.3.0): it reserves `asset.hold.unknown` (S1-066), adds
+the reason `integrity` and the adapter `webllm` to `backend.select`, adds `loadId` (16 lowercase hex,
+random per `load()`) and `host` (`worker` | `main`) to `model.load` and `model.load.failed` (whose `code`
+is any `AdapterErrorCode`), adds `firstTokenMs` and `host` to `model.generate`, and reserves
+`model.load.phase` (one event per phase, `durationMs` required), `memory.sample` (every figure read from
+the browser and `null` where it is not exposed, never estimated) and `backend.worker`. `event.ts` also
+exports `STORAGE_EVENT_NAMES` (`storage.set`, `storage.get`, `storage.delete`, `storage.quota`, source
+`localdata`), `MODEL_LOAD_PHASES` and `MEMORY_SAMPLE_POINTS`. Privacy: the namespace (attr `ns`) and the
+descriptor entry id (attr `model`) DO appear in events and in the DevTools snapshot; applications must
+not encode personal data or document identifiers in namespace names or entry ids.
+
 ## Storage API 0.1.0
 
 See `storage-api.md` and the normative `storage-api.ts`.
 
-## Backend adapter 0.2.0
+## Backend adapter 0.3.0
 
 See `backend-adapter.md` (rules R1 to R6: descriptor, verify-on-hand-off, no egress, generate, error
-hygiene, Chrome built-in model) and the normative `backend-adapter.ts`. 0.2.0 adds
-`ExecutionDevice`, `BackendAdapter.device` and `available()`, `AcquireOptions` and the
-cross-instance hold on `AssetSource.acquire()`, `LoadOptions.onProgress`, and the error codes
-`unavailable`, `bad_descriptor` and `egress_refused`. `load(entry)` takes the descriptor's manifest
-entry.
+hygiene, Chrome built-in model; R2w and R3w for an engine in a worker; R7 to R13: isolation, abort and
+crash, chain integrity, chain cacheOnly, WebLLM staging, observability, untrusted worker messages) and
+the normative `backend-adapter.ts`. 0.3.0 adds `AcquireOptions.cacheOnly` and `LoadOptions.cacheOnly`
+(cache-only enforced at `acquire()`), the error codes `integrity` and `not_cached`,
+`GenerateResult.timings.firstTokenMs` and `BackendAdapter.host`. 0.2.0 had added `ExecutionDevice`,
+`BackendAdapter.device` and `available()`, `AcquireOptions` and the cross-instance hold on
+`AssetSource.acquire()`, `LoadOptions.onProgress`, and the error codes `unavailable`, `bad_descriptor`
+and `egress_refused`. `load(entry)` takes the descriptor's manifest entry.
 
-## Model descriptor 0.1.0
+## Model descriptor 0.2.0
 
-`model-descriptor.schema.json` and `model-descriptor.ts` (no imports from other spec files; an example
-is `examples/model-descriptor.example.json`). A descriptor is a small JSON file (at most 65536 bytes)
-that is itself a manifest entry (`kind: model`, `mediaType: application/vnd.airplanemode.model+json`)
-and lists the other entries an engine needs: `files[]` of `{ path, entryId }` sorted by `path` with
-unique paths, `runtimeWasm` (required for `transformers-js`) or `modelLib` (required for `webllm`),
-`devices` (`wasm` and or `webgpu`, sorted), `dtype`, `contextLength`, optional
-`generation.chatTemplateKwargs`, and `source` (repo and 40-hex revision: provenance only, never
-fetched) and `licence`. The manifest signature and per-entry SHA-256 cover the descriptor and every
-file it names. `files` ordering and path uniqueness are verified outside JSON Schema (as for manifest
-entries), by `validateModelDescriptor()` in the runtime. Wire format `airplanemode.model/0.1`;
-`engine: 'webllm'` is reserved until Sprint 3.
+`model-descriptor.schema.json` and `model-descriptor.ts` (no imports from other spec files; examples are
+`examples/model-descriptor.example.json` and `examples/model-descriptor.webllm.example.json`). A
+descriptor is a small JSON file (at most 65536 bytes) that is itself a manifest entry (`kind: model`,
+`mediaType: application/vnd.airplanemode.model+json`) and lists the other entries an engine needs:
+`files[]` of `{ path, entryId }` sorted by `path` with unique paths, `runtimeWasm` (transformers-js) or
+`modelLib` (webllm), `devices` (`wasm` and or `webgpu`, sorted; exactly `["webgpu"]` for webllm), `dtype`,
+`contextLength`, optional `generation.chatTemplateKwargs`, optional `sessionOptions`
+(`{ graphOptimizationLevel }`, transformers-js and wire string 0.2 only), and `source` (repo and 40-hex
+revision: provenance only, never fetched) and `licence`. The manifest signature and per-entry SHA-256
+cover the descriptor and every file it names. Wire format `airplanemode.model/0.2` (written);
+`airplanemode.model/0.1` is still accepted and never carries `sessionOptions`. The schema is an `anyOf`
+of three branches: A transformers-js 0.2, B transformers-js 0.1, C webllm; a banned property is given
+the type `null`.
+
+Checked outside JSON Schema (by `validateModelDescriptor()` and `parseDescriptor()` in the runtime and by
+cp-manifest): `files` sorted and unique, `devices` sorted, `modelLib` and `runtimeWasm` each equal to a
+`files[].path`, no `__proto__`, `constructor` or `prototype` key in `chatTemplateKwargs`. Rejection
+reasons: `invalid_json`, `float`, `bigint`, `digit_key`, `invalid_key`, `lone_surrogate`, `bad_spec`,
+`schema`, `unsorted_files`, `duplicate_paths`, `unsorted_devices`. Shared vectors: `vectors/descriptor/`
+(3 positive, 14 negative, `negative.json`, `README.md`).

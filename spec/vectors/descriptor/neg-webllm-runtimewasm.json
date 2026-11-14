@@ -1,0 +1,45 @@
+{
+  "spec": "airplanemode.model/0.2",
+  "id": "smollm2-360m-instruct-mlc",
+  "engine": "webllm",
+  "task": "text-generation",
+  "devices": ["webgpu"],
+  "dtype": "q4f16",
+  "files": [
+    {
+      "path": "mlc-chat-config.json",
+      "entryId": "smollm2-360m-instruct-mlc.chat-config"
+    },
+    {
+      "path": "ndarray-cache.json",
+      "entryId": "smollm2-360m-instruct-mlc.ndarray-cache"
+    },
+    {
+      "path": "params_shard_0.bin",
+      "entryId": "smollm2-360m-instruct-mlc.params-shard-0"
+    },
+    {
+      "path": "runtime/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm",
+      "entryId": "smollm2-360m-instruct-mlc.model-lib"
+    },
+    {
+      "path": "tokenizer.json",
+      "entryId": "smollm2-360m-instruct-mlc.tokenizer"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "entryId": "smollm2-360m-instruct-mlc.tokenizer-config"
+    }
+  ],
+  "modelLib": "runtime/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm",
+  "contextLength": 1024,
+  "generation": {
+    "maxNewTokens": 128
+  },
+  "source": {
+    "repo": "mlc-ai/SmolLM2-360M-Instruct-q4f16_1-MLC",
+    "revision": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "licence": "Apache-2.0",
+  "runtimeWasm": "runtime/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm"
+}

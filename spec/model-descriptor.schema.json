@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:model-descriptor:0.1.0",
+  "$id": "urn:airplanemode:spec:model-descriptor:0.2.0",
   "title": "ModelDescriptor",
-  "description": "A small JSON file, itself an entry of a signed manifest (kind model, mediaType application/vnd.airplanemode.model+json, at most 65536 bytes), that lists the other manifest entries an engine needs (weights, tokenizer, configs, WASM runtime) and how to run them. Never carries a URL; nothing in it is fetched. Files MUST be sorted by path in byte order with unique paths and devices MUST be sorted (both verified outside JSON Schema by validateModelDescriptor / the descriptor loader). Wire format: airplanemode.model/0.1.",
+  "description": "A small JSON file, itself an entry of a signed manifest (kind model, mediaType application/vnd.airplanemode.model+json, at most 65536 bytes), that lists the other manifest entries an engine needs (weights, tokenizer, configs, WASM runtime or model library) and how to run them. Never carries a URL; nothing in it is fetched. Files MUST be sorted by path in byte order with unique paths and devices MUST be sorted; modelLib and runtimeWasm MUST each equal one of the files[].path; generation.chatTemplateKwargs MUST NOT use the keys __proto__, constructor or prototype (all verified outside JSON Schema by validateModelDescriptor / the descriptor loader). Wire formats accepted: airplanemode.model/0.1 and airplanemode.model/0.2; writers emit 0.2.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,8 +19,8 @@
   ],
   "properties": {
     "spec": {
-      "const": "airplanemode.model/0.1",
-      "description": "Wire-format discriminator (major.minor). Consumers reject unknown values."
+      "enum": ["airplanemode.model/0.1", "airplanemode.model/0.2"],
+      "description": "Wire-format discriminator (major.minor). Consumers accept exactly these two values and reject any other (reason bad_spec). Writers emit airplanemode.model/0.2."
     },
     "id": {
       "type": "string",
@@ -30,15 +30,21 @@
     "engine": {
       "type": "string",
       "enum": ["transformers-js", "webllm"],
-      "description": "webllm is reserved and unused until Sprint 3."
+      "description": "transformers-js (devices wasm and/or webgpu) or webllm (devices exactly ['webgpu'])."
     },
-    "task": { "type": "string", "enum": ["text-generation", "feature-extraction"] },
+    "task": {
+      "type": "string",
+      "enum": ["text-generation", "feature-extraction"]
+    },
     "devices": {
       "type": "array",
       "minItems": 1,
       "maxItems": 2,
       "uniqueItems": true,
-      "items": { "type": "string", "enum": ["wasm", "webgpu"] },
+      "items": {
+        "type": "string",
+        "enum": ["wasm", "webgpu"]
+      },
       "description": "Execution devices this descriptor supports, unique and sorted ('wasm' before 'webgpu')."
     },
     "dtype": {
@@ -50,35 +56,66 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 256,
-      "items": { "$ref": "#/$defs/ModelFile" },
+      "items": {
+        "$ref": "#/$defs/ModelFile"
+      },
       "description": "Sorted by path in byte order; paths unique (verified outside JSON Schema)."
     },
     "runtimeWasm": {
       "$ref": "#/$defs/Path",
-      "description": "Path, listed in files, of the engine's WASM runtime. Required for transformers-js; the entry behind it has kind wasm."
+      "description": "Path, listed in files, of the engine's WASM runtime. Required for transformers-js and absent (type null) for webllm; the entry behind it has kind wasm."
     },
     "modelLib": {
       "$ref": "#/$defs/Path",
-      "description": "Path, listed in files, of the compiled model library. Required for webllm; the entry behind it has kind wasm."
+      "description": "Path, listed in files, of the compiled model library. Required for webllm and absent (type null) for transformers-js; the entry behind it has kind wasm."
     },
-    "contextLength": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+    "contextLength": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
     "generation": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "maxNewTokens": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "maxNewTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
         "chatTemplateKwargs": {
           "type": "object",
-          "description": "Extra variables for the chat template, for example enable_thinking false for Qwen3. Keys match the canonical key pattern; values are strings, integers or booleans.",
+          "description": "Extra variables for the chat template, for example enable_thinking false for Qwen3. Keys match the canonical key pattern but are never __proto__, constructor or prototype (rejected outside JSON Schema, reason invalid_key); values are strings, integers or booleans.",
           "maxProperties": 16,
-          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+          },
           "additionalProperties": {
             "anyOf": [
-              { "type": "string", "maxLength": 256 },
-              { "type": "integer" },
-              { "type": "boolean" }
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
             ]
           }
+        }
+      }
+    },
+    "sessionOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 1,
+      "description": "0.2 and transformers-js only (absent for webllm and for wire string 0.1). Reaches ONNX Runtime session_options as a fresh object literal built from the validated fields.",
+      "properties": {
+        "graphOptimizationLevel": {
+          "type": "string",
+          "enum": ["disabled", "basic", "extended", "layout", "all"]
         }
       }
     },
@@ -92,7 +129,10 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
         },
-        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
       }
     },
     "licence": {
@@ -104,12 +144,55 @@
   },
   "anyOf": [
     {
+      "description": "A: transformers-js, wire 0.2: runtimeWasm required, modelLib absent.",
       "required": ["runtimeWasm"],
-      "properties": { "engine": { "const": "transformers-js" } }
+      "properties": {
+        "spec": {
+          "const": "airplanemode.model/0.2"
+        },
+        "engine": {
+          "const": "transformers-js"
+        },
+        "modelLib": {
+          "type": "null"
+        }
+      }
     },
     {
+      "description": "B: transformers-js, wire 0.1: runtimeWasm required, modelLib and sessionOptions absent.",
+      "required": ["runtimeWasm"],
+      "properties": {
+        "spec": {
+          "const": "airplanemode.model/0.1"
+        },
+        "engine": {
+          "const": "transformers-js"
+        },
+        "modelLib": {
+          "type": "null"
+        },
+        "sessionOptions": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "description": "C: webllm: devices exactly ['webgpu'], modelLib required, runtimeWasm and sessionOptions absent.",
       "required": ["modelLib"],
-      "properties": { "engine": { "const": "webllm" } }
+      "properties": {
+        "engine": {
+          "const": "webllm"
+        },
+        "devices": {
+          "const": ["webgpu"]
+        },
+        "runtimeWasm": {
+          "type": "null"
+        },
+        "sessionOptions": {
+          "type": "null"
+        }
+      }
     }
   ],
   "$defs": {
@@ -124,7 +207,9 @@
       "additionalProperties": false,
       "required": ["path", "entryId"],
       "properties": {
-        "path": { "$ref": "#/$defs/Path" },
+        "path": {
+          "$ref": "#/$defs/Path"
+        },
         "entryId": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
