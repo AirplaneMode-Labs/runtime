@@ -3,6 +3,7 @@ import type { Manifest, ManifestEntry } from '../spec/manifest';
 import { AssetManager } from '../src/asset-manager';
 import { AssetError } from '../src/errors';
 import { EventBus } from '../src/events';
+import { RFC8032_TEST_KEY_IDS, RFC8032_TEST_PUBLIC_KEYS_HEX } from '../spec/manifest';
 import { ManifestError } from '../src/manifest';
 import { IndexedDbAssetStore } from '../src/store/indexeddb';
 import { InProcessLockProvider, WebLocksProvider, type LockManagerLike } from '../src/store/locks';
@@ -11,6 +12,7 @@ import type { AssetStore, StoreListing } from '../src/store/types';
 import { FakeIdbFactory, installFakeKeyRange } from './fake-idb';
 import { FakeServer, type FakeServerOptions } from './fake-fetch';
 import {
+  hexToBytes,
   makeEntry,
   makeManifest,
   pseudoRandomBytes,
@@ -1464,6 +1466,40 @@ describe('AssetManager: policy', () => {
     });
     await expect(mgr.loadManifest(manifest, testTrust())).rejects.toMatchObject({
       reason: 'test_key_refused',
+    });
+  });
+
+  it('manifest spec v0.1: the constructor refuses a non-boolean allowTestKeys, and a refused trust set never fetches or parses the manifest', async () => {
+    const server = new FakeServer({ origin: ORIGIN });
+    server.manifestText = '{ this is not json';
+    for (const bad of ['true', 1, {}, []]) {
+      expect(
+        () =>
+          new AssetManager({
+            store: 'memory',
+            fetch: server.fetch,
+            allowTestKeys: bad as unknown as boolean,
+          }),
+      ).toThrow(expect.objectContaining({ reason: 'test_key_refused' }));
+    }
+    // false and undefined are fine; every one of the five keys is refused before the fetch
+    const mgr = new AssetManager({ store: 'memory', fetch: server.fetch, allowTestKeys: false });
+    for (const [i, hex] of RFC8032_TEST_PUBLIC_KEYS_HEX.entries()) {
+      for (const trust of [
+        new Map([[RFC8032_TEST_KEY_IDS[i]!, hexToBytes(hex)]]),
+        new Map([['e'.repeat(64), hexToBytes(hex)]]),
+      ]) {
+        await expect(mgr.loadManifest(`${ORIGIN}/manifest.json`, trust)).rejects.toMatchObject({
+          reason: 'test_key_refused',
+        });
+      }
+    }
+    expect(server.requests).toHaveLength(0);
+    expect(server.calls).toBe(0);
+    // with allowTestKeys === true the refusal does not apply: the bad body is then a parse error
+    const open = new AssetManager({ store: 'memory', fetch: server.fetch, allowTestKeys: true });
+    await expect(open.loadManifest(`${ORIGIN}/manifest.json`, testTrust())).rejects.toMatchObject({
+      reason: 'invalid_json',
     });
   });
 

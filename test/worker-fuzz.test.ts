@@ -205,6 +205,7 @@ function hostile(): unknown[] {
     push({ ...v, type: 'error', code });
   for (const origin of [
     S,
+    `https://${S}`,
     `https://evil.test/${S}`,
     `https://evil.test?${S}`,
     `https://user:${S}@evil.test`,
@@ -314,10 +315,18 @@ describe('worker message fuzz (R13)', () => {
       for (const e of events)
         expect(validateSchema(SCHEMAS.event, e).errors, `message ${i}: ${e.name}`).toEqual([]);
       for (const e of eventsNamed(r.events, 'backend.egress.refused')) {
-        expect(Object.keys(e.attrs).sort()).toEqual(['adapter', 'origin']);
-        expect(String(e.attrs['origin']), `message ${i}`).toMatch(
-          /^(invalid|(https?|wss?|ftp):\/\/[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?|[a-z][a-z0-9+.-]{0,31}:)$/,
-        );
+        // S1-074: a worker report has the host's adapter id, a fixed origin and a count, never worker text
+        expect(Object.keys(e.attrs).sort(), `message ${i}`).toEqual([
+          'adapter',
+          'count',
+          'origin',
+          'reporter',
+        ]);
+        expect(e.attrs['adapter'], `message ${i}`).toBe('transformers-js');
+        expect(e.attrs['reporter'], `message ${i}`).toBe('worker');
+        expect(e.attrs['origin'], `message ${i}`).toBe('worker-reported');
+        expect(Number(e.attrs['count']), `message ${i}`).toBeGreaterThanOrEqual(1);
+        expect(Number(e.attrs['count']), `message ${i}`).toBeLessThanOrEqual(16);
       }
       const wire = JSON.stringify(events);
       expect(wire, `message ${i}: the sentinel is in an event: ${show(m)}`).not.toContain(S);

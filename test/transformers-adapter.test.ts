@@ -584,7 +584,11 @@ describe('TransformersAdapter: failure handling (R5)', () => {
     });
     await expect(r.load()).rejects.toMatchObject({ code: 'egress_refused' });
     const [e] = eventsNamed(r.events, 'backend.egress.refused');
-    expect(e!.attrs).toEqual({ adapter: 'transformers-js', origin: 'https://huggingface.co' });
+    expect(e!.attrs).toEqual({
+      adapter: 'transformers-js',
+      reporter: 'main',
+      origin: 'https://huggingface.co',
+    });
     expect(Object.values(await refcounts(r.w)).every((n) => n === 0)).toBe(true);
     expect((await r.w.mgr.list()).length).toBe(7); // released, not deleted
   });

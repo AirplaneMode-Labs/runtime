@@ -281,12 +281,24 @@ function watchDownloads(opts: LoadWithFallbackOptions): {
   };
 }
 
-function userMessageOf(attempts: Attempt[], mayHaveDownloaded: boolean, reload: boolean): string {
+/**
+ * What a declined rung says when no user said no: the chain was in cache-only mode (no beforeDownload) or
+ * a file vanished after the plan (acquire said not_cached), so the file is simply not on this device.
+ * 'the download was not approved' is for a beforeDownload that answered false.
+ */
+export const NOT_STORED_TEXT = 'the file is not stored on this device (cache-only mode)';
+
+function userMessageOf(
+  attempts: Attempt[],
+  mayHaveDownloaded: boolean,
+  reload: boolean,
+  cacheOnlyDeclines: ReadonlySet<Attempt>,
+): string {
   const lines: string[] = [];
+  const text = (a: Attempt): string =>
+    a.reason === 'declined' && cacheOnlyDeclines.has(a) ? NOT_STORED_TEXT : REASON_TEXT[a.reason];
   for (const rung of RUNGS) {
-    const reasons = [
-      ...new Set(attempts.filter((a) => a.rung === rung).map((a) => REASON_TEXT[a.reason])),
-    ];
+    const reasons = [...new Set(attempts.filter((a) => a.rung === rung).map(text))];
     if (reasons.length > 0) lines.push(`${RUNG_LABEL[rung]}: ${reasons.join(', ')}.`);
   }
   return [
@@ -318,6 +330,8 @@ async function runChain(
   downloads: ReturnType<typeof watchDownloads>,
 ): Promise<LoadWithFallbackResult> {
   const attempts: Attempt[] = [];
+  /** Declined attempts that were not a user's refusal: the message words them as cache-only. */
+  const cacheOnlyDeclines = new Set<Attempt>();
   let reloadAdvice = false;
 
   const record = (a: Attempt): void => {
@@ -381,7 +395,9 @@ async function runChain(
         reason = 'declined';
         outcome = 'declined';
       }
-      record({ rung, adapter: adapter.id, model, outcome, reason });
+      const attempt: Attempt = { rung, adapter: adapter.id, model, outcome, reason };
+      if (code === 'not_cached') cacheOnlyDeclines.add(attempt);
+      record(attempt);
       return undefined;
     }
     record({ rung, adapter: adapter.id, model, outcome: 'selected', reason: 'ok' });
@@ -499,13 +515,16 @@ async function runChain(
             ? await opts.beforeDownload({ rung, model: modelId, bytes: plan.bytes })
             : false;
           if (!approved) {
-            record({
+            const attempt: Attempt = {
               rung,
               adapter: adapterId,
               model: modelId,
               outcome: 'declined',
               reason: 'declined',
-            });
+            };
+            // no beforeDownload at all is cache-only mode, not a user saying no
+            if (!opts.beforeDownload) cacheOnlyDeclines.add(attempt);
+            record(attempt);
             continue;
           }
           downloads.approved();
@@ -537,7 +556,7 @@ async function runChain(
   }
   throw new BackendRefusedError(
     attempts,
-    userMessageOf(attempts, downloads.mayHaveDownloaded(), reloadAdvice),
+    userMessageOf(attempts, downloads.mayHaveDownloaded(), reloadAdvice, cacheOnlyDeclines),
   );
 }
 

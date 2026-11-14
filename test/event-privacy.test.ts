@@ -112,7 +112,11 @@ describe('events and errors never carry prompt text, output text or engine messa
     await expect(s.load()).rejects.toMatchObject({ code: 'egress_refused' });
     expect(s.everything()).not.toContain(PROMPT_SENTINEL);
     const e = s.events.snapshot().find((x) => x.name === 'backend.egress.refused')!;
-    expect(e.attrs).toEqual({ adapter: 'transformers-js', origin: 'https://evil.test' });
+    expect(e.attrs).toEqual({
+      adapter: 'transformers-js',
+      reporter: 'main',
+      origin: 'https://evil.test',
+    });
   });
 
   it('a whole refused chain: every emitted event and the userMessage are free of the prompt, the output and the engine message', async () => {

@@ -25,6 +25,7 @@ import { AssetError, isAbortError, isQuotaExceeded } from './errors';
 import { EventBus, newEvent } from './events';
 import {
   ManifestError,
+  assertTestKeysAllowed,
   isAllowedAssetUrl,
   parseManifest,
   verifyManifest,
@@ -246,6 +247,13 @@ export class AssetManager implements AssetSource {
       this.events = new EventBus();
       this.sink = options.events;
     }
+    // Manifest spec v0.1 test-key rule: only the boolean true allows a trust set with an RFC 8032 test
+    // key; any other value (the string 'true', 1, {}) is refused at construction, never coerced.
+    if (options.allowTestKeys !== undefined && typeof options.allowTestKeys !== 'boolean')
+      throw new ManifestError(
+        'test_key_refused',
+        'allowTestKeys must be the boolean true or false',
+      );
     this.allowTestKeys = options.allowTestKeys === true;
     this.progressInterval = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
     this.stalePartMs = options.stalePartMaxAgeMs ?? DEFAULT_STALE_PART_MS;
@@ -295,6 +303,9 @@ export class AssetManager implements AssetSource {
     trust: TrustSet,
     opts: LoadManifestOptions = {},
   ): Promise<Manifest> {
+    // A trust set with an RFC 8032 test key is refused before the store opens, before any fetch and
+    // before the manifest is parsed.
+    assertTestKeysAllowed(trust, this.allowTestKeys);
     await this.ready();
     let manifest: Manifest;
     let baseUrl: string | undefined;

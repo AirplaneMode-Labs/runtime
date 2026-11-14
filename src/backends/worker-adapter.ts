@@ -138,7 +138,12 @@ interface Session {
   spawnedAt: number;
   ready: { resolve(): void; reject(e: Error): void } | undefined;
   closed: boolean;
+  /** Worker-reported egress refusals recorded for this loadId (S1-074); at most MAX_WORKER_EGRESS_EVENTS. */
+  egressReports: number;
 }
+
+/** Worker-reported backend.egress.refused events recorded per loadId; later reports are dropped. */
+const MAX_WORKER_EGRESS_EVENTS = 16;
 
 function safeEmit(sink: EventSink | undefined, build: () => ReturnType<typeof newEvent>): void {
   if (!sink) return;
@@ -285,7 +290,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           kind: 'error',
           name: 'backend.egress.refused',
           level: 'error',
-          attrs: { adapter: this.id, origin },
+          attrs: { adapter: this.id, reporter: 'main', origin },
         }),
       );
       throw new AdapterError(
@@ -430,6 +435,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         pending: new Map(),
         nextId: 0,
         spawnedAt: now(),
+        egressReports: 0,
         ready: undefined,
         closed: false,
       };
@@ -624,17 +630,22 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         }
         return;
       }
-      case 'egress':
+      case 'egress': {
+        // S1-074: the worker's text is discarded. The event carries the host's own adapter id, the
+        // fixed origin 'worker-reported' and the 1-based count of this report within the load.
+        if (s.egressReports >= MAX_WORKER_EGRESS_EVENTS) return;
+        const count = ++s.egressReports;
         safeEmit(s.events, () =>
           newEvent({
             source: 'runtime',
             kind: 'error',
             name: 'backend.egress.refused',
             level: 'error',
-            attrs: { adapter: this.id, origin: m.origin },
+            attrs: { adapter: this.id, reporter: 'worker', origin: 'worker-reported', count },
           }),
         );
         return;
+      }
     }
   }
 

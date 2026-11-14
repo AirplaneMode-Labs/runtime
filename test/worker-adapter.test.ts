@@ -453,16 +453,38 @@ describe('abort and crash (R8)', () => {
     expect(JSON.stringify(r.events.snapshot())).not.toContain(PROMPT);
   });
 
-  it('a refused request inside the worker is recorded as backend.egress.refused with exactly adapter and origin', async () => {
+  it('S1-074: a worker-reported refusal is recorded with the host adapter id, reporter worker, the fixed origin worker-reported and a count; worker text never enters an event', async () => {
     const { r, worker } = await loadedSilent();
     worker.deliver({ v: 1, type: 'egress', origin: 'https://evil.test' });
     worker.deliver({ v: 1, type: 'egress', origin: `https://evil.test/x?q=${PROMPT}` });
+    worker.deliver({ v: 1, type: 'egress', origin: `https://${PROMPT}` });
     const refused = eventsNamed(r.events, 'backend.egress.refused');
     expect(refused.map((e) => e.attrs)).toEqual([
-      { adapter: 'transformers-js', origin: 'https://evil.test' },
-      { adapter: 'transformers-js', origin: 'invalid' },
+      { adapter: 'transformers-js', reporter: 'worker', origin: 'worker-reported', count: 1 },
+      { adapter: 'transformers-js', reporter: 'worker', origin: 'worker-reported', count: 2 },
+      { adapter: 'transformers-js', reporter: 'worker', origin: 'worker-reported', count: 3 },
     ]);
-    expect(JSON.stringify(r.events.snapshot())).not.toContain(PROMPT);
+    const wire = JSON.stringify(r.events.snapshot());
+    expect(wire).not.toContain(PROMPT);
+    expect(wire).not.toContain('evil.test');
+  });
+
+  it('S1-074: at most 16 worker-reported refusals are recorded per loadId; the count restarts with the next load', async () => {
+    const { r, worker } = await loadedSilent();
+    for (let i = 0; i < 40; i++)
+      worker.deliver({ v: 1, type: 'egress', origin: 'https://evil.test' });
+    const first = eventsNamed(r.events, 'backend.egress.refused');
+    expect(first).toHaveLength(16);
+    expect(first.map((e) => e.attrs['count'])).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    // the worker stays alive: dropping a report is not a crash
+    expect(worker.terminated).toBe(false);
+    await r.adapter.unload();
+    await r.load();
+    const second = r.workers.at(-1) as SilentWorker;
+    second.deliver({ v: 1, type: 'egress', origin: 'https://evil.test' });
+    const all = eventsNamed(r.events, 'backend.egress.refused');
+    expect(all).toHaveLength(17);
+    expect(all.at(-1)!.attrs['count']).toBe(1);
   });
 });
 

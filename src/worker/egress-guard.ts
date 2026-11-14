@@ -14,7 +14,8 @@
  *  - defines every replacement writable:false and configurable:false, so later code cannot undo it;
  *  - defines a sentinel, which the engines check first.
  * Each refusal posts { type: 'egress', origin } with the origin only (scheme://host[:port], or
- * '<scheme>:' alone); the page validates it again.
+ * '<scheme>:' alone); the page checks the message shape and DISCARDS the text (S1-074): the host records
+ * a fixed string and a count, never what the worker said.
  *
  * What it cannot do: dynamic import() and FontFace URL loads cannot be intercepted in JavaScript. Only
  * the CSP the worker inherits stops them (script-src 'self'; default-src covers fonts). That limit is

@@ -720,6 +720,52 @@ describe('T1-S2-01: the chain with a failing or poisoned WebGPU engine', () => {
   });
 });
 
+// ---- Sprint 4: the decline wording (cacheOnly versus a user who said no) ---------------------------
+
+describe('the refusal says why a rung was declined: cache-only is not the user declining', () => {
+  const NOT_STORED = 'the file is not stored on this device (cache-only mode)';
+  const NOT_APPROVED = 'the download was not approved';
+
+  it('no beforeDownload (cache-only mode) and the file is not stored: the message says it is not stored, never that a download was not approved', async () => {
+    const w = await makeWorld();
+    const e = await refusal(
+      loadWithFallback(base(w, { adapters: [fake('webgpu'), fake('wasm')] })),
+    );
+    expect(e.userMessage).toContain(`WebGPU: ${NOT_STORED}.`);
+    expect(e.userMessage).toContain(`WebAssembly: ${NOT_STORED}.`);
+    expect(e.userMessage).not.toContain(NOT_APPROVED);
+    // the attempt reasons and the events keep the one documented code
+    expect(e.attempts.map((a) => a.reason)).toEqual(['declined', 'declined', 'not_allowed']);
+  });
+
+  it('the user actually declined: the message says the download was not approved, never cache-only mode', async () => {
+    const w = await makeWorld();
+    const beforeDownload = vi.fn(async (_i: BeforeInfo) => false);
+    const e = await refusal(
+      loadWithFallback(base(w, { adapters: [fake('webgpu'), fake('wasm')], beforeDownload })),
+    );
+    expect(beforeDownload).toHaveBeenCalledTimes(2);
+    expect(e.userMessage).toContain(`WebGPU: ${NOT_APPROVED}.`);
+    expect(e.userMessage).toContain(`WebAssembly: ${NOT_APPROVED}.`);
+    expect(e.userMessage).not.toContain('cache-only');
+    expect(e.userMessage).not.toContain('not stored');
+  });
+
+  it('a file that vanished after the plan (the rung loaded cache-only and acquire said not_cached) is the cache-only wording', async () => {
+    const w = await makeWorld();
+    await cacheAll(w);
+    const gpu = fake('webgpu', {
+      load: async () => {
+        throw new AdapterError('not_cached', 'a file is gone');
+      },
+    });
+    const e = await refusal(loadWithFallback(base(w, { adapters: [gpu] })));
+    expect(e.userMessage).toContain(`WebGPU: ${NOT_STORED}.`);
+    expect(e.userMessage).not.toContain(NOT_APPROVED);
+    expect(e.attempts[0]).toMatchObject({ outcome: 'declined', reason: 'declined' });
+  });
+});
+
 // ---- S1-053 --------------------------------------------------------------------------------------
 
 describe('S1-053: cache-only consent counts only intact files and never claims a download that started', () => {

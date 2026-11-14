@@ -6,8 +6,9 @@
  * here before anything is built from it. A message with an unknown type, extra keys or a bad shape
  * is a crash (the caller terminates the worker); the valid ones carry only enums, ids, numbers in
  * range and the model's answer text. The worker's own error text and any other string never reach an
- * event, a message or the DOM: `error.cause` is dropped here, `egress.origin` is reduced to an origin
- * or 'invalid', and a code that is not an AdapterErrorCode becomes 'backend'.
+ * event, a message or the DOM: `error.cause` is dropped here, the value of `egress.origin` is discarded
+ * (S1-074: the host records a fixed string and a count), and a code that is not an AdapterErrorCode
+ * becomes 'backend'.
  *
  * This file has no side effects and imports only types and constants, so the worker bundle can load it
  * after the egress guard.
@@ -107,7 +108,8 @@ export type WorkerMessage =
   | { type: 'token'; id: number; text: string }
   | { type: 'done'; id: number; result: WorkerGenerateResult }
   | { type: 'error'; code: AdapterErrorCode }
-  | { type: 'egress'; origin: string };
+  /** The worker's origin text is validated for shape and discarded (S1-074): the host never forwards it. */
+  | { type: 'egress' };
 
 export type ValidatedMessage = { ok: true; message: WorkerMessage } | { ok: false };
 
@@ -129,15 +131,6 @@ const APIS: ReadonlySet<string> = new Set([
   'measureUserAgentSpecificMemory',
   'none',
 ]);
-
-const HIER_ORIGIN = /^(https?|wss?|ftp):\/\/[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$/;
-const SCHEME_ONLY = /^[a-z][a-z0-9+.-]{0,31}:$/;
-
-/** An egress origin that is `scheme://host[:port]` or `<scheme>:`, at most 300 characters; else 'invalid'. */
-export function sanitiseEgressOrigin(v: unknown): string {
-  if (typeof v !== 'string' || v.length > 300) return 'invalid';
-  return HIER_ORIGIN.test(v) || SCHEME_ONLY.test(v) ? v : 'invalid';
-}
 
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -317,10 +310,8 @@ export function createWorkerMessageValidator(): (raw: unknown) => ValidatedMessa
         }
         case 'egress': {
           if (!keysOk(raw, ['v', 'type', 'origin'])) return fail;
-          return {
-            ok: true,
-            message: { type: 'egress', origin: sanitiseEgressOrigin(raw['origin']) },
-          };
+          // the value of origin is discarded whatever it is: no worker string reaches an event
+          return { ok: true, message: { type: 'egress' } };
         }
         default:
           return fail;

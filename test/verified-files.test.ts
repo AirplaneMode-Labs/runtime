@@ -140,7 +140,7 @@ describe('verified-files shim: what it refuses (egress_refused + backend.egress.
     }
   });
 
-  it('rejects a cross-origin absolute URL; the event attrs are exactly {adapter, origin} with the origin only', async () => {
+  it('rejects a cross-origin absolute URL; the event attrs are exactly {adapter, reporter, origin} with the page-computed origin only', async () => {
     register('m.descriptor');
     await refused(
       verifiedFetch(
@@ -148,7 +148,11 @@ describe('verified-files shim: what it refuses (egress_refused + backend.egress.
       ),
     );
     const [e] = eventsNamed(events, 'backend.egress.refused');
-    expect(e!.attrs).toEqual({ adapter: 'transformers-js', origin: 'https://huggingface.co' });
+    expect(e!.attrs).toEqual({
+      adapter: 'transformers-js',
+      reporter: 'main',
+      origin: 'https://huggingface.co',
+    });
     expect(e!.kind).toBe('error');
     const wire = JSON.stringify(e);
     expect(wire).not.toContain('SECRET-Q');
@@ -160,27 +164,29 @@ describe('verified-files shim: what it refuses (egress_refused + backend.egress.
     expect(egressOrigin(new URL('https://cdn.jsdelivr.net/npm/a'))).toBe(
       'https://cdn.jsdelivr.net',
     );
-    expect(egressOrigin(undefined)).toBe('');
+    expect(egressOrigin(undefined)).toBe('null');
   });
 
-  it('reports the scheme only for data:, blob:, file: and other schemes', async () => {
+  it("S1-074: the origin is new URL(x).origin as the page computes it, and the string 'null' when it is opaque", async () => {
     const cases: [string, string][] = [
-      ['data:text/plain;base64,aGk=', 'data:'],
-      ['blob:https://app.test/0b7e6f1e-0000-4000-8000-000000000000', 'blob:'],
-      ['file:///etc/passwd', 'file:'],
-      ['javascript:alert(1)', 'javascript:'],
-      ['chrome-extension://abc/x.js', 'chrome-extension:'],
+      ['data:text/plain;base64,aGk=', 'null'],
+      ['blob:https://app.test/0b7e6f1e-0000-4000-8000-000000000000', 'https://app.test'],
+      ['blob:null/0b7e6f1e-0000-4000-8000-000000000000', 'null'],
+      ['file:///etc/passwd', 'null'],
+      ['javascript:alert(1)', 'null'],
+      ['chrome-extension://abc/x.js', new URL('chrome-extension://abc/x.js').origin],
     ];
     for (const [input, origin] of cases) {
+      expect(egressOrigin(new URL(input)), input).toBe(origin);
       await refused(verifiedFetch(input));
       const last = eventsNamed(events, 'backend.egress.refused').at(-1)!;
-      expect(last.attrs, input).toEqual({ adapter: 'transformers-js', origin });
+      expect(last.attrs, input).toEqual({ adapter: 'transformers-js', reporter: 'main', origin });
     }
   });
 
-  it('reports an empty origin for an unparsable URL', async () => {
+  it("reports the string 'null' for an unparsable URL, and never an empty origin", async () => {
     await refused(verifiedFetch('http://'));
-    expect(eventsNamed(events, 'backend.egress.refused').at(-1)!.attrs['origin']).toBe('');
+    expect(eventsNamed(events, 'backend.egress.refused').at(-1)!.attrs['origin']).toBe('null');
   });
 
   it('rejects a same-origin path outside the verified prefix', async () => {
@@ -189,6 +195,7 @@ describe('verified-files shim: what it refuses (egress_refused + backend.egress.
     await refused(verifiedFetch('/models/other.onnx'));
     const e = eventsNamed(events, 'backend.egress.refused').at(-1)!;
     expect(e.attrs['origin']).toBe(PAGE_ORIGIN);
+    expect(e.attrs['reporter']).toBe('main');
     expect(JSON.stringify(e)).not.toContain('manifest.json');
   });
 

@@ -13,7 +13,7 @@
  * the lookup is by exact equality of origin + pathname after WHATWG parsing (so dot segments and
  * percent-encoded dot segments are resolved by the parser first), never by a prefix test. A hit is a
  * Response over the Blob; a path under the prefix with no entry is a 404; everything else rejects
- * with AdapterError('egress_refused') and emits backend.egress.refused with the origin only.
+ * with AdapterError('egress_refused') and emits backend.egress.refused (reporter 'main', the origin only).
  */
 
 import { AdapterError } from '../../spec/backend-adapter';
@@ -26,7 +26,6 @@ export const VERIFIED_PATH_SEGMENT = '__airplanemode/verified/';
 const ENTRY_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 /** The ModelFile.path pattern of the descriptor schema. */
 const FILE_PATH = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}(\/[A-Za-z0-9_][A-Za-z0-9._-]{0,127}){0,7}$/;
-const SPECIAL_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:', 'ftp:']);
 
 interface LocationLike {
   href: string;
@@ -63,10 +62,15 @@ function checkPrefix(prefix: string): void {
     );
 }
 
-/** `scheme://host[:port]` for hierarchical URLs, `<scheme>:` for everything else, '' if unparsable. */
+/**
+ * `new URL(x).origin` as the page computes it (S1-074, Event 0.1.3): `scheme://host[:port]`, or the string
+ * 'null' when the origin is opaque (data:, file:, an opaque blob:) or the URL does not parse. Never a path
+ * or a query. Computed by the page from a URL the page's own guard saw: no worker-provided string.
+ */
 export function egressOrigin(url: URL | undefined): string {
-  if (!url) return '';
-  return SPECIAL_SCHEMES.has(url.protocol) ? `${url.protocol}//${url.host}` : url.protocol;
+  if (!url) return 'null';
+  const origin = url.origin;
+  return typeof origin === 'string' && origin !== '' ? origin : 'null';
 }
 
 export interface VerifiedFileInput {
@@ -181,7 +185,7 @@ export function createVerifiedFetch(opts: VerifiedFetchOptions): VerifiedFetch {
           kind: 'error',
           name: 'backend.egress.refused',
           level: 'error',
-          attrs: { adapter: opts.adapterId, origin: egressOrigin(url) },
+          attrs: { adapter: opts.adapterId, reporter: 'main', origin: egressOrigin(url) },
         }),
       );
     } catch {

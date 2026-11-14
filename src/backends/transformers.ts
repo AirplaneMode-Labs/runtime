@@ -314,7 +314,7 @@ export class TransformersAdapter implements BackendAdapter {
           kind: 'error',
           name: 'backend.egress.refused',
           level: 'error',
-          attrs: { adapter: this.id, origin },
+          attrs: { adapter: this.id, reporter: 'main', origin },
         }),
       );
       throw new AdapterError(

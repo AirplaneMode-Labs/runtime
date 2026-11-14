@@ -6,7 +6,6 @@ import {
   MAX_PHASE_MS,
   WORKER_PROTOCOL_VERSION,
   createWorkerMessageValidator,
-  sanitiseEgressOrigin,
 } from '../src/worker/protocol';
 
 const ok = (m: unknown) => createWorkerMessageValidator()(m);
@@ -102,9 +101,10 @@ describe('validateWorkerMessage: valid messages', () => {
       ok: true,
       message: { type: 'error', code: 'integrity' },
     });
+    // S1-074: the worker's origin text is validated for shape and DISCARDED
     expect(ok({ ...base, type: 'egress', origin: 'https://huggingface.co' })).toEqual({
       ok: true,
-      message: { type: 'egress', origin: 'https://huggingface.co' },
+      message: { type: 'egress' },
     });
   });
 });
@@ -208,43 +208,30 @@ describe('validateWorkerMessage: everything else is a crash', () => {
     expect(JSON.stringify(r)).not.toContain(sentinel);
   });
 
-  it('egress origin: a clean origin passes, anything else is recorded as invalid', () => {
+  it('S1-074: the egress message carries no usable text: whatever the origin is, the host message has none', () => {
     for (const o of [
       'https://example.invalid',
-      'http://127.0.0.1:8790',
-      'wss://a.b-c.d:443',
-      'ftp://h',
       'data:',
-      'blob:',
-      'file:',
-    ]) {
-      expect(sanitiseEgressOrigin(o), o).toBe(o);
-      expect(ok({ ...base, type: 'egress', origin: o })).toEqual({
-        ok: true,
-        message: { type: 'egress', origin: o },
-      });
-    }
-    for (const o of [
       'https://evil.test/path?q=SENTINEL-PROMPT',
-      'https://evil.test/path',
       'https://user:pw@evil.test',
       'javascript:alert(1)',
-      'https://',
       'x'.repeat(400),
-      'https://' + 'a'.repeat(300) + '.test',
       '<img src=x>',
       '',
-      'https://exa mple.test',
-      'HTTPS://EXAMPLE.TEST/\u0000',
+      5,
+      null,
+      {},
     ]) {
-      expect(sanitiseEgressOrigin(o), o).toBe('invalid');
       expect(ok({ ...base, type: 'egress', origin: o })).toEqual({
         ok: true,
-        message: { type: 'egress', origin: 'invalid' },
+        message: { type: 'egress' },
       });
     }
-    expect(sanitiseEgressOrigin(5)).toBe('invalid');
-    expect(sanitiseEgressOrigin(null)).toBe('invalid');
-    expect(sanitiseEgressOrigin(undefined)).toBe('invalid');
+    // exact keys are still required: a missing origin, an extra key or a wrong version is a crash
+    expect(ok({ ...base, type: 'egress' })).toEqual({ ok: false });
+    expect(ok({ ...base, type: 'egress', origin: 'https://a.test', extra: 'x' })).toEqual({
+      ok: false,
+    });
+    expect(ok({ v: 2, type: 'egress', origin: 'https://a.test' })).toEqual({ ok: false });
   });
 });
