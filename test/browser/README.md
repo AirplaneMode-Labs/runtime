@@ -20,6 +20,30 @@ it first ran on GitHub on 9 Nov 2026.
 The 700 MB version (`big.spec.ts`) runs only with `RUNTIME_BIG=1` against a server started by
 hand; the exact commands are in the header of `big.spec.ts`.
 
+## Sprint 4: the Tamper lab and the Stop button
+
+Both run in the demo configuration, against the demo built as `pages.yml` builds it (`DEMO_MODELS=1 npm run
+demo:build`) and served under `/runtime/` by `subpath-server.mjs`, which 404s every other path:
+
+```sh
+npm run test:demo -- tamper.spec.ts              # the Tamper lab: 13 cases, no model needed
+RUNTIME_MODEL=1 npm run test:demo -- stop.spec.ts   # the Stop button, with the SmolLM2 test model
+RUNTIME_TAMPER_OUT=<dir> RUNTIME_STOP_OUT=<dir> ...  # where tamper-results.json, tamper-lab.png and stop-run.json go
+```
+
+Where results go (S1-096): every spec writes into `runtime/test-results/` (git-ignored) unless the matching
+`RUNTIME_*_OUT` variable names another folder. The default is resolved from `test/browser/out-dir.ts`'s own
+directory, never from the working directory, so a run started from any folder writes nothing outside the
+repository (before fix round 2 the default was a parent-relative path and landed in the parent Projects
+folder). `test/out-dir.test.ts` pins this.
+
+`tamper.spec.ts` presses every lab button and checks the reason text against `spec/vectors/tamper/tamper.json`
+and `tamper-assets/expect.json`, 0 asset requests after a manifest refusal, the flip and truncated assets
+fetched exactly once with 0 bytes to a consumer and no `blob:` URL, no `tamper-base` state and no asset part in
+OPFS or IndexedDB afterwards, no request off the origin and 0 console errors. `stop.spec.ts` loads the
+test model on the worker host, asks for a long answer (`?maxTokens=400`, a loopback-only parameter) and
+checks that Stop is disabled, enabled, disabled and lands within 1000 ms.
+
 ## Demo test hooks
 
 `demo/main.ts` exposes `window.__runtime` only on 127.0.0.1 / localhost. Query parameters:

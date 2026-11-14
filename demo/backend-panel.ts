@@ -38,6 +38,7 @@ import { ORT_FACTORY_FILE } from '../src/backends/ort-pins.ts';
 // The engine worker, bundled by Vite as an ES-module worker; the URL is resolved against the page.
 import engineWorkerUrl from '../src/worker/engine-host.ts?worker&url';
 import { maxTokensFor } from './limits.ts';
+import { createRunControl } from './run-control.ts';
 import { AdapterError } from '../spec/backend-adapter.ts';
 import { EventBus } from '../src/events.ts';
 import { exposeDevtoolsHook } from '../src/devtools-hook.ts';
@@ -91,6 +92,8 @@ function publishToDevtools(bus: EventBus): void {
 /** Message shown for a failure, built from codes only (never from engine or network text). */
 function describeFailure(e: unknown): string {
   if (e instanceof BackendRefusedError) return e.userMessage;
+  if (e instanceof AdapterError && e.code === 'not_loaded')
+    return 'The engine was stopped to cancel the answer. Click "Download test model and load" again: the files are already stored, so nothing is downloaded.';
   if (e instanceof AdapterError) return `The model could not be loaded (${e.code}).`;
   if (e instanceof AssetError)
     return e.code === 'hash_mismatch' || e.code === 'not_verified'
@@ -257,6 +260,7 @@ async function loadModel(
 
 const btnDownload = $<HTMLButtonElement>('btn-download');
 const btnRun = $<HTMLButtonElement>('btn-run');
+const btnStop = $<HTMLButtonElement>('btn-stop');
 const inPrompt = $<HTMLTextAreaElement>('in-prompt');
 const selEngine = $<HTMLSelectElement>('sel-engine');
 const chkBuiltin = $<HTMLInputElement>('chk-builtin');
@@ -361,32 +365,79 @@ async function onDownloadClick(): Promise<void> {
   }
 }
 
+/** Run and Stop: Stop is enabled only while the model answers and fires the existing AbortController. */
+const runControl = createRunControl({
+  setRunEnabled: (on) => {
+    btnRun.disabled = !on;
+  },
+  setStopEnabled: (on) => {
+    btnStop.disabled = !on;
+  },
+  setAnswer: (text) => {
+    $('out-answer').textContent = text;
+  },
+  appendAnswer: (text) => {
+    $('out-answer').textContent = ($('out-answer').textContent ?? '') + text;
+  },
+  setTiming: (text) => {
+    $('out-timing').textContent = text;
+  },
+  // T1-S4-02: a Stop can terminate the worker (the 250 ms backstop in the adapter), after which the model
+  // is no longer loaded. The reload is always on offer: the button comes back and the page says what it
+  // does, so a visitor is never left with a message that points at a disabled control.
+  onStopped: () => {
+    offerReload('Stopped.');
+  },
+});
+
+/** Re-enables the load button and says that a reload costs nothing (the verified files are in the store). */
+function offerReload(lead: string): void {
+  btnDownload.disabled = false;
+  $('progress').textContent =
+    `${lead} If the engine was stopped, click "Download test model and load" again: the files are already stored, so nothing is downloaded.`;
+}
+
+/**
+ * Loopback test parameter ?maxTokens=N (a positive integer): lengthens the answer so the browser tests
+ * can press Stop while it runs. A hosted page ignores it.
+ */
+const maxTokensOverride = (() => {
+  const v = params.get('maxTokens');
+  return isLocal && v !== null && /^[1-9]\d{0,3}$/.test(v) ? Number(v) : undefined;
+})();
+
 async function onRunClick(): Promise<void> {
   if (!current) return;
-  btnRun.disabled = true;
+  const { adapter, rung } = current.result;
   $('out-answer').textContent = '';
   $('out-timing').textContent = 'Generating…';
-  try {
-    const res = await current.result.adapter.generate(inPrompt.value, {
-      // a short answer on WebAssembly keeps the demo quick; the engine runs in a worker, so the page stays responsive
-      maxTokens: maxTokensFor(current.result.rung),
-      temperature: 0,
-      onToken: (t) => {
-        $('out-answer').textContent = ($('out-answer').textContent ?? '') + t;
-      },
-    });
-    $('out-answer').textContent = res.text;
-    const t = res.timings;
-    $('out-timing').textContent =
-      `Finish: ${res.finishReason}. Prompt tokens ${res.usage.promptTokens ?? '?'}, generated ${res.usage.completionTokens ?? '?'}. ` +
-      `Prefill ${Math.round(t.prefillMs ?? 0)} ms, decode ${Math.round(t.decodeMs ?? 0)} ms` +
-      (t.tokensPerSecond ? `, ${t.tokensPerSecond.toFixed(1)} tokens per second.` : '.');
-    renderReadout();
-  } catch (e) {
-    $('out-timing').textContent = describeFailure(e);
-  } finally {
-    btnRun.disabled = false;
-  }
+  await runControl.run(
+    (signal) =>
+      adapter.generate(inPrompt.value, {
+        // a short answer on WebAssembly keeps the demo quick; the engine runs in a worker, so the page stays responsive
+        maxTokens: maxTokensOverride ?? maxTokensFor(rung),
+        temperature: 0,
+        signal,
+        onToken: (t) => {
+          $('out-answer').textContent = ($('out-answer').textContent ?? '') + t;
+        },
+      }),
+    (e) => {
+      $('out-timing').textContent = describeFailure(e);
+      // the engine was stopped earlier: the same one-click reload from the store is on offer
+      if (e instanceof AdapterError && e.code === 'not_loaded')
+        offerReload('The engine is not loaded.');
+    },
+    (res) => {
+      $('out-answer').textContent = res.text;
+      const t = res.timings;
+      $('out-timing').textContent =
+        `Finish: ${res.finishReason}. Prompt tokens ${res.usage.promptTokens ?? '?'}, generated ${res.usage.completionTokens ?? '?'}. ` +
+        `Prefill ${Math.round(t.prefillMs ?? 0)} ms, decode ${Math.round(t.decodeMs ?? 0)} ms` +
+        (t.tokensPerSecond ? `, ${t.tokensPerSecond.toFixed(1)} tokens per second.` : '.');
+      renderReadout();
+    },
+  );
 }
 
 function initModelSection(): void {
@@ -400,6 +451,7 @@ function initModelSection(): void {
     btnDownload.disabled = false;
     btnDownload.addEventListener('click', () => void onDownloadClick());
     btnRun.addEventListener('click', () => void onRunClick());
+    btnStop.addEventListener('click', () => runControl.stop());
   } else {
     $('model-status').textContent = 'test model not bundled in this build';
     btnDownload.disabled = true;

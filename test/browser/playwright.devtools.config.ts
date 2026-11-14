@@ -7,6 +7,7 @@
 // The test launches its own Chrome with a temporary profile; only the web server comes from here.
 
 import { defineConfig } from 'playwright/test';
+import { DEFAULT_RESULTS_DIR } from './out-dir';
 
 const PORT = 8790;
 
@@ -19,7 +20,7 @@ export default defineConfig({
   timeout: 10 * 60_000,
   expect: { timeout: 30_000 },
   reporter: [['list']],
-  outputDir: '../../test-results',
+  outputDir: DEFAULT_RESULTS_DIR,
   use: { baseURL: `http://127.0.0.1:${PORT}`, channel: 'chrome', trace: 'off' },
   webServer: {
     command:

@@ -6,14 +6,15 @@
 //
 //   RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:demo
 //
-// Results go to demo-run.json (RUNTIME_DEMO_OUT, default test-results/).
+// Results go to demo-run.json (RUNTIME_DEMO_OUT, default runtime/test-results/, git-ignored).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, expect, test } from 'playwright/test';
+import { resultsDir } from './out-dir';
 
 const BASE = 'http://127.0.0.1:8791/runtime/';
-const OUT_DIR = resolve(process.env['RUNTIME_DEMO_OUT'] ?? '../../test-results');
+const OUT_DIR = resultsDir('RUNTIME_DEMO_OUT');
 test.skip(process.env['RUNTIME_MODEL'] !== '1', 'set RUNTIME_MODEL=1 to run the demo proof');
 test.describe.configure({ mode: 'serial' });
 

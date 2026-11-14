@@ -302,3 +302,73 @@ h3 {
 .readout td.num {
   text-align: right;
 }
+
+/* Tamper lab (manifest spec v0.1) */
+table.lab {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+table.lab th,
+table.lab td {
+  text-align: left;
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+table.lab td[data-cell='verdict'] {
+  font-weight: 600;
+}
+
+table.lab td[data-cell='verdict']:not(:empty) {
+  color: var(--bad);
+}
+
+table.lab tr[data-case='valid'] td[data-cell='verdict']:not(:empty) {
+  color: var(--ok);
+}
+
+table.lab td[data-cell='reason'],
+table.lab td[data-cell='signatures'],
+table.lab td[data-cell='stage'] {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+table.lab .detail {
+  font-size: 0.8rem;
+}
+
+.status-line {
+  font-size: 0.9rem;
+  border-left: 3px solid var(--line);
+  padding-left: 0.6rem;
+}
+
+@media (max-width: 40rem) {
+  table.lab thead {
+    display: none;
+  }
+
+  table.lab tr {
+    display: block;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.4rem;
+  }
+
+  table.lab th,
+  table.lab td {
+    display: block;
+    border-bottom: 0;
+  }
+
+  table.lab td[data-cell='reason'],
+  table.lab td[data-cell='signatures'],
+  table.lab td[data-cell='stage'] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

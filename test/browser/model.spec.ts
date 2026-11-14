@@ -22,7 +22,7 @@
 // Leg B: forceRung 'wasm' selects the wasm rung (executionProviders ['wasm']).
 // Prompt: 'What is the capital of France? Answer in one word.', maxTokens 16, temperature 0.
 // Each leg runs in a fresh browser context (own OPFS), so each downloads and verifies all seven
-// manifest entries. Results go to model-run.json (RUNTIME_MODEL_OUT, default test-results/).
+// manifest entries. Results go to model-run.json (RUNTIME_MODEL_OUT, default runtime/test-results/, git-ignored).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -35,11 +35,12 @@ import {
   type CDPSession,
   type Page,
 } from 'playwright/test';
+import { resultsDir } from './out-dir';
 
 const PROMPT = 'What is the capital of France? Answer in one word.';
 const REQUIRE_WEBGPU = process.env['RUNTIME_REQUIRE_WEBGPU'] === '1';
 const LEGS = (process.env['RUNTIME_MODEL_LEGS'] ?? 'webgpu,wasm').split(',');
-const OUT_DIR = resolve(process.env['RUNTIME_MODEL_OUT'] ?? '../../test-results');
+const OUT_DIR = resultsDir('RUNTIME_MODEL_OUT');
 const FORBIDDEN_HOSTS =
   /(^|\.)(huggingface\.co|hf\.co|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|github\.com|githubusercontent\.com|googleapis\.com|gstatic\.com)$/i;
 

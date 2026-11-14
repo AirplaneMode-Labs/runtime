@@ -8,7 +8,7 @@
 //       real load and answer; the front-end is told to show the 'Airplane Mode' panel; the panel's own
 //       page is read for the five phase durations, a memory figure and the load id, which must equal
 //       the page snapshot's. A screenshot of the DevTools front-end goes to devtools-window.png and
-//       the figures to devtools-figures.json (RUNTIME_DEVTOOLS_OUT, default test-results/).
+//       the figures to devtools-figures.json (RUNTIME_DEVTOOLS_OUT, default runtime/test-results/, git-ignored).
 //
 //   RUNTIME_MODEL=1 npm run test:devtools                       (a)
 //   RUNTIME_MODEL=1 RUNTIME_DEVTOOLS_HEADED=1 npm run test:devtools   (a) and (b)
@@ -23,8 +23,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page } from 'playwright/test';
 import { attach, connectCdp, evaluate, listTargets, type CdpClient } from './cdp-flat';
+import { resultsDir } from './out-dir';
 
-const OUT_DIR = resolve(process.env['RUNTIME_DEVTOOLS_OUT'] ?? '../../test-results');
+const OUT_DIR = resultsDir('RUNTIME_DEVTOOLS_OUT');
 const EXTENSION = resolve('devtools/dist');
 const PROMPT = 'What is the capital of France? Answer in one word.';
 const HEADED = process.env['RUNTIME_DEVTOOLS_HEADED'] === '1';

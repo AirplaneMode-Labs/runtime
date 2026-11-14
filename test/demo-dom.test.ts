@@ -198,6 +198,108 @@ describe('the demo pages: markup and policy', () => {
   });
 });
 
+describe('the Tamper lab (D1-03): markup and isolation', () => {
+  const CASE_IDS = [
+    'tamper-01',
+    'tamper-02',
+    'tamper-03',
+    'tamper-04',
+    'tamper-05',
+    'tamper-06',
+    'tamper-07',
+    'tamper-08',
+    'tamper-10',
+    'tamper-15',
+    'asset-flip',
+    'asset-truncated',
+    'valid',
+  ];
+
+  it('index.html has the lab section with one run button per case, in order, and the demo-only label', () => {
+    const html = read('demo/index.html');
+    const section = html.slice(html.indexOf('id="tamper-lab"'));
+    expect(html).toContain('id="tamper-lab"');
+    const ids = [...section.matchAll(/data-case="([a-z0-9-]+)"/g)].map((m) => m[1]);
+    expect([...new Set(ids)]).toEqual(CASE_IDS);
+    for (const id of CASE_IDS) {
+      expect(section, id).toMatch(
+        new RegExp(`data-case="${id}"[\\s\\S]*?<button[^>]*data-action="run"`),
+      );
+    }
+    expect(flat(html.replace(/<[^>]+>/g, ' '))).toContain(
+      'RFC 8032 public test keys: demo only; allowTestKeys is false by default in the library',
+    );
+    expect(html).not.toContain('btn-tamper');
+    expect(read('demo/main.ts')).not.toMatch(/btn-tamper/);
+  });
+
+  it('main.ts loads the lab module; the lab has its own trust set, its own memory state store and fresh memory stores', () => {
+    expect(read('demo/main.ts')).toMatch(/from '\.\/tamper-lab\.ts'/);
+    const lab = read('demo/tamper-lab.ts');
+    expect(lab).toContain('InMemoryManifestState');
+    expect(lab).toContain("store: 'memory'");
+    expect(lab).toContain('RFC8032_TEST_PUBLIC_KEYS_HEX');
+    expect(lab).toContain('PerformanceObserver');
+    expect(lab).toContain('Requests after refusal:');
+    // never the page's own trust set, pasted roots, persistent stores or downgrade state
+    expect(lab).not.toMatch(
+      /OpfsAssetStore|IndexedDbAssetStore|store:\s*'opfs'|store:\s*'indexeddb'/,
+    );
+    expect(lab).not.toMatch(/trustSet\(|parseTrustRoots|taRoots|trustRoot\b/);
+    // allowTestKeys is a literal true in the lab only, set by code, never by input
+    expect((lab.match(/allowTestKeys:\s*true/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(lab).not.toMatch(/allowTestKeys:\s*(?!true\b)[^,}\s]/);
+  });
+
+  it('allowTestKeys is not driven by the URL, storage or any input anywhere in the demo', () => {
+    for (const f of demoFiles(/\.ts$/)) {
+      const src = read(`demo/${f}`);
+      for (const m of src.matchAll(/allowTestKeys[^\n]*/g)) {
+        const line = m[0];
+        expect(line, `${f}: ${line}`).not.toMatch(
+          /params\.get|location\.search|localStorage|sessionStorage/,
+        );
+      }
+    }
+    const main = read('demo/main.ts');
+    expect(main).not.toMatch(/allowTestKeys:\s*true/);
+  });
+
+  it('the not-yet box says WebLLM was cut from Sprint 4 and names the other open items (D1-05)', () => {
+    const idx = flat(read('demo/index.html').replace(/<[^>]+>/g, ' '));
+    const box = idx.slice(idx.indexOf('What this demo does not do yet'));
+    for (const item of [
+      'WebLLM (cut from Sprint 4; revisit after the Sprint 5 measurement)',
+      'Windows and 8 GB no-GPU measurements',
+      'embeddings through the worker host',
+      'revocation of a signing key',
+      'an expected-id check',
+    ])
+      expect(box, item).toContain(item);
+    const models = flat(read('demo/models.html').replace(/<[^>]+>/g, ' '));
+    expect(models).toContain('WebLLM rung: not yet (cut from Sprint 4');
+  });
+
+  it('the page shows its status line, equal to site/data/demos.json when the workspace has it', () => {
+    const html = read('demo/index.html');
+    const m = /<p id="status-line"[^>]*>([\s\S]*?)<\/p>/.exec(html);
+    expect(m, 'a status line').not.toBeNull();
+    const line = flat(m![1]!.replace(/<[^>]+>/g, ' '));
+    expect(line.startsWith('Sprint 4 (14 Nov 2026):')).toBe(true);
+    expect(line).toContain(
+      "manifest spec v0.1 published in runtime/spec (committed; public after the owner's push)",
+    );
+    expect(line).toContain('Not yet:');
+    const demos = resolve(repoDir, '../site/data/demos.json');
+    if (!existsSync(demos)) return; // a standalone clone has no site folder
+    const entry = (
+      JSON.parse(readFileSync(demos, 'utf8')) as { repo: string; status: string }[]
+    ).find((d) => d.repo === 'runtime');
+    // until the product owner writes the Sprint 4 line the file still carries Sprint 3's
+    if (entry?.status.startsWith('Sprint 4')) expect(line).toBe(flat(entry.status));
+  });
+});
+
 describe('redistribution: notices, licences and provenance', () => {
   it('THIRD-PARTY-NOTICES.txt names onnxruntime-web (MIT) and every bundled library with its real licence', () => {
     const text = read('demo/THIRD-PARTY-NOTICES.txt');

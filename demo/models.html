@@ -63,11 +63,9 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
               are not measured.
             </li>
             <li>
-              No Stop button yet: an abort exists in the library, not as a control on this page.
-            </li>
-            <li>
-              WebLLM rung: not yet. The contract and the staging rules describe it, but its adapter
-              and model are not in this build; they are carried to Sprint 4.
+              WebLLM rung: not yet (cut from Sprint 4; revisit after the Sprint 5 measurement). The
+              contract and the staging rules describe it, but its adapter and model are not in this
+              build.
             </li>
             <li>
               Memory figures are shown only where Chrome exposes them: the page's JavaScript heap
@@ -159,6 +157,7 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
 What is the capital of France? Answer in one word.</textarea>
         <div class="row">
           <button id="btn-run" type="button" disabled>Run prompt</button>
+          <button id="btn-stop" type="button" disabled>Stop</button>
           <span id="run-note" class="muted small"></span>
         </div>
         <pre id="out-answer" class="out" aria-live="polite"></pre>

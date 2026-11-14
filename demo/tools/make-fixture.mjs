@@ -11,6 +11,10 @@
 //   rfc8032-signed-example.json          copy of spec/examples/manifest.signed.example.json (signed
 //                                        with the public RFC 8032 test key; the page shows it refused)
 //
+// Writes demo/public/tamper/ (the Tamper lab): a verbatim copy of spec/vectors/tamper and
+// spec/vectors/tamper-assets (see demo/tools/tamper-fixture.mjs). The build fails if any copied file's
+// sha256 differs from the spec.
+//
 // Signing: an Ed25519 key pair from crypto.generateKeyPairSync (test/tools/lib.mjs ephemeralSigner)
 // is held in memory only for the duration of this process. The signing half is never exported,
 // never put into the environment and never printed; only its public half leaves this process
@@ -57,6 +61,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AssetStream } from '../../test/tools/xorshift.mjs';
+import { DEFAULT_TAMPER_OUT, SPEC_VECTORS_DIR, buildTamperFixture } from './tamper-fixture.mjs';
 import { ephemeralSigner, verifySig } from '../../test/tools/lib.mjs';
 import {
   buildModelManifest,
@@ -372,6 +377,13 @@ function main() {
     'utf8',
   );
   writeFileSync(path.join(out, 'rfc8032-signed-example.json'), example);
+
+  // the Tamper lab: spec/vectors/tamper and tamper-assets, verbatim; the build fails on any difference
+  const tamperFiles = buildTamperFixture({
+    vectorsDir: SPEC_VECTORS_DIR,
+    outDir: DEFAULT_TAMPER_OUT,
+  });
+  console.log(`tamper/  ${tamperFiles} spec vector files, sha256 equal to spec/vectors`);
 
   copyOrtFactory();
   copyNotices();

@@ -18,6 +18,8 @@
   "include": [
     "main.ts",
     "backend-panel.ts",
+    "tamper-lab.ts",
+    "run-control.ts",
     "env.d.ts",
     "../src/**/*.ts",
     "../spec/**/*.ts",

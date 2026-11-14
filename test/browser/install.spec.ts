@@ -1,7 +1,8 @@
 // D1-10: the packed runtime tarball, installed offline into a fresh empty directory (scripts/pack-check.mjs),
 // is imported by a bundler-free page in installed Chrome: ./node_modules/@airplanemode/runtime/dist/index.js,
 // then detectCapabilities(), verifyManifest() on the signed spec example (public RFC 8032 test key,
-// allowTestKeys) and MockAdapter.generate(), with 0 console errors and same-origin requests only.
+// allowTestKeys), verifyManifest() on the text of the tamper vector tamper-01 (refused with
+// no_valid_signature) and MockAdapter.generate(), with 0 console errors and same-origin requests only.
 //
 //   npm run test:install
 
@@ -40,6 +41,10 @@ test.beforeAll(async () => {
     readFileSync(join(root, 'spec/examples/manifest.signed.example.json')),
   );
   writeFileSync(
+    join(fresh, 'tamper-01-entry-sha-byte.json'),
+    readFileSync(join(root, 'spec/vectors/tamper/tamper-01-entry-sha-byte.json')),
+  );
+  writeFileSync(
     join(fresh, 'index.html'),
     `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
@@ -58,10 +63,12 @@ try {
   const keyId = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey)), (b) => b.toString(16).padStart(2, '0')).join('');
   const manifest = await (await fetch('./manifest.signed.example.json')).json();
   const verified = await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z') });
+  const tamperText = await (await fetch('./tamper-01-entry-sha-byte.json')).text();
+  const tampered = await verifyManifest(tamperText, new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z') });
   const adapter = new MockAdapter();
   await adapter.load({ id: 'mock', kind: 'model', url: 'x', sha256: '0'.repeat(64), size: 0, version: '1.0.0', licence: 'Apache-2.0', minProfile: {} }, { assets: { getEntry() { throw new Error('unused'); }, async getBlob() { return new Blob([]); } }, profile });
   const answer = await adapter.generate('hello', { maxTokens: 4, temperature: 0 });
-  window.__result = { tier: profile.backendTier, verified: verified.ok, spec: SPEC_VERSIONS.backendAdapter, finish: answer.finishReason, text: typeof answer.text };
+  window.__result = { tier: profile.backendTier, verified: verified.ok, tamper01: tampered.ok ? 'accepted' : tampered.reason, spec: SPEC_VERSIONS.backendAdapter, finish: answer.finishReason, text: typeof answer.text };
   out.textContent = JSON.stringify(window.__result);
 } catch (e) {
   window.__result = { error: String(e && e.message || e) };
@@ -108,7 +115,8 @@ test('a bundler-free page imports the installed tarball: capabilities, verifyMan
   );
   expect(result['error']).toBeUndefined();
   expect(result['verified']).toBe(true);
-  expect(result['spec']).toBe('0.3.0');
+  expect(result['tamper01']).toBe('no_valid_signature');
+  expect(result['spec']).toBe('0.3.1');
   expect(['webgpu-f16', 'webgpu-f32', 'wasm-simd', 'wasm', 'none']).toContain(result['tier']);
   expect(result['finish']).toBeDefined();
   expect(errors).toEqual([]);

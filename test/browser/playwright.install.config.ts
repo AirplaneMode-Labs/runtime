@@ -5,6 +5,7 @@
 //   npm run test:install
 
 import { defineConfig } from 'playwright/test';
+import { DEFAULT_RESULTS_DIR } from './out-dir';
 
 export default defineConfig({
   testDir: '.',
@@ -15,7 +16,7 @@ export default defineConfig({
   timeout: 5 * 60_000,
   expect: { timeout: 15_000 },
   reporter: [['list']],
-  outputDir: '../../test-results',
+  outputDir: DEFAULT_RESULTS_DIR,
   use: { channel: 'chrome', headless: true },
   projects: [{ name: 'chrome', use: { channel: 'chrome' } }],
 });

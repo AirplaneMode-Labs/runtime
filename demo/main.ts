@@ -31,6 +31,7 @@ import {
 import type { AssetHandle, IndexRow, SignatureCheck, TrustSet } from '../src/index.ts';
 import type { Event, EventSink } from '../spec/event.ts';
 import type { Manifest } from '../spec/manifest.ts';
+import { initTamperLab } from './tamper-lab.ts';
 
 type StoreName = 'opfs' | 'indexeddb';
 type ManifestSource = 'fixture' | 'range';
@@ -479,8 +480,6 @@ function makeManager(): AssetManager {
 
 let manager = makeManager();
 let manifest: Manifest | null = null;
-/** The last manifest object that went through verifyManifest on this page (for the tamper button). */
-let lastVerified: Manifest | null = null;
 const handles = new Map<string, AssetHandle[]>();
 const aborts = new Map<string, AbortController>();
 
@@ -489,7 +488,6 @@ async function loadManifest(src?: string | Manifest): Promise<Manifest> {
   const target = src ?? manifestUrl();
   if (typeof target === 'string') gateOrigin(target);
   manifest = await manager.loadManifest(target, await trustSet());
-  lastVerified = manifest;
   renderEntries();
   show(outManifest, manifest);
   return manifest;
@@ -551,7 +549,6 @@ async function verifyAndReport(
     if (result.signatures.some((s) => s.valid)) reportEd25519(true);
     if (result.ok) {
       const m = result.manifest;
-      lastVerified = m;
       report.id = m.id;
       report.version = m.version;
       report.publisher = m.publisher;
@@ -590,22 +587,6 @@ async function loadFixture(): Promise<VerifyReport> {
 async function verifyRfcExample(): Promise<VerifyReport> {
   const obj = await fetchJson(RFC_EXAMPLE_URL);
   return verifyAndReport('RFC 8032 test-signed example (not loaded into the manager)', obj, false);
-}
-
-/** Flips one hex digit of the first entry's sha256 in a copy of the last verified manifest. */
-async function tamper(): Promise<VerifyReport> {
-  if (!lastVerified) throw new Error('load and verify a manifest first');
-  const copy = structuredClone(lastVerified);
-  const first = copy.entries[0];
-  if (!first) throw new Error('manifest has no entries');
-  const c = first.sha256[0] ?? '0';
-  const flipped = c === '0' ? '1' : '0';
-  first.sha256 = flipped + first.sha256.slice(1);
-  return verifyAndReport(
-    `tampered copy: entries[0].sha256 first hex digit ${c} -> ${flipped} (not loaded into the manager)`,
-    copy,
-    false,
-  );
 }
 
 // --- entries table -----------------------------------------------------------------------------------
@@ -1007,7 +988,6 @@ async function loadPasted(): Promise<Manifest> {
   // Only now is anything built or fetched.
   manager = makeManager();
   manifest = await manager.loadManifest(u.href, await trustSet());
-  lastVerified = manifest;
   renderEntries();
   show(outPaste, {
     ok: true,
@@ -1043,10 +1023,7 @@ $('btn-rfc').addEventListener(
   'click',
   run(outManifest, () => verifyRfcExample()),
 );
-$('btn-tamper').addEventListener(
-  'click',
-  run(outManifest, () => tamper()),
-);
+initTamperLab();
 $('btn-estimate').addEventListener(
   'click',
   run(outStorage, () => estimate()),
@@ -1134,7 +1111,6 @@ export interface DemoRuntime {
   loadFixture: () => Promise<VerifyReport>;
   verifyRfcExample: () => Promise<VerifyReport>;
   setTestKeyCheckbox: (on: boolean) => boolean;
-  tamper: () => Promise<VerifyReport>;
   sha256InPage: typeof sha256InPage;
   evictionWalkthrough: () => Promise<Walkthrough>;
   loadPasted: (url: string) => Promise<Manifest>;
@@ -1209,7 +1185,6 @@ if (isLocal) {
       chkTestKey.checked = on;
       return chkTestKey.checked;
     },
-    tamper,
     sha256InPage,
     evictionWalkthrough,
     loadPasted: (url) => {

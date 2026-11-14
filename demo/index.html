@@ -28,6 +28,18 @@
         <a href="./models.html">backend demo</a>. Store: <code id="store-label">?</code>. Manifest
         source: <code id="source-label">?</code>. Quota source: <code id="quota-source">?</code>.
       </p>
+      <p id="status-line" class="status-line">
+        Sprint 4 (14 Nov 2026): Working: capability profile, signed-manifest verification, download,
+        hash check and quota eviction of synthetic assets, resume, and a Tamper lab of thirteen
+        cases (a changed entry byte, size or signature, a swapped key, a public-key mismatch, an
+        untrusted key, a truncated file, a rollback, an expired manifest, a non-canonical signature,
+        an asset byte flip, a truncated asset, and the valid manifest) that shows the exact refusal
+        reason, with 0 requests after a manifest refusal; manifest spec v0.1 published in
+        runtime/spec (committed; public after the owner's push). The test-model page, the engine
+        picker and the worker host are as in Sprint 3, plus a Stop button on the test-model page.
+        Not yet: WebLLM (cut from Sprint 4), Windows and 8 GB no-GPU measurements, embeddings
+        through the worker host, key revocation, an expected-id check.
+      </p>
       <p id="range-note" class="note hidden">
         The <code>?manifest=range</code> parameter is honoured only on 127.0.0.1 or localhost (it
         points the page at the repository's range test server). On this host it is ignored and the
@@ -90,6 +102,17 @@
             </li>
             <li>No key revocation, transparency log or Sigstore (security finding S1-001).</li>
             <li>
+              Not yet: WebLLM (cut from Sprint 4; revisit after the Sprint 5 measurement), Windows
+              and 8 GB no-GPU measurements, embeddings through the worker host, revocation of a
+              signing key, an expected-id check.
+            </li>
+            <li>
+              The Tamper lab runs the vectors of manifest spec v0.1 against a trust set of two RFC
+              8032 public test keys that exists only inside the lab. It shows the refusals the spec
+              publishes; it does not make a manifest trustworthy, and a real deployment's trust root
+              is application configuration.
+            </li>
+            <li>
               Chrome's real IndexedDB quota is unmeasured here; use the test quota field to see
               eviction. Chrome under-reports IndexedDB usage in <code>estimate()</code>.
             </li>
@@ -149,9 +172,6 @@
           <button id="btn-rfc" type="button">
             Load the RFC 8032 test-signed example (expected: refused, key not trusted)
           </button>
-          <button id="btn-tamper" type="button">
-            Tamper: flip one hex digit of a sha256 and re-verify (expected: signature invalid)
-          </button>
         </div>
         <label class="check">
           <input id="chk-testkey" type="checkbox" />
@@ -159,6 +179,288 @@
           allowTestKeys is false)
         </label>
         <pre id="out-manifest" class="out"></pre>
+      </section>
+
+      <section id="tamper-lab">
+        <h2>Tamper lab</h2>
+        <p class="small">
+          Each button runs the real verifier (or, for the two asset cases, the real asset manager)
+          over bytes copied verbatim from <code>spec/vectors/tamper</code> and
+          <code>spec/vectors/tamper-assets</code> (manifest spec v0.1 published in runtime/spec
+          (committed; public after the owner's push)). The verdict, reason code, per-signature
+          reasons and stage are what the library returns. Every case runs at the vectors' clock
+          (2026-11-14), on its own in-memory state and a fresh in-memory store: nothing here touches
+          this page's trust roots or its persistent storage.
+        </p>
+        <p id="lab-keys-note" class="note">
+          RFC 8032 public test keys: demo only; allowTestKeys is false by default in the library
+        </p>
+        <div class="row">
+          <button id="lab-run-all" type="button">Run all thirteen cases</button>
+        </div>
+        <table class="lab">
+          <thead>
+            <tr>
+              <th scope="col">Case</th>
+              <th scope="col">Run</th>
+              <th scope="col">Verdict</th>
+              <th scope="col">Reason</th>
+              <th scope="col">Signatures</th>
+              <th scope="col">Stage</th>
+              <th scope="col">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-case="tamper-01">
+              <th scope="row">
+                Changed entry byte<br /><span class="small muted"
+                  >one hex digit of an entry's sha256 changed after signing</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-02">
+              <th scope="row">
+                Changed size<br /><span class="small muted"
+                  >an entry's size plus one, after signing</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-03">
+              <th scope="row">
+                Changed signature<br /><span class="small muted"
+                  >one bit of the signature flipped</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-04">
+              <th scope="row">
+                Swapped key<br /><span class="small muted"
+                  >key id and public key of key 2 over a signature made by key 1</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-05">
+              <th scope="row">
+                Public key mismatch<br /><span class="small muted"
+                  >the key id names key 1, the embedded public key is key 2</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-06">
+              <th scope="row">
+                Untrusted key<br /><span class="small muted"
+                  >validly signed by key 2, which is not in the trust set</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-07">
+              <th scope="row">
+                Truncated file<br /><span class="small muted"
+                  >the signed file cut at half its length</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-08">
+              <th scope="row">
+                Rollback<br /><span class="small muted"
+                  >version 1.0.0, validly signed, after 1.1.0 was accepted in the lab's own
+                  state</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-10">
+              <th scope="row">
+                Expired<br /><span class="small muted"
+                  >expiresAt 2026-11-10, before the vectors' clock</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="tamper-15">
+              <th scope="row">
+                Non-canonical signature<br /><span class="small muted"
+                  >S replaced by S + L, still 64 bytes</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="asset-flip">
+              <th scope="row">
+                Asset byte flip<br /><span class="small muted"
+                  >a valid manifest; one byte of the 4096-byte asset flipped</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="asset-truncated">
+              <th scope="row">
+                Asset truncated<br /><span class="small muted"
+                  >a valid manifest; the asset is one byte short</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="valid">
+              <th scope="row">
+                Valid manifest<br /><span class="small muted"
+                  >the unmodified base manifest: accepted</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <section>

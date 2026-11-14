@@ -10,15 +10,16 @@
 //   Worker, Cache.add and addAll); dynamic import() and FontFace are blocked by the inherited CSP;
 // - nothing but the page origin is requested, from the page or the worker, and the verified prefix is
 //   never requested.
-// Results go to worker-run.json (RUNTIME_WORKER_OUT, default test-results/).
+// Results go to worker-run.json (RUNTIME_WORKER_OUT, default runtime/test-results/, git-ignored).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from 'playwright/test';
 import { chromium } from 'playwright/test';
 import { expectOnlyPageOrigin, gatedContext, phaseEvents, runHook, PROMPT } from './worker-helpers';
+import { resultsDir } from './out-dir';
 
-const OUT_DIR = resolve(process.env['RUNTIME_WORKER_OUT'] ?? '../../test-results');
+const OUT_DIR = resultsDir('RUNTIME_WORKER_OUT');
 test.skip(process.env['RUNTIME_MODEL'] !== '1', 'set RUNTIME_MODEL=1 to run the worker proof');
 test.describe.configure({ mode: 'serial' });
 

@@ -16,13 +16,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from 'playwright/test';
+import { resultsDir } from './out-dir';
 
 test.skip(
   process.env['RUNTIME_HINDI_SMOKE'] !== '1',
   'set RUNTIME_HINDI_SMOKE=1 to run the Hindi smoke run',
 );
 
-const OUT_DIR = resolve(process.env['RUNTIME_MODEL_OUT'] ?? '../../test-results');
+const OUT_DIR = resultsDir('RUNTIME_MODEL_OUT');
 const FORBIDDEN_HOSTS =
   /(^|\.)(huggingface\.co|hf\.co|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|github\.com|githubusercontent\.com|googleapis\.com|gstatic\.com)$/i;
 

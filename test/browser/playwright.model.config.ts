@@ -11,9 +11,10 @@
 // .cache/models) on 127.0.0.1:8790.
 //
 // RUNTIME_HINDI_SMOKE=1 also builds the Qwen3 manifest and runs hindi-smoke.spec.ts (see its header).
-// RUNTIME_MODEL_OUT=<dir> writes model-run.json / hindi-smoke.json there (default: test-results/).
+// RUNTIME_MODEL_OUT=<dir> writes model-run.json / hindi-smoke.json there (default: runtime/test-results/, git-ignored).
 
 import { defineConfig } from 'playwright/test';
+import { DEFAULT_RESULTS_DIR } from './out-dir';
 
 const PORT = 8790;
 // Local only, never CI, Pages or a demo: the Qwen3-1.7B Hindi smoke run (RUNTIME_HINDI_SMOKE=1).
@@ -28,7 +29,7 @@ export default defineConfig({
   timeout: 15 * 60_000,
   expect: { timeout: 30_000 },
   reporter: [['list']],
-  outputDir: '../../test-results',
+  outputDir: DEFAULT_RESULTS_DIR,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     channel: 'chrome',

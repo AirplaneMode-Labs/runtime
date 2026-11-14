@@ -13,6 +13,7 @@
 // RUNTIME_BASE_URL overrides the default http://127.0.0.1:8787.
 
 import { defineConfig } from 'playwright/test';
+import { DEFAULT_RESULTS_DIR } from './out-dir';
 
 const BIG = process.env['RUNTIME_BIG'] === '1';
 const BASE = process.env['RUNTIME_BASE_URL'] ?? 'http://127.0.0.1:8787';
@@ -29,7 +30,7 @@ export default defineConfig({
   timeout: BIG ? 40 * 60_000 : 180_000,
   expect: { timeout: 10_000 },
   reporter: [['list']],
-  outputDir: '../../test-results',
+  outputDir: DEFAULT_RESULTS_DIR,
   use: {
     baseURL: BASE,
     channel: 'chrome',
