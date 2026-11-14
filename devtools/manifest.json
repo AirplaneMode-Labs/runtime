@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Airplane Mode runtime events",
+  "version": "0.1.0",
+  "description": "Shows Airplane Mode runtime model-load timing and memory in a DevTools panel.",
+  "devtools_page": "devtools.html",
+  "minimum_chrome_version": "120",
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  }
+}
