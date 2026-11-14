@@ -1,16 +1,22 @@
 /**
- * Manifest parsing and verification (Manifest 0.1.0). See spec/README.md VERIFICATION ORDER.
+ * Manifest parsing and verification (manifest spec v0.1, manifest 0.1.1). See spec/MANIFEST.md.
  *
- * parse (floats, > 2^53-1, digit-leading keys, lone surrogates) -> schema (incl. calendar-valid
- * timestamps) -> expiry -> signatures -> downgrade rule. verifyManifest re-runs the parse and
- * schema stage on whatever object it is given, so malformed input (or malformed signature
- * material) is a rejection with a reason, never an exception; the only throw is the test-key
- * refusal. An unreadable downgrade-state store fails closed (reason 'state').
+ * test keys (before anything is parsed) -> parse (repeated members, floats, > 2^53-1, digit-leading
+ * keys, lone surrogates; over the whole document, signatures[] included) -> schema (the manifest schema
+ * with the published Signature schema applied to every signatures[] item, calendar-valid timestamps)
+ * -> expiry -> signatures (S < L, then Ed25519) -> downgrade rule. The reason of a refusal is the first
+ * stage that fails (MANIFEST_REJECT_PRECEDENCE). verifyManifest takes the manifest text or an
+ * already-parsed object and re-runs the parse and schema stage on it, so malformed input (or malformed
+ * signature material) is a rejection with a reason, never an exception; the only throw is the test-key
+ * refusal. An unreadable downgrade-state store fails closed (reason 'state'), and the store is written
+ * only after a valid signature and a passed downgrade check.
  */
 
 import type { EventSink } from '../spec/event';
 import {
   MANIFEST_SPEC,
+  RFC8032_TEST_KEY_IDS,
+  RFC8032_TEST_PUBLIC_KEYS_HEX,
   type Manifest,
   type ManifestRejectReason,
   type SignatureInvalidReason,
@@ -18,6 +24,7 @@ import {
 import { CANONICAL_KEY_PATTERN } from '../spec/manifest';
 import { CanonicalError, signedBytes } from './canonical';
 import { newEvent } from './events';
+import { hasRepeatedMember } from './json-scan';
 import { SCHEMAS, validateSchema } from './schema';
 import { compareSemver, parseSemver } from './semver';
 import { sha256, toHex } from './sha256';
@@ -34,16 +41,92 @@ export class ManifestError extends Error {
   }
 }
 
-/** keyId of the RFC 8032 section 7.1 test key; refused in a trust set unless allowTestKeys. */
-export const RFC8032_TEST_KEY_ID =
-  '21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9';
+/**
+ * keyId of RFC 8032 section 7.1 TEST 1 (the key that signs the examples and vectors). All five test
+ * keys are refused in a trust set unless allowTestKeys === true: see RFC8032_TEST_KEY_IDS.
+ */
+export const RFC8032_TEST_KEY_ID: string = RFC8032_TEST_KEY_IDS[0];
+
+const TEST_KEY_ID_SET: ReadonlySet<string> = new Set(RFC8032_TEST_KEY_IDS);
+const hexBytes = (hex: string): Uint8Array =>
+  Uint8Array.from(hex.match(/.{2}/g) ?? [], (h) => parseInt(h, 16));
+const TEST_PUBLIC_KEYS: readonly Uint8Array[] = RFC8032_TEST_PUBLIC_KEYS_HEX.map(hexBytes);
+
+/** The order of the Ed25519 base point L = 2^252 + 27742317777372353535851937790883648493, little-endian. */
+const ED25519_L_LE = Uint8Array.from([
+  0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10,
+]);
+
+/**
+ * True when the 32-byte little-endian S half of a 64-byte Ed25519 signature is >= L (RFC 8032 section
+ * 5.1.7 requires S < L). Checked here, before WebCrypto, so the verdict does not depend on the engine.
+ */
+export function isNonCanonicalS(sig: Uint8Array): boolean {
+  for (let i = 31; i >= 0; i--) {
+    const s = sig[32 + i]!;
+    const l = ED25519_L_LE[i]!;
+    if (s !== l) return s > l;
+  }
+  return true; // S == L
+}
+
+/** True when `keyId` or the raw 32 bytes `bytes` are one of the five RFC 8032 section 7.1 test keys. */
+function isTestKey(keyId: unknown, bytes: unknown): boolean {
+  if (typeof keyId === 'string' && TEST_KEY_ID_SET.has(keyId)) return true;
+  return (
+    bytes instanceof Uint8Array &&
+    bytes.length === 32 &&
+    TEST_PUBLIC_KEYS.some((pub) => bytesEqual(pub, bytes))
+  );
+}
+
+function refuseTestKey(
+  message = 'trust set contains an RFC 8032 test key; pass allowTestKeys: true in tests only',
+): never {
+  throw new ManifestError('test_key_refused', message);
+}
+
+const UNCHECKABLE_TRUST =
+  'trust set is not a Map or cannot be iterated, so it cannot be shown to be free of RFC 8032 test keys; it is refused like one that holds one (pass allowTestKeys: true in tests only)';
+
+/**
+ * Throws ManifestError('test_key_refused') when `trust` holds any of the five RFC 8032 section 7.1 test
+ * keys, matched by keyId AND by the raw 32 public-key bytes under any keyId, unless `allowTestKeys` is
+ * exactly the boolean true (the string 'true', 1 and every other value count as false).
+ *
+ * Fails closed (S1-089): a trust set that is not a Map, or that cannot be iterated, cannot be shown
+ * to be free of test keys, so it is refused too. The signature loop of verifyManifest repeats the check
+ * for every key it actually uses, so a Map subclass that hides keys from iteration is caught there.
+ */
+export function assertTestKeysAllowed(trust: TrustSet, allowTestKeys: unknown): void {
+  if (allowTestKeys === true) return;
+  if (!(trust instanceof Map)) refuseTestKey(UNCHECKABLE_TRUST);
+  let found = false;
+  try {
+    for (const [keyId, bytes] of trust) {
+      if (isTestKey(keyId, bytes)) {
+        found = true;
+        break;
+      }
+    }
+  } catch {
+    refuseTestKey(UNCHECKABLE_TRUST); // iteration threw: the set is hostile or broken, and is never trusted
+  }
+  if (found) refuseTestKey();
+}
 
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const KEY_ID = /^[0-9a-f]{64}$/;
 const LOOPBACK = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
+/** No valid manifest or descriptor is nested deeper than 5 levels; a deeper document is refused as schema. */
+const MAX_NESTING = 32;
+
 /** Walks a parsed JSON value and rejects floats, out-of-range integers, bad keys and lone surrogates. */
-export function checkParsed(value: unknown, path: string): void {
+export function checkParsed(value: unknown, path: string, depth = 0): void {
+  if (depth > MAX_NESTING)
+    throw new ManifestError('schema', `nesting deeper than ${MAX_NESTING} levels`, path);
   if (value === null || typeof value === 'boolean') return;
   if (typeof value === 'string') {
     if (!value.isWellFormed())
@@ -58,10 +141,20 @@ export function checkParsed(value: unknown, path: string): void {
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((v, i) => checkParsed(v, `${path}/${i}`));
+    value.forEach((v, i) => checkParsed(v, `${path}/${i}`, depth + 1));
     return;
   }
   if (typeof value === 'object') {
+    // Only plain objects (BUG-T2-S4-11): a member inherited through a custom prototype is not an own member,
+    // so no signature covers it, yet a consumer reading entry.pin or entry.chunkSize would see it. JSON.parse
+    // only ever builds plain objects; this guards an already-parsed object handed to the verifier.
+    const proto = Object.getPrototypeOf(value) as unknown;
+    if (proto !== Object.prototype && proto !== null)
+      throw new ManifestError(
+        'schema',
+        `object at ${path || '/'} does not have the plain Object prototype`,
+        path,
+      );
     for (const key of Object.keys(value)) {
       if (/^[0-9]/.test(key))
         throw new ManifestError(
@@ -75,7 +168,7 @@ export function checkParsed(value: unknown, path: string): void {
           `object key ${JSON.stringify(key)} not allowed at ${path || '/'}`,
           path,
         );
-      checkParsed((value as Record<string, unknown>)[key], `${path}/${key}`);
+      checkParsed((value as Record<string, unknown>)[key], `${path}/${key}`, depth + 1);
     }
     return;
   }
@@ -134,23 +227,25 @@ export function isAllowedAssetUrl(url: URL): boolean {
 }
 
 /**
+ * JSON.parse with the repeated-member rule: an object with a repeated member name, at any depth, is
+ * ManifestError('invalid_json') (JSON.parse alone keeps the last member without a word).
+ */
+export function parseJsonText(text: string): unknown {
+  if (hasRepeatedMember(text))
+    throw new ManifestError('invalid_json', 'manifest has a repeated member name');
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new ManifestError('invalid_json', `manifest is not valid JSON: ${(e as Error).message}`);
+  }
+}
+
+/**
  * Parses JSON text or an already-parsed value into a Manifest, applying the parse-level rules,
  * the schema, and the entry ordering and uniqueness rules. Throws ManifestError with a reason.
  */
 export function parseManifest(input: string | unknown): Manifest {
-  let value: unknown;
-  if (typeof input === 'string') {
-    try {
-      value = JSON.parse(input);
-    } catch (e) {
-      throw new ManifestError(
-        'invalid_json',
-        `manifest is not valid JSON: ${(e as Error).message}`,
-      );
-    }
-  } else {
-    value = input;
-  }
+  const value: unknown = typeof input === 'string' ? parseJsonText(input) : input;
   checkParsed(value, '');
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new ManifestError('schema', 'manifest must be a JSON object');
@@ -173,19 +268,23 @@ export function parseManifest(input: string | unknown): Manifest {
   }
   const manifest = value as Manifest;
   checkTimestamps(manifest);
+  // reason precedence: unsorted_entries (any adjacent pair out of order) before duplicate_entries
   for (let i = 1; i < manifest.entries.length; i++) {
     const prev = manifest.entries[i - 1]!.id;
     const cur = manifest.entries[i]!.id;
-    if (cur === prev)
-      throw new ManifestError(
-        'duplicate_entries',
-        `duplicate entry id ${JSON.stringify(cur)}`,
-        `/entries/${i}/id`,
-      );
     if (cur < prev)
       throw new ManifestError(
         'unsorted_entries',
         `entries not sorted by id: ${JSON.stringify(cur)} after ${JSON.stringify(prev)}`,
+        `/entries/${i}/id`,
+      );
+  }
+  for (let i = 1; i < manifest.entries.length; i++) {
+    const cur = manifest.entries[i]!.id;
+    if (cur === manifest.entries[i - 1]!.id)
+      throw new ManifestError(
+        'duplicate_entries',
+        `duplicate entry id ${JSON.stringify(cur)}`,
         `/entries/${i}/id`,
       );
   }
@@ -237,7 +336,10 @@ export interface VerifyOptions {
   /** Epoch milliseconds used for the expiry check; default Date.now(). */
   now?: number;
   allowDowngrade?: boolean;
-  /** Required when the trust set contains the RFC 8032 test key. */
+  /**
+   * Required when the trust set contains any of the five RFC 8032 test keys (by keyId or by raw bytes).
+   * Only the boolean true counts; the default is false.
+   */
   allowTestKeys?: boolean;
   state?: ManifestStateStore;
   events?: EventSink;
@@ -255,11 +357,19 @@ export type VerifyResult =
 
 export type TrustSet = ReadonlyMap<string, Uint8Array>;
 
-function decodeBase64(s: string): Uint8Array | undefined {
+/**
+ * Decodes canonical standard padded base64 (RFC 4648 section 3.5), or answers undefined. atob ignores
+ * the pad bits of the last character, so one byte string would have several accepted spellings
+ * (BUG-T2-S4-14): the input is refused unless re-encoding the decoded bytes gives exactly the input.
+ * The schema patterns of `sig` and `publicKey` already require the canonical last character; this is
+ * defence in depth for a signature object that did not pass the schema stage.
+ */
+export function decodeBase64(s: string): Uint8Array | undefined {
   if (typeof s !== 'string' || s.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(s))
     return undefined;
   try {
     const bin = atob(s);
+    if (btoa(bin) !== s) return undefined;
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
@@ -309,25 +419,33 @@ function attrString(v: unknown): string {
 /**
  * Verifies a manifest against a trust set (keyId -> raw 32-byte Ed25519 public key).
  *
- * The input is re-checked structurally first (parse rules, schema, timestamps, entry order), so an
- * unparsed or hostile object is a rejection with the parse reason (schema, float, ...), never an
- * exception. Malformed signature material is an invalid signature. The only throw is
- * ManifestError('test_key_refused') when the trust set contains the RFC 8032 test key and
- * allowTestKeys is not set.
+ * `input` is the manifest text (the parse stage then includes the repeated-member scan) or an
+ * already-parsed object (a repeated member cannot be seen there). It is re-checked structurally first
+ * (parse rules, schema, timestamps, entry order), so an unparsed or hostile object is a rejection with
+ * the parse reason (schema, float, ...), never an exception. Malformed signature members are `schema`
+ * (the published Signature schema applies to every signatures[] item). The only throw is
+ * ManifestError('test_key_refused'): a trust set holding any of the five RFC 8032 test keys, by keyId or
+ * by raw bytes, is refused BEFORE anything is parsed unless opts.allowTestKeys === true (strict boolean;
+ * the default is false), and again for the key a signature actually uses.
  */
 export async function verifyManifest(
   input: Manifest | unknown,
   trust: TrustSet,
   opts: VerifyOptions = {},
 ): Promise<VerifyResult> {
-  if (trust.has(RFC8032_TEST_KEY_ID) && opts.allowTestKeys !== true) {
-    throw new ManifestError(
-      'test_key_refused',
-      'trust set contains the RFC 8032 test key; pass allowTestKeys: true in tests only',
-    );
-  }
+  if (opts.allowTestKeys !== true) assertTestKeysAllowed(trust, opts.allowTestKeys);
   const now = opts.now ?? Date.now();
-  const raw = (input ?? {}) as Record<string, unknown>;
+  let textError: ManifestError | undefined;
+  let value: unknown = input;
+  if (typeof input === 'string') {
+    try {
+      value = parseJsonText(input);
+    } catch (e) {
+      textError = e instanceof ManifestError ? e : new ManifestError('invalid_json', 'not JSON');
+      value = {};
+    }
+  }
+  const raw = (value ?? {}) as Record<string, unknown>;
   const fail = (
     reason: ManifestRejectReason,
     signatures: SignatureCheck[],
@@ -349,21 +467,26 @@ export async function verifyManifest(
     return { ok: false, reason, signatures };
   };
 
-  // Structural check first (S1-012): verifyManifest must never throw for malformed input. The
-  // body is parsed with the full rules; the signatures array is only required to be an array, so
-  // malformed signature material stays an invalid signature (malformed_sig, malformed_key_id,
-  // unknown_alg) rather than a schema rejection, as the verification order requires.
-  if (input === null || typeof input !== 'object' || Array.isArray(input))
-    return fail('schema', []);
-  if (!Array.isArray(raw['signatures'])) return fail('schema', []);
+  // Structural check first (S1-012): verifyManifest must never throw for malformed input. The whole
+  // document is parsed with the full rules, signatures[] included (a digit-leading key, a float or a
+  // lone surrogate inside a signature is the parse reason, TD-26), then validated against the manifest
+  // schema, which applies the published Signature schema to every signatures[] item (extra members,
+  // required members, the alg, keyId, publicKey, sig and signedAt patterns, calendar-valid signedAt:
+  // reason schema). A missing or non-array signatures member is judged by that schema, after the parse
+  // stage (MANIFEST_REJECT_PRECEDENCE). An alg token that is not ed25519 stays schema-valid and is
+  // ignored below (unknown_alg).
+  if (textError) return fail(textError.reason, []);
+  // JSON text whose value is itself a string ("\"{...}\"") is not a manifest. parseManifest takes text OR
+  // an object, so a string must never reach it a second time: that would parse the inner text without
+  // the repeated-member scan of the outer one.
+  if (typeof value === 'string') return fail('schema', []);
   let manifest: Manifest;
   try {
-    manifest = parseManifest({ ...raw, signatures: [] });
+    manifest = parseManifest(value);
   } catch (e) {
     if (e instanceof ManifestError) return fail(e.reason, []);
     return fail('schema', []);
   }
-  manifest = { ...manifest, signatures: raw['signatures'] as Manifest['signatures'] };
 
   if (manifest.expiresAt !== undefined) {
     const exp = Date.parse(manifest.expiresAt);
@@ -411,6 +534,9 @@ export async function verifyManifest(
       invalid('untrusted_key');
       continue;
     }
+    // S1-089: the same refusal as assertTestKeysAllowed, for the key actually used, so a trust object
+    // that hides keys from iteration (or reports them under another keyId) cannot smuggle a test key in.
+    if (opts.allowTestKeys !== true && isTestKey(keyId, trusted)) refuseTestKey();
     if (trusted.length !== 32 || toHex(sha256(trusted)) !== keyId) {
       invalid('key_mismatch');
       continue;
@@ -425,6 +551,11 @@ export async function verifyManifest(
     const sigBytes = decodeBase64(sig.sig);
     if (!sigBytes || sigBytes.length !== 64) {
       invalid('malformed_sig');
+      continue;
+    }
+    // S must be < L (RFC 8032 5.1.7): checked here, before WebCrypto, so every engine agrees
+    if (isNonCanonicalS(sigBytes)) {
+      invalid('bad_signature');
       continue;
     }
     let ok = false;

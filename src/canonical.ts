@@ -8,8 +8,10 @@
  *   JavaScript enumerates array-index-like keys first regardless of sorting);
  * - string values must be well-formed Unicode (no lone surrogates).
  *
- * JSON.stringify over recursively key-sorted plain objects produces exactly this form, so no JCS
- * library is needed; serde_json with BTreeMap produces the same bytes on the Rust side.
+ * JSON.stringify over recursively key-sorted objects produces exactly this form, so no JCS
+ * library is needed; serde_json with BTreeMap produces the same bytes on the Rust side. The sorted
+ * objects have a null prototype and own data members only, so a member named __proto__ is serialised
+ * like any other (never turned into a prototype).
  */
 
 import { CANONICAL_KEY_PATTERN, MANIFEST_SIGNING_PREFIX } from '../spec/manifest';
@@ -51,7 +53,12 @@ function normalise(value: unknown, path: string): unknown {
   }
   if (Array.isArray(value)) return value.map((v, i) => normalise(v, `${path}/${i}`));
   if (typeof value === 'object') {
-    const out: Record<string, unknown> = {};
+    // Each output object has no prototype and every member is defined as an OWN data property
+    // (BUG-T2-S4-11). Plain assignment of a '__proto__' key on an ordinary object sets the prototype
+    // instead of a member, JSON.stringify then never sees it, and the signature would not cover data that a
+    // consumer can still reach through the prototype chain. With this construction an own '__proto__'
+    // member (which JSON.parse creates) is serialised like any other member.
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const key of Object.keys(value).sort()) {
       if (!CANONICAL_KEY_PATTERN.test(key)) {
         const reason: CanonicalReason = /^[0-9]/.test(key) ? 'digit_key' : 'invalid_key';
@@ -61,7 +68,12 @@ function normalise(value: unknown, path: string): unknown {
           `object key ${JSON.stringify(key)} not allowed at ${path || '/'}`,
         );
       }
-      out[key] = normalise((value as Record<string, unknown>)[key], `${path}/${key}`);
+      Object.defineProperty(out, key, {
+        value: normalise((value as Record<string, unknown>)[key], `${path}/${key}`),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return out;
   }

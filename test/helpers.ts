@@ -16,9 +16,17 @@ export const specDir = resolve(repoDir, 'spec');
 export const RFC8032_SEED_HEX = '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60';
 export const RFC8032_PUBLIC_HEX =
   'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a';
-/** RFC 8032 test vector 2: a second key pair for wrong-key cases. */
-export const OTHER_SEED_HEX = '4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb';
-export const OTHER_PUBLIC_HEX = '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c';
+/**
+ * A second key pair for wrong-key cases. It is NOT an RFC 8032 test key (manifest 0.1.1 refuses all five of
+ * those unless allowTestKeys), so a trust set that holds it needs no allowTestKeys: the seed is the SHA-256
+ * of a fixed phrase, public test data, never a real key.
+ */
+export const OTHER_SEED_HEX = '2ec5c2e0a9bc1c9a80bb4f2515a61543f3f471fb912989a4396c78dd4bd8378b';
+/** RFC 8032 test vector 2 (public, non-secret): the second key of the tamper vectors, 'rfc8032-2'. */
+export const RFC8032_TEST2_SEED_HEX =
+  '4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb';
+export const RFC8032_TEST2_PUBLIC_HEX =
+  '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c';
 
 export const hexToBytes = (hex: string): Uint8Array =>
   new Uint8Array(hex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
@@ -27,13 +35,12 @@ export const bytesToHex = (b: Uint8Array): string =>
 export const b64 = (b: Uint8Array): string => Buffer.from(b).toString('base64');
 
 export const RFC8032_PUBLIC = hexToBytes(RFC8032_PUBLIC_HEX);
-export const OTHER_PUBLIC = hexToBytes(OTHER_PUBLIC_HEX);
+export const RFC8032_TEST2_PUBLIC = hexToBytes(RFC8032_TEST2_PUBLIC_HEX);
 
 export function keyIdOf(pub: Uint8Array): string {
   return createHash('sha256').update(pub).digest('hex');
 }
 export const RFC8032_KEY_ID = keyIdOf(RFC8032_PUBLIC);
-export const OTHER_KEY_ID = keyIdOf(OTHER_PUBLIC);
 
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
 
@@ -55,6 +62,9 @@ export function publicKeyOfSeed(seedHex: string): Uint8Array {
   const spki = createPublicKey(key).export({ format: 'der', type: 'spki' });
   return new Uint8Array(spki.subarray(spki.length - 32));
 }
+
+export const OTHER_PUBLIC = publicKeyOfSeed(OTHER_SEED_HEX);
+export const OTHER_KEY_ID = keyIdOf(OTHER_PUBLIC);
 
 export function makeSignature(
   manifest: Manifest,

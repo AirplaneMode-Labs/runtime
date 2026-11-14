@@ -27,6 +27,7 @@ import {
   type DescriptorRejectReason,
   type ModelDescriptor,
 } from '../../spec/model-descriptor';
+import { hasRepeatedMember } from '../json-scan';
 import { ManifestError, checkParsed } from '../manifest';
 import { satisfies } from '../satisfies';
 import { validateModelDescriptor } from '../schema';
@@ -80,18 +81,17 @@ const bad = (
 ): DescriptorError =>
   new DescriptorError(reason, message, cause === undefined ? undefined : { cause });
 
-/** Code-checked rules (JSON Schema cannot express them) and the reason each one reports. */
-const CODE_RULE_REASON: Readonly<Record<string, DescriptorRejectReason>> = {
-  unique: 'duplicate_paths',
-  forbidden_key: 'invalid_key',
-};
-
 /**
  * Strict canonical parse of descriptor text plus the schema, ordering and membership rules. A
  * rejection is a DescriptorError (an AdapterError 'bad_descriptor') whose `reason` is one of
- * DESCRIPTOR_REJECT_REASONS. Both wire strings (0.1 and 0.2) are accepted.
+ * DESCRIPTOR_REJECT_REASONS, chosen by DESCRIPTOR_REJECT_PRECEDENCE: the parse stage (a repeated
+ * member name at any depth is invalid_json), then bad_spec, then schema, then unsorted_files, then
+ * duplicate_paths, then unsorted_devices (a forbidden chatTemplateKwargs key, invalid_key, last). Both
+ * wire strings (0.1 and 0.2) are accepted.
  */
 export function parseDescriptor(text: string): ModelDescriptor {
+  if (hasRepeatedMember(text))
+    throw bad('the model descriptor has a repeated member name', undefined, 'invalid_json');
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -123,20 +123,26 @@ export function parseDescriptor(text: string): ModelDescriptor {
     throw bad('the model descriptor has an unknown spec string', undefined, 'bad_spec');
   const result = validateModelDescriptor(value);
   if (!result.ok) {
-    // a JSON Schema fault wins; otherwise the first code-checked rule names the reason
-    const schemaFault = result.errors.find(
-      (e) => !['sorted', 'unique', 'forbidden_key'].includes(e.keyword),
-    );
-    const first = schemaFault ?? result.errors[0]!;
+    // a JSON Schema fault wins; the code-checked rules follow in the order of the precedence list
+    const isCodeRule = (keyword: string) => ['sorted', 'unique', 'forbidden_key'].includes(keyword);
+    const schemaFault = result.errors.find((e) => !isCodeRule(e.keyword));
+    let first = schemaFault;
     let reason: DescriptorRejectReason = 'schema';
     if (!schemaFault) {
-      reason =
-        first.keyword === 'sorted'
-          ? first.path.startsWith('/devices')
-            ? 'unsorted_devices'
-            : 'unsorted_files'
-          : (CODE_RULE_REASON[first.keyword] ?? 'schema');
+      const unsortedFiles = result.errors.find(
+        (e) => e.keyword === 'sorted' && e.path.startsWith('/files'),
+      );
+      const duplicatePaths = result.errors.find((e) => e.keyword === 'unique');
+      const unsortedDevices = result.errors.find(
+        (e) => e.keyword === 'sorted' && e.path.startsWith('/devices'),
+      );
+      const forbiddenKey = result.errors.find((e) => e.keyword === 'forbidden_key');
+      if (unsortedFiles) [first, reason] = [unsortedFiles, 'unsorted_files'];
+      else if (duplicatePaths) [first, reason] = [duplicatePaths, 'duplicate_paths'];
+      else if (unsortedDevices) [first, reason] = [unsortedDevices, 'unsorted_devices'];
+      else [first, reason] = [forbiddenKey ?? result.errors[0], 'invalid_key'];
     }
+    first ??= result.errors[0]!;
     throw bad(
       `the model descriptor is invalid at ${first.path || '/'} (${first.keyword})`,
       undefined,

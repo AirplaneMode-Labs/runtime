@@ -283,42 +283,50 @@ describe('verifyManifest: signatures', () => {
     );
   });
 
-  it('sig of 63 or 65 bytes => invalid (malformed_sig), never throws', async () => {
+  it('sig of 63 or 65 bytes => schema (the published Signature schema, TD-26), never throws', async () => {
     const base = makeManifest();
     for (const len of [63, 65, 0, 1]) {
       const sig = makeSignature(base);
       sig.sig = b64(new Uint8Array(len));
       const r = await verifyManifest({ ...base, signatures: [sig] }, testTrust(), opts);
-      expect(r.ok).toBe(false);
-      expect(r.signatures[0]).toMatchObject({ valid: false, reason: 'malformed_sig' });
+      expect(r).toMatchObject({ ok: false, reason: 'schema', signatures: [] });
     }
   });
 
-  it('non-base64 sig => malformed_sig, never throws', async () => {
+  it('non-base64 sig => schema, never throws', async () => {
     const base = makeManifest();
     const sig = makeSignature(base);
     sig.sig = '!!!not base64!!!';
     const r = await verifyManifest({ ...base, signatures: [sig] }, testTrust(), opts);
-    expect(r.signatures[0]).toMatchObject({ valid: false, reason: 'malformed_sig' });
+    expect(r).toMatchObject({ ok: false, reason: 'schema', signatures: [] });
   });
 
-  it('malformed keyId => invalid (malformed_key_id), never throws', async () => {
+  it('malformed keyId => schema, never throws', async () => {
     const base = makeManifest();
     for (const keyId of ['abc', 'G'.repeat(64), RFC8032_KEY_ID.toUpperCase(), '']) {
       const sig = { ...makeSignature(base), keyId };
       const r = await verifyManifest({ ...base, signatures: [sig] }, testTrust(), opts);
-      expect(r.ok).toBe(false);
-      expect(r.signatures[0]).toMatchObject({ valid: false, reason: 'malformed_key_id' });
+      expect(r).toMatchObject({ ok: false, reason: 'schema', signatures: [] });
     }
   });
 
   it('unknown alg only => ignored, manifest fails with no_valid_signature; "none" is never valid', async () => {
     const base = makeManifest();
-    for (const alg of ['none', 'rsa-pss', 'ED25519']) {
+    for (const alg of ['none', 'rsa-pss']) {
       const sig = { ...makeSignature(base), alg };
       const r = await verifyManifest({ ...base, signatures: [sig] }, testTrust(), opts);
       expect(r).toMatchObject({ ok: false, reason: 'no_valid_signature' });
       expect(r.signatures[0]).toMatchObject({ valid: false, reason: 'unknown_alg' });
+    }
+  });
+
+  it('an alg that is a string but not a token (ED25519) is a schema fault before any signature is examined (manifest 0.1.1, neg-bad-alg-token)', async () => {
+    const base = makeManifest();
+    for (const alg of ['ED25519', 'rsa pss', '', 'a'.repeat(33), '-x']) {
+      const sig = { ...makeSignature(base), alg };
+      const r = await verifyManifest({ ...base, signatures: [sig] }, testTrust(), opts);
+      expect(r, alg).toMatchObject({ ok: false, reason: 'schema' });
+      expect(r.signatures).toEqual([]);
     }
   });
 
@@ -670,5 +678,176 @@ describe('compareSemver', () => {
     expect(() => compareSemver('1.0', '1.0.0')).toThrow();
     expect(() => compareSemver('1.0.0+build', '1.0.0')).toThrow();
     expect(() => compareSemver('01.0.0', '1.0.0')).toThrow();
+  });
+});
+
+// ---- manifest 0.1.1 (spec release 0.4.0): duplicate members, reason precedence, string input ---------
+
+describe('duplicate members (manifest 0.1.1): a repeated member name at any depth is invalid_json', () => {
+  const doc = (mutate: (text: string) => string): string => mutate(JSON.stringify(makeManifest()));
+  const reasonOf = (text: string): string => {
+    try {
+      parseManifest(text);
+    } catch (e) {
+      expect(e).toBeInstanceOf(ManifestError);
+      return (e as ManifestError).reason;
+    }
+    return 'accepted';
+  };
+
+  it('depth 0: a repeated top-level member', () => {
+    expect(reasonOf(doc((t) => t.replace('{"spec"', '{"version":"9.9.9","spec"')))).toBe(
+      'invalid_json',
+    );
+  });
+
+  it('depth 1: a repeated member of an entry', () => {
+    expect(reasonOf(doc((t) => t.replace('"entries":[{', '"entries":[{"size":5,')))).toBe(
+      'invalid_json',
+    );
+  });
+
+  it('depth 2: a repeated member of minProfile', () => {
+    expect(
+      reasonOf(doc((t) => t.replace('"minProfile":{}', '"minProfile":{"ramGb":1,"ramGb":2}'))),
+    ).toBe('invalid_json');
+  });
+
+  it('depth 3: a repeated member in a nested object (the duplicate wins over every later stage)', () => {
+    expect(
+      reasonOf(doc((t) => t.replace('"minProfile":{}', '"minProfile":{"x":{"y":1,"y":2}}'))),
+    ).toBe('invalid_json');
+  });
+
+  it('names are compared after unescaping: "a" and "\\u0061" are one name', () => {
+    expect(reasonOf('{"a":1,"\\u0061":2}')).toBe('invalid_json');
+    expect(reasonOf('{"\\u00e9":1,"\u00e9":2}')).toBe('invalid_json');
+  });
+
+  it('the same name in sibling objects and arrays is not a duplicate', () => {
+    const m = makeManifest({ entries: [makeEntry('a'), makeEntry('b')] });
+    expect(() => parseManifest(JSON.stringify(m))).not.toThrow();
+  });
+
+  it('member-looking text inside a string value is not a duplicate', () => {
+    const m = makeManifest({ publisher: 'x","id":"y","id":"z' });
+    expect(parseManifest(JSON.stringify(m)).publisher).toBe('x","id":"y","id":"z');
+  });
+
+  it('a repeated member wins over bad_spec and over a float, as the first stage of the precedence', () => {
+    const text = JSON.stringify(makeManifest({ spec: 'airplanemode.manifest/0.9' as never }));
+    expect(reasonOf(text.replace('{"spec"', '{"id":"aaa","spec"'))).toBe('invalid_json');
+  });
+
+  it('invalid JSON stays invalid_json, and hostile nesting is a rejection, never a RangeError', () => {
+    expect(reasonOf('{"a":')).toBe('invalid_json');
+    expect(reasonOf('{"a":1,"a":')).toBe('invalid_json');
+    expect(reasonOf('{"a":1}}')).toBe('invalid_json');
+    const deep = '['.repeat(20000) + ']'.repeat(20000);
+    expect(['invalid_json', 'schema']).toContain(reasonOf(deep));
+    const deepObj = '{"a":'.repeat(5000) + '1' + '}'.repeat(5000);
+    expect(['invalid_json', 'schema']).toContain(reasonOf(deepObj));
+  });
+
+  it('verifyManifest takes the manifest text: a repeated member is invalid_json and the store is untouched', async () => {
+    const text = readText(resolve(specDir, 'vectors/neg-duplicate-member.json'));
+    // parsed with JSON.parse the value is vector 05 and its signature verifies ...
+    const parsed = JSON.parse(text) as Manifest;
+    const direct = await verifyManifest(parsed, testTrust(), opts);
+    expect(direct.ok).toBe(true);
+    // ... so only the scan rejects the text
+    const state = new InMemoryManifestState();
+    const viaText = await verifyManifest(text, testTrust(), { ...opts, state });
+    expect(viaText).toMatchObject({ ok: false, reason: 'invalid_json' });
+    expect(await state.get(parsed.id)).toBeUndefined();
+  });
+});
+
+describe('reason precedence (manifest 0.1.1, MANIFEST_REJECT_PRECEDENCE)', () => {
+  const rejected = (input: unknown): string => {
+    try {
+      parseManifest(input);
+    } catch (e) {
+      return (e as ManifestError).reason;
+    }
+    return 'accepted';
+  };
+
+  it('a missing spec member is bad_spec, never schema', () => {
+    const { spec: _spec, ...rest } = makeManifest();
+    expect(rejected(rest)).toBe('bad_spec');
+    expect(rejected({ ...makeManifest(), spec: 7 })).toBe('bad_spec');
+    expect(rejected({ ...makeManifest(), spec: null })).toBe('bad_spec');
+  });
+
+  it('bad_spec beats bad_url, schema and the ordering faults', () => {
+    const faults = {
+      spec: 'airplanemode.manifest/0.9',
+      entries: [makeEntry('b', { url: 'data:text/plain,x' }), makeEntry('a')],
+      publisher: '',
+    };
+    expect(rejected({ ...makeManifest(), ...faults })).toBe('bad_spec');
+  });
+
+  it('bad_url beats schema and the ordering faults', () => {
+    expect(
+      rejected(
+        makeManifest({
+          publisher: '',
+          entries: [makeEntry('b', { url: 'blob:https://x/y' }), makeEntry('a')],
+        }),
+      ),
+    ).toBe('bad_url');
+  });
+
+  it('schema (a calendar-invalid timestamp) beats unsorted and duplicate entries', () => {
+    expect(
+      rejected(
+        makeManifest({
+          createdAt: '2026-99-99T00:00:00Z',
+          entries: [makeEntry('b'), makeEntry('a')],
+        }),
+      ),
+    ).toBe('schema');
+  });
+
+  it('unsorted_entries beats duplicate_entries wherever the duplicate sits', () => {
+    const e = (id: string) => makeEntry(id);
+    expect(rejected(makeManifest({ entries: [e('a'), e('a'), e('c'), e('b')] }))).toBe(
+      'unsorted_entries',
+    );
+    expect(rejected(makeManifest({ entries: [e('b'), e('a'), e('a')] }))).toBe('unsorted_entries');
+    expect(rejected(makeManifest({ entries: [e('a'), e('b'), e('a')] }))).toBe('unsorted_entries');
+    expect(rejected(makeManifest({ entries: [e('a'), e('a')] }))).toBe('duplicate_entries');
+  });
+
+  it('a parse-stage fault beats bad_spec', () => {
+    const text = JSON.stringify(
+      makeManifest({ spec: 'airplanemode.manifest/0.9' as never }),
+    ).replace('"size":0', '"size":0.5');
+    expect(rejected(text)).toBe('float');
+  });
+
+  it('expired beats no_valid_signature, and no_valid_signature beats downgrade (the store is not consulted for a bad signature)', async () => {
+    const expired = signManifest(makeManifest({ expiresAt: '2026-11-01T00:00:00Z' }));
+    const bad = {
+      ...expired,
+      signatures: [{ ...expired.signatures[0]!, sig: b64(new Uint8Array(64)) }],
+    };
+    await expectReason(verifyManifest(bad, testTrust(), opts), 'expired');
+    const older = signManifest(makeManifest({ version: '0.9.0' }));
+    const badOlder = {
+      ...older,
+      signatures: [{ ...older.signatures[0]!, sig: b64(new Uint8Array(64)) }],
+    };
+    const state = new InMemoryManifestState();
+    await state.set('dev.airplanemode.test', {
+      version: '1.0.0',
+      createdAt: '2026-11-09T00:00:00Z',
+    });
+    await expectReason(
+      verifyManifest(badOlder, testTrust(), { ...opts, state }),
+      'no_valid_signature',
+    );
   });
 });

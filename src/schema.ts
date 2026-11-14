@@ -102,7 +102,7 @@ function validateNode(
       return;
     }
   }
-  if ('const' in s && !deepEqual(value, s['const'])) {
+  if (Object.hasOwn(s, 'const') && !deepEqual(value, s['const'])) {
     fail('const', `expected ${JSON.stringify(s['const'])}`);
   }
   if (Array.isArray(s['enum']) && !(s['enum'] as unknown[]).some((e) => deepEqual(e, value))) {
@@ -156,7 +156,7 @@ function validateNode(
     const keys = Object.keys(obj);
     if (Array.isArray(s['required'])) {
       for (const r of s['required'] as string[])
-        if (!(r in obj)) fail('required', `missing property ${r}`);
+        if (!Object.hasOwn(obj, r)) fail('required', `missing property ${r}`);
     }
     if (typeof s['maxProperties'] === 'number' && keys.length > s['maxProperties'])
       fail('maxProperties', `more than ${s['maxProperties']} properties`);
@@ -168,7 +168,11 @@ function validateNode(
         if (pnErrors.length)
           fail('propertyNames', `property name ${JSON.stringify(k)} not allowed`);
       }
-      if (k in props) {
+      // Own-property tests only (BUG-T2-S4-11): `k in props` also finds every name that Object.prototype
+      // carries (constructor, toString, hasOwnProperty, valueOf, ...), so a member of that name used to count
+      // as declared and escape additionalProperties: false. Any member the schema does not declare, under any
+      // name, is an additional property.
+      if (Object.hasOwn(props, k)) {
         validateNode(root, props[k]!, obj[k], `${path}/${esc}`, errors);
       } else if (s['additionalProperties'] === false) {
         fail('additionalProperties', `unexpected property ${k}`);
@@ -246,7 +250,7 @@ export function validateModelDescriptor(value: unknown): SchemaResult {
     }
     // the schema bans a property with type null, which still lets an explicit null through
     for (const key of ['runtimeWasm', 'modelLib', 'sessionOptions'] as const)
-      if (key in value && (value as Record<string, unknown>)[key] === null)
+      if (Object.hasOwn(value, key) && (value as Record<string, unknown>)[key] === null)
         errors.push({
           path: `/${key}`,
           keyword: 'null_presence',
