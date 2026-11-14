@@ -46,6 +46,12 @@ jobs:
         run: node test/tools/fetch-model.mjs smollm2-135m-instruct
       - name: Build the demo with the test model bundled
         run: DEMO_MODELS=1 npm run demo:build
+      - name: Record the size of the built demo (per model) and refuse a build over 1 GB
+        run: |
+          du -sk demo/dist | awk '{printf "total %.1f MiB (%d KiB)\n", $1/1024, $1}' | tee dist-size.txt
+          du -sk demo/dist/models/* | sort -k2 | awk '{printf "%8.1f MiB  %s\n", $1/1024, $2}' | tee -a dist-size.txt
+          bytes=$(du -sk demo/dist | awk '{print $1 * 1024}')
+          if [ "$bytes" -gt 1073741824 ]; then echo "demo/dist is over 1 GB ($bytes bytes)" >&2; exit 1; fi
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

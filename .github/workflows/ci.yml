@@ -42,8 +42,8 @@ jobs:
         run: npm run ci
       - name: Build the demo (same command as pages.yml)
         run: npm run demo:build
-      - name: Pack contents
-        run: npm pack --dry-run
+      - name: Pack, check the contents and install the tarball offline into a fresh directory
+        run: npm run pack:check
       # No Chrome is installed here: the ubuntu-latest image already has Google Chrome, and the
       # Playwright config selects it with channel "chrome". A missing Chrome fails the job.
       - name: Check the preinstalled Google Chrome (Linux only)

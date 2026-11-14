@@ -141,7 +141,7 @@ export function buildModelManifest(spec) {
   descriptorFiles.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   const descriptor = {
-    spec: 'airplanemode.model/0.1',
+    spec: 'airplanemode.model/0.2',
     id: spec.descriptor.id,
     engine: spec.descriptor.engine,
     task: spec.descriptor.task,
