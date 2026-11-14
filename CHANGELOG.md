@@ -3,11 +3,173 @@
 All notable changes to `@airplanemode/runtime` are recorded here. The format is based on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/). Nothing is released yet; the package version is
-`0.2.0-alpha.0` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+`0.2.0-alpha.1` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
 
 ## [Unreleased]
 
 Nothing yet.
+
+## [0.2.0-alpha.1] - 2026-11-14 (untagged)
+
+Sprint 4 (alpha): manifest spec v0.1 published in runtime/spec (committed; public after the owner's push) as
+spec release 0.4.0, a verifier that meets it, a Tamper lab in the demo, the Stop button, and the Sprint 3
+carry-overs that fit. Nothing is published, tagged or reserved. WebLLM: not yet (cut from Sprint 4; revisit
+after the Sprint 5 measurement), so it is neither added nor claimed.
+
+### Added
+
+- Spec release 0.4.0: manifest 0.1.1 (**published**, "manifest spec v0.1": the standalone `spec/MANIFEST.md`),
+  the status vocabulary and the release numbering rule, 19 new manifest negatives (32 in all: six with the TD-26 amendment and nine with TD-29), 15 tamper
+  vectors with `tamper.json`, 3 signed asset manifests with `expect.json` (normative and informative
+  fields), 6 new descriptor negatives (20 in all, the last with TD-29), storage API 0.2.0 and event 0.1.3 (the contracts
+  localdata implements), backend adapter 0.3.1 and model descriptor 0.2.1; `SPEC_RELEASE`, `SPEC_STATUS`,
+  `RFC8032_TEST_PUBLIC_KEYS_HEX`, `RFC8032_TEST_KEY_IDS`, `MANIFEST_REJECT_PRECEDENCE` and
+  `DESCRIPTOR_REJECT_PRECEDENCE`; `spec/CHANGELOG.md` has the detail (D1-01, S1-074, S1-075,
+  BUG-T2-S3-22, BUG-T2-S3-23-R2).
+- `verifyManifest()` takes the manifest text as well as an object: text goes through the repeated-member
+  scan first, and a truncated or non-JSON text is `invalid_json` (D1-02).
+- `test/tamper-vectors.test.ts`: every tamper row and every negative row through `verifyManifest()` with a
+  spy downgrade store (0 writes for a refused manifest, exactly one for the accepted rotation), the three
+  asset manifests on fresh memory stores (0 bytes to a consumer, `getBlob` rejects, no `blob:` URL), the five
+  test keys by key id and by bytes, and the S < L boundary (D1-02).
+- The demo's **Tamper lab** (`demo/tamper-lab.ts`, `demo/tools/tamper-fixture.mjs`): thirteen cases run the
+  real verifier and asset manager over bytes copied verbatim from the spec vectors (the build fails if a
+  copy's sha256 differs), each showing the refusal reason, the per-signature reasons, the stage and
+  "Requests after refusal: N"; its own trust set (two RFC 8032 public test keys), downgrade state and
+  memory stores, nothing shared with the page or with persistent storage. Browser proof in installed Chrome:
+  `test/browser/tamper.spec.ts` (D1-03).
+- The **Stop** button on the backend page (`demo/run-control.ts`): enabled only while the model answers,
+  fires the existing `AbortController`, and the read-out says "Stopped" with the time to stop; the loopback
+  test parameter `?maxTokens=` lengthens an answer for the browser test (D1-04).
+- `assertTestKeysAllowed()`, `isNonCanonicalS()` and `parseJsonText()` are exported (D1-02).
+- `pack:check` calls `verifyManifest()` on tamper-01 from the installed tarball (it prints
+  `no_valid_signature`), scans every shipped file for builder paths and checks that `spec/MANIFEST.md` ships
+  (D1-05).
+- `test/manifest-fix2.test.ts`, `test/out-dir.test.ts` and `test/browser/out-dir.ts` (fix round 2, TD-29): every
+  undeclared member name through `verifyManifest()` and `parseDescriptor()` at the top level, in entries,
+  `minProfile`, signatures and descriptor objects; `canonicalize()` of an own `__proto__` member; all 64 last
+  base64 characters of `sig` and `publicKey`; every BMP code point against the forbidden url set; the nine new
+  manifest negatives and the descriptor negative; the sha fixture `test/fixtures/spec-frozen-before-fix2.sha256.txt`
+  (the 5 positives, the 13 + 4 + 6 earlier negatives, `tamper/`, `tamper-assets/`, `storage-api.ts`, `event.ts`
+  stay byte-identical).
+- `decodeBase64()` is exported from `src/manifest.ts` (internal; not part of the package entry point), and
+  `spec/manifest.ts` exports `SIGNATURE_SIG_PATTERN`, `SIGNATURE_PUBLIC_KEY_PATTERN` and `ENTRY_URL_PATTERN` so that
+  dockit re-vendors the patterns (TD-29).
+
+### Changed
+
+- S1-074: `backend.egress.refused` carries the host's own adapter id, a `reporter` (`main` or `worker`), an
+  `origin` (`new URL(x).origin` computed by the page, `'null'` when opaque; the fixed string
+  `worker-reported` for a worker report) and, for a worker report, a `count` of 1 to 16 per `loadId`; later
+  reports are dropped. The worker's text is validated for shape and discarded, so no worker-provided string
+  reaches an event (D1-02, S1-074).
+- The reason of a refusal follows the precedence list: parse stage, then `bad_spec`, `bad_url`, `schema`,
+  `unsorted_entries`, `duplicate_entries`, `expired`, `no_valid_signature`, `downgrade`; a descriptor's is
+  parse stage, `bad_spec`, `schema`, `unsorted_files`, `duplicate_paths`, `unsorted_devices`. `unsorted_entries`
+  now wins over `duplicate_entries` wherever the duplicate sits, and a signature `alg` that is a string but
+  not a token (`ED25519`) is a `schema` fault before any signature is examined (D1-02).
+- The demo's not-yet boxes say WebLLM is "not yet (cut from Sprint 4; revisit after the Sprint 5 measurement)"
+  and list Windows and 8 GB no-GPU measurements, embeddings through the worker host, revocation of a signing
+  key and an expected-id check; the root page shows its status line (D1-05).
+- The test helpers' second key (`OTHER_*`) is no longer an RFC 8032 key, because all five of those are now
+  refused unless `allowTestKeys` (D1-02).
+- Manifest 0.1.1 is amended in place before the first push (team decision TD-26; still release 0.4.0 and
+  wire string `airplanemode.manifest/0.1`): `Manifest.version` and `ManifestEntry.version` take the strict
+  SemVer 2.0 grammar (`SEMVER_PATTERN`, new in `spec/manifest.ts`), the downgrade-state reader uses the same
+  grammar, and `verifyManifest()` applies the published Signature schema to every `signatures[]` item. A
+  malformed signature member is therefore `schema` (it used to be a per-signature `malformed_sig` or
+  `malformed_key_id`, or went unnoticed for `signedAt`); the two per-signature reasons stay defined for a
+  signature object that did not pass the schema. `parseSemver()` returns `bigint` for the numeric parts
+  (BUG-T2-S4-02, BUG-T2-S4-04).
+- Fix round 2 (TD-29), the last amendment of manifest 0.1.1 before the first push (still release 0.4.0, same wire
+  string; the contract is frozen from the owner's push on): `schema.ts` decides which members are declared and which
+  required members are present by OWN-property tests (`Object.hasOwn`), never `in`; `canonicalize()` builds
+  null-prototype objects whose members are defined as own data properties; `checkParsed()` refuses an object whose
+  prototype is neither `Object.prototype` nor null; `sig` is `^[A-Za-z0-9+/]{85}[AQgw]==$` and `publicKey`
+  `^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$`, and `decodeBase64()` refuses any input whose re-encoding differs; the
+  forbidden url characters are an explicit list written as `\uXXXX` ranges (no `\s`). Nine manifest negatives take
+  `negative.json` from 23 to 32 rows and `neg-proto-member` takes the descriptor vectors from 19 to 20; the five
+  positives, the 13 + 4 + 6 earlier negatives, `tamper/`, `tamper-assets/`, `storage-api.ts` and `event.ts` are
+  byte-identical, and all 15 tamper rows keep their tabled result.
+- Six new manifest negative vectors take `negative.json` from 17 to 23 rows (`neg-version-leading-zero`,
+  `neg-version-empty-prerelease-id`, `neg-null-optional`, `neg-sig-unknown-member`, `neg-sig-bad-signedat`,
+  `neg-precedence-digitkey-nosigs`); the five positives and the 17 earlier negatives are byte-identical.
+
+### Fixed
+
+- BUG-T2-S4-11 (high): a validly signed manifest could carry unsigned data under a member named `__proto__`,
+  `constructor`, `toString`, `hasOwnProperty` or `valueOf`. The schema validator tested members with `k in props`
+  (inherited `Object.prototype` names counted as declared, so `additionalProperties: false` did not apply) and the
+  canonicaliser assigned `out[key]` on a plain object (an own `__proto__` member set a prototype and was dropped
+  from the signed bytes), so `verifyManifest()` returned valid and a consumer reading `entry.pin` or
+  `entry.chunkSize` could get a value no signature covers. Any undeclared member of any name is now `schema` in a
+  manifest (top level, entries, `minProfile`, signatures) and in a descriptor, matching cp-manifest.
+- BUG-T2-S4-14: non-canonical base64 (non-zero pad bits) in `sig` and `publicKey` was accepted by the TypeScript
+  verifier (`atob` ignores the bits) and refused by Rust; one spelling per signature and key is now accepted.
+- BUG-T2-S4-15 and S1-095: the entry url character class was `[^\s?#]` in the TypeScript schema and a different
+  list in cp-manifest (Unicode spaces refused by one, ASCII controls by the other); the forbidden set is now one
+  explicit list in MANIFEST.md and the schema.
+- S1-096: the browser specs and the Playwright configs resolved their default results folder against the working
+  directory, so `RUNTIME_MODEL=1 npm run test:demo` wrote `tamper-lab.png`, `tamper-results.json` and the run JSON
+  files into the parent Projects folder. The default is `runtime/test-results/` (git-ignored), resolved from the
+  file's own directory (`test/browser/out-dir.ts`); nothing is written outside the repository unless a
+  `RUNTIME_*_OUT` variable says so.
+- T3-S4-OBS-01b: the README's CI paragraph says "tests-first evidence Done (red/green logs); local macOS green; CI
+  on three OSes configured, pending the owner's push" for the Sprint 4 work.
+- BUG-T2-S3-22: a webllm descriptor with the wire string `airplanemode.model/0.1` is a `schema` fault
+  (branch C pins `airplanemode.model/0.2`) (D1-01).
+- S1-075 and BUG-T2-S3-23-R2: duplicate `devices` in a descriptor have a shared vector (`neg-dup-devices`)
+  and are `schema` in every implementation (D1-01).
+- T3-S3-035: the comment at the top of `test/spec-0.3.test.ts` cites `evidence/sprint-3/D1/red-D1-01.log`,
+  not a scratch path (D1-04).
+- A rung skipped because `cacheOnly` found no stored file says "the file is not stored on this device
+  (cache-only mode)"; "the download was not approved" is used only when the user actually declined
+  (D1-04).
+- `make-vectors.mjs --check` no longer reports the `descriptor/` directory as an unexpected file, and the
+  spec CHANGELOG's `[0.1.0]` date is the date of its commit (2026-11-09) (D1-01).
+- A document nested 20,000 levels deep is a `schema` rejection, not a `RangeError` (D1-02).
+- BUG-T2-S4-04: a version such as `01.0.0` or `1.0.0-a..b` was schema-valid but unreadable by the
+  downgrade-state reader, so one accepted manifest locked its id into reason `state`; both now use the
+  strict grammar.
+- BUG-T2-S4-05: `compareSemver()` compares numeric identifiers exactly (`bigint`), so a patch or numeric
+  prerelease identifier above 2^53 no longer compares equal to its neighbour and lets a rollback through.
+- BUG-T2-S4-02: the parse stage covers `signatures[]` (a digit-leading key, a float or a lone surrogate
+  inside a signature is the parse reason) and an extra member, a missing member or a bad `signedAt` in a
+  signature is `schema`, matching control-plane's text path.
+- BUG-T2-S4-03: a missing or non-array `signatures` member is judged after the parse stage, so a document
+  with such a member and a digit-leading key reports `digit_key` (`MANIFEST_REJECT_PRECEDENCE` holds).
+- S1-089: `assertTestKeysAllowed()` fails closed (a trust object that is not a `Map`, or whose iteration
+  throws, is `test_key_refused`), and the signature loop refuses a trusted test key by key id or raw bytes
+  for the key it actually uses.
+- S1-091: `spec/MANIFEST.md` says `allowDowngrade` is an explicit rollback that lowers the stored state and
+  must be reachable only from an authenticated admin action (documentation only).
+- BUG-T2-S4-10: `spec/storage-api.md` says the 1024 UTF-16-unit key rule dominates for vector keys and 4096
+  bytes is the on-disk bound (prose only; `storage-api.ts` and `event.ts` are untouched).
+- T1-S4-02: after Stop terminates the worker, "Download test model and load" is enabled again (and after a
+  run that reports the engine is not loaded), so the message that points at it is actionable; one click
+  reloads from the stored files with 0 B downloaded (`test/browser/stop.spec.ts`).
+- BUG-T3-S4-03: `docs/security/FINDINGS.md` no longer cites a scratch folder, quotes no removed wording in
+  the S1-085 row and records that the localdata and glyphsift trailer commits exist only on stale
+  `origin/dependabot/*` branches (deleting them is an owner step).
+- BUG-T3-S4-07: `NOTICE` names no package version; the README byte counts equal `pack:check`.
+
+### Security
+
+- All five RFC 8032 section 7.1 test keys are refused in a trust set, by key id and by raw key bytes under
+  any key id, before anything is parsed, unless `allowTestKeys === true` (a strict boolean: the string
+  `'true'` is refused); `AssetManager` refuses before it opens its store or fetches the manifest, and its
+  constructor refuses a non-boolean `allowTestKeys` (TD-22; D1-02).
+- Test keys fail closed: a hostile or non-`Map` trust object cannot hide a test key from the refusal, and
+  JSON text whose value is a string is `schema` (the inner text is never parsed a second time, which
+  would have skipped the repeated-member scan) (S1-089, TD-26).
+- A repeated member name at any depth is `invalid_json`, so a signature over the parsed value cannot pass
+  for a document whose first member differs from the one signed (D1-02).
+- A signature with S >= L is `bad_signature`, checked before WebCrypto so the verdict does not depend on
+  the browser engine (D1-02).
+- The downgrade state is written only after a valid signature and a passed downgrade check: a spy store
+  records 0 writes for every refused vector (D1-02).
+- The Tamper lab never shares the page's trust roots, downgrade state or persistent stores; the browser test
+  finds no `tamper-base` state and no asset part in OPFS or IndexedDB afterwards (D1-03).
 
 ## [0.2.0-alpha.0] - UNRELEASED (not tagged, not published)
 

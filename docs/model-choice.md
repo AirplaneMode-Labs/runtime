@@ -23,7 +23,8 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
   `LICENSE`, a provenance record (repository and 40-hex revision) and a `NOTICE`. That pilot licence
   package is not built this sprint (PRE-PILOT-CHECKLIST).
 - WebLLM is information only here: the WebGPU build `mlc-ai/Qwen3-1.7B-q4f16_1-MLC` is
-  984,156,278 B in total; the WebLLM adapter slipped from Sprint 3 to Sprint 4.
+  984,156,278 B in total; the WebLLM adapter slipped from Sprint 3 and was cut from Sprint 4 (team decision
+  TD-08): not yet, revisited after the Sprint 5 measurement on an 8 GB laptop.
 - Descriptors (spec `model-descriptor.schema.json`): `qwen3-1.7b.tjs-webgpu-q4f16` (devices `webgpu`,
   dtype `q4f16`, `minProfile` WebGPU with `backendTier` `webgpu-f16`, `ramGb` 8) and
   `qwen3-1.7b.tjs-wasm-q8` (devices `wasm`, dtype `q8`, `backendTier` `wasm-simd`, `ramGb` 8). The q8

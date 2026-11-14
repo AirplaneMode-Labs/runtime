@@ -1,18 +1,21 @@
-# Release checklist: runtime 0.2.0-alpha.0
+# Release checklist: runtime 0.2.0-alpha.1
 
-Status of the seven definition-of-done items for the runtime alpha, written on 14 Nov 2026. **Nothing is
-published, tagged or reserved**; the npm scope `@airplanemode` is a placeholder. The tag and every Open row
-below are the owner's steps, after review.
+Status of the seven definition-of-done items for the runtime alpha, written on 14 Nov 2026 (Sprint 4).
+**Nothing is published, tagged or reserved**; the npm scope `@airplanemode` is a placeholder. The tag and every
+Open row below are the owner's steps, after review. Release order (team decision TD-07, owner delegation of
+14 Nov 2026): runtime 0.2.0-alpha.1 first, because it carries the spec and the verifier, then glyphsift 0.1.0,
+then localdata 0.2.0-alpha.0, then pagetriage 1.0.0 when its rows close. Manifest spec v0.1 published in
+runtime/spec (committed; public after the owner's push).
 
-| #   | Definition-of-done item                            | Status  | Evidence                                                                                                                                                                                   | Owner                    | Blocks the tag |
-| --- | -------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ | -------------- |
-| 1   | Tests first, README limitations section, CHANGELOG | Done    | Red then green logs per task in `evidence/sprint-3/D1/` (`red-D1-NN.log` before `green-D1-NN.log`); the README has a Limitations section; `CHANGELOG.md` has `[0.2.0-alpha.0]`             | D1                       | No             |
-| 2   | CI on Linux, macOS and Windows                     | Partial | tests-first evidence Done (red/green logs); local macOS green; CI on three OSes configured, pending the owner's push (`.github/workflows/ci.yml`, matrix of the three, `pack:check` in it) | Owner (push, read CI)    | Yes            |
-| 3   | 8 GB Windows no-GPU laptop benchmark in the README | Open    | The README Benchmarks tables read "not measured" in the 8 GB column; every figure is an Apple-silicon placeholder                                                                          | Owner (Sprint 5)         | Yes            |
-| 4   | Signed artifacts and manifest                      | Open    | No real key exists. `scripts/pack-check.mjs` produces the tarball; the signing steps are below                                                                                             | Owner (key custody)      | Yes            |
-| 5   | Semver tag                                         | Open    | `package.json` says `0.2.0-alpha.0`; no tag exists in any repo                                                                                                                             | Owner (after review)     | Yes            |
-| 6   | Installable from a clean machine, and published    | Open    | Proven from a locally built tarball on macOS arm64: `evidence/sprint-3/D1/pack/pack-check.json`. Not published; the scope and names are not reserved                                       | Owner (reserve, publish) | Yes            |
-| 7   | Short write-up                                     | Open    | The Sprint 3 write-up skeleton is drafted on the site (draft, unlinked); publishing waits for the tag and the publish                                                                      | Owner                    | No             |
+| #   | Definition-of-done item                            | Status  | Evidence                                                                                                                                                                                                                                                  | Owner                    | Blocks the tag |
+| --- | -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------- |
+| 1   | Tests first, README limitations section, CHANGELOG | Done    | Red then green logs per task in `evidence/sprint-3/D1/` (`red-D1-NN.log` before `green-D1-NN.log`); the README has a Limitations section; `CHANGELOG.md` has `[0.2.0-alpha.1]`; Sprint 4 logs in `evidence/sprint-4/D1/`                                  | D1                       | No             |
+| 2   | CI on Linux, macOS and Windows                     | Partial | tests-first evidence Done (red/green logs); local macOS green; CI on three OSes configured, pending the owner's push (`.github/workflows/ci.yml`, matrix of the three, `pack:check` in it)                                                                | Owner (push, read CI)    | Yes            |
+| 3   | 8 GB Windows no-GPU laptop benchmark in the README | Open    | The README Benchmarks tables read "not measured" in the 8 GB column; every figure is an Apple-silicon placeholder                                                                                                                                         | Owner (Sprint 5)         | Yes            |
+| 4   | Signed artifacts and manifest                      | Open    | No real key exists. `scripts/pack-check.mjs` produces the tarball; the signing steps are below                                                                                                                                                            | Owner (key custody)      | Yes            |
+| 5   | Semver tag                                         | Open    | `package.json` says `0.2.0-alpha.1`; no tag exists in any repo                                                                                                                                                                                            | Owner (after review)     | Yes            |
+| 6   | Installable from a clean machine, and published    | Open    | Proven from a locally built tarball on macOS arm64: `evidence/sprint-4/D1/pack/pack-check.json` (installs offline into a fresh directory; `verifyManifest` on tamper-01 prints `no_valid_signature`). Not published; the scope and names are not reserved | Owner (reserve, publish) | Yes            |
+| 7   | Short write-up                                     | Open    | The Sprint 3 write-up skeleton is drafted on the site (draft, unlinked); finishing it is cut to Sprint 5 (drop order TD-25); publishing waits for the tag and the publish                                                                                 | Owner                    | No             |
 
 ## What the owner must do
 
@@ -45,7 +48,7 @@ RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model
 
 Owner must: generate the real key offline, build an unsigned manifest for the tarball with the release-manifest
 procedure that pagetriage and glyphsift use (see `glyphsift/docs/release.md`, row 4, and
-`glyphsift/scripts/release-manifest.mjs`; a runtime copy of that script is a named Sprint 4 carry-over), then
+`glyphsift/scripts/release-manifest.mjs`; a runtime copy of that script is cut to Sprint 5), then
 sign and verify it. Never commit `key.secret`.
 
 ```sh
@@ -63,8 +66,8 @@ cargo run -p cp-sign -- verify --pub ./keys/key.pub <signed-manifest.json>
 Owner must: after rows 2, 3, 4 and 6 are done and the review is finished.
 
 ```sh
-git -C <workspace>/runtime tag -a v0.2.0-alpha.0 -m "runtime 0.2.0-alpha.0"
-git -C <workspace>/runtime push origin v0.2.0-alpha.0
+git -C <workspace>/runtime tag -a v0.2.0-alpha.1 -m "runtime 0.2.0-alpha.1"
+git -C <workspace>/runtime push origin v0.2.0-alpha.1
 ```
 
 ### Row 6: reserve the names, then publish
@@ -79,7 +82,7 @@ cd <workspace>/runtime && npm run pack:check -- --out ./dist-pack
 After the owner publishes (the registry step; nothing here has been run by the team):
 
 ```sh
-npm publish ./dist-pack/airplanemode-runtime-0.2.0-alpha.0.tgz --access public --tag alpha
+npm publish ./dist-pack/airplanemode-runtime-0.2.0-alpha.1.tgz --access public --tag alpha
 ```
 
 ### Row 7: the write-up

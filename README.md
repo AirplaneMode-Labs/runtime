@@ -10,15 +10,29 @@ reserved; nothing is published yet.
 
 ## Status
 
-**Runtime `0.2.0-alpha.0`: alpha, not tagged: no API stability promise before the beta (Sprint 5).**
+**Runtime `0.2.0-alpha.1`: alpha, not tagged: no API stability promise before the beta (Sprint 5).**
 Sprint 1 delivered the capability profile, the asset manager and the first contracts; Sprint 2 the
 backend adapters (Transformers.js on WebGPU and WebAssembly, the Chrome Prompt API), the descriptor and the
 fallback chain. Sprint 3 (alpha) adds spec release 0.3.0 (draft), cache-only enforced at `acquire()`, a
 distinct `integrity` failure reason, descriptor-carried ONNX Runtime session options, the engine in a
 dedicated worker (one per load, with an egress guard and strictly validated messages), model-load timing
 and memory events, an opt-in DevTools hook and a real Chrome DevTools panel (`devtools/`), Trusted Types
-on the demo's backend page, the stable onnxruntime-web 1.31.1 (S1-055), and the packaging below. WebLLM
-did not land (Limitations); nothing is published, tagged or reserved.
+on the demo's backend page, the stable onnxruntime-web 1.31.1 (S1-055), and the packaging below.
+
+Sprint 4 (alpha.1) publishes **manifest spec v0.1 published in runtime/spec (committed; public after the
+owner's push)**: spec release 0.4.0 with the standalone [`spec/MANIFEST.md`](spec/MANIFEST.md) (manifest
+0.1.1: published; other contracts: draft), thirty-two manifest negative vectors, 15 tamper vectors and three
+asset tamper vectors. The verifier now refuses a repeated JSON member, a non-canonical signature
+(S >= L), a version outside strict SemVer 2.0, a malformed signature member (`schema`) and all five RFC 8032
+test keys (by key id and by key bytes, and when a trust object hides them) unless `allowTestKeys === true`,
+and reports one defined reason when a document has several faults. The manifest contract was amended in place
+before the first push (team decisions TD-26 and TD-29); it stays manifest 0.1.1 on the same wire string. TD-29 (fix round 2) closes the last
+gaps before the contract is frozen: a member that no schema declares is `schema` under any name (`__proto__`, `constructor`,
+`toString`; BUG-T2-S4-11), `sig` and `publicKey` have exactly one accepted base64 spelling each (BUG-T2-S4-14) and the forbidden url
+characters are one explicit list (BUG-T2-S4-15). The demo's **Tamper lab** runs thirteen
+of those cases in the browser and shows the exact refusal reason; the backend page has a **Stop** button;
+no worker-supplied text reaches any event (S1-074). WebLLM: not yet (cut from Sprint 4); nothing is
+published, tagged or reserved.
 
 ## Install
 
@@ -32,12 +46,12 @@ installs it into a fresh empty directory and calls it:
 ```sh
 npm run pack:check                       # builds, packs, installs offline, calls verifyManifest()
 # or by hand, from this clone:
-npm pack                                 # airplanemode-runtime-0.2.0-alpha.0.tgz
+npm pack                                 # airplanemode-runtime-0.2.0-alpha.1.tgz
 mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
-npm i /path/to/airplanemode-runtime-0.2.0-alpha.0.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
+npm i /path/to/airplanemode-runtime-0.2.0-alpha.1.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
 ```
 
-Packed size 159,991 B in 31 files (evidence/sprint-3/D1/pack/pack-check.json); `node_modules` then holds exactly
+Packed size 189,623 B in 32 files on macOS arm64 (evidence/sprint-4/D1/pack/pack-check.json); `node_modules` then holds exactly
 `@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
 
 **After the owner publishes** (not possible today; the scope is not reserved):
@@ -231,10 +245,13 @@ Chrome's `performance.memory`, read and never estimated; a dash means the browse
 
 ## Contracts
 
-This package is the home of the contracts, released together as spec release 0.3.0 (draft): Manifest
-0.1.0, Capability profile 0.1.0, Event 0.1.2, Storage API 0.1.0, Backend adapter 0.3.0 and the Model
-descriptor 0.2.0 that belongs to it, all under [`spec/`](spec/README.md) and exported from
-`@airplanemode/runtime/spec`. Other repos vendor them and never edit their copies.
+This package is the home of the contracts, released together as spec release 0.4.0 (2026-11-14,
+untagged): Manifest 0.1.1 (**published**: "manifest spec v0.1", [`spec/MANIFEST.md`](spec/MANIFEST.md)),
+Capability profile 0.1.0, Event 0.1.3, Storage API 0.2.0, Backend adapter 0.3.1 and the Model descriptor
+0.2.1 that belongs to it (every contract except the manifest is a draft), all under
+[`spec/`](spec/README.md) and exported from `@airplanemode/runtime/spec`. Manifest spec v0.1 published in
+runtime/spec (committed; public after the owner's push). Other repos vendor the contracts and never edit
+their copies.
 
 ## Demo
 
@@ -242,12 +259,19 @@ Live demo: <https://airplanemode-labs.github.io/runtime/> (the backend page is
 <https://airplanemode-labs.github.io/runtime/models.html>). Built from `main` by
 `.github/workflows/pages.yml` on every push; each page shows only what works today and has a box titled
 "What this demo does not do yet". They run entirely in the browser: no upload, no analytics, no
-third-party scripts or fonts, and a strict meta CSP with no inline script or style. The Sprint 2 demo is live on Pages; the Sprint 3 demo appears after the owner's push.
+third-party scripts or fonts, and a strict meta CSP with no inline script or style. The live demo still shows Sprint 2 until the owner pushes: the Sprint 3 and Sprint 4 pages were proven on local builds, built as `pages.yml` builds them and served under `/runtime/`.
 
 - `index.html` (asset manager): the capability profile; verification of a manifest signed at build time
   (a key pair generated inside the workflow signs a manifest describing three synthetic 12, 8 and 6 MiB
   streams, and only the public half is embedded in the page as the trust root); the RFC 8032 test-signed
-  example refused and a tampered manifest refused; download with progress, a simulated network drop
+  example refused; the **Tamper lab** (thirteen cases from `spec/vectors/tamper` and `tamper-assets`: a
+  changed entry byte, size or signature, a swapped key, a public-key mismatch, an untrusted key, a
+  truncated file, a rollback, an expired manifest, a non-canonical signature, an asset byte flip, a
+  truncated asset and the valid manifest, each showing the exact refusal reason, the per-signature reasons
+  and the stage, with 0 requests after a manifest refusal; the lab uses its own in-memory trust set of two
+  RFC 8032 public test keys, its own downgrade state and fresh memory stores, never the page's trust roots
+  or its persistent storage; evidence/sprint-4/D1/demo/tamper-results.json, evidence/sprint-4/D1/demo/tamper-lab.png);
+  download with progress, a simulated network drop
   with resume, in-page SHA-256, eviction under a test quota; and a "paste your own manifest URL" field
   that fetches nothing unless the URL's origin is in the allowed origins list. The assets are synthetic
   byte streams, never a model.
@@ -259,7 +283,9 @@ third-party scripts or fonts, and a strict meta CSP with no inline script or sty
   The engine of every choice runs in a dedicated worker, so the page stays responsive while WebAssembly
   generates; an "Engine runs in a worker" line appears when a `backend.worker` ready event arrives.
   **Allow Chrome built-in model** is off by default. A prompt box shows the answer, the rung, the
-  execution providers, timings and bytes, and a **Load timing and memory** read-out shows the load's five
+  execution providers, timings and bytes, a **Stop** button (enabled only while the model answers; the
+  read-out says "Stopped" with the time to stop, 253 ms in the Chrome run of
+  evidence/sprint-4/D1/demo/stop-run.json), and a **Load timing and memory** read-out shows the load's five
   phase durations under one load id and the memory figures Chrome exposes (the same model and view as the
   DevTools panel; the page calls `exposeDevtoolsHook()`). The page text states the done-when and the model
   card: "Same prompt answered on WebGPU and on WebAssembly with the test model SmolLM2-135M-Instruct
@@ -353,7 +379,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 | Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured               |
 | Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured               |
 | A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured               |
-| Packed tarball `airplanemode-runtime-0.2.0-alpha.0.tgz` (pack-check.json)                                                           | 159,991 B in 31 files (567,785 B unpacked), installed offline into a fresh empty directory                                                                   | not measured               |
+| Packed tarball `airplanemode-runtime-0.2.0-alpha.1.tgz` (pack-check.json)                                                           | 189,623 B in 32 files (672,557 B unpacked), installed offline into a fresh empty directory                                                                   | not measured               |
 | `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured               |
 
 ## Limitations
@@ -367,8 +393,10 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
   Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
   The q8 WebAssembly path of that model was not run. See [`docs/model-choice.md`](docs/model-choice.md).
   The q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; since model descriptor 0.2.0 the q4f16 descriptor carries sessionOptions { graphOptimizationLevel: 'disabled' }, so createDefaultAdapters() loads it without the application passing sessionOptions. The sessionOptions allow-list stays at that one key.
-- **WebLLM: not yet.** The descriptor and the spec describe it (`engine: 'webllm'`, `modelLib`, the staging
-  rules R11), but there is no `@mlc-ai/web-llm` dependency and no adapter; it is carried to Sprint 4.
+- **WebLLM: not yet (cut from Sprint 4).** The descriptor and the spec describe it (`engine: 'webllm'`,
+  `modelLib`, the staging rules R11), but there is no `@mlc-ai/web-llm` dependency and no adapter. It
+  slipped twice and was cut rather than half-landed (team decision TD-08); it is revisited after the
+  Sprint 5 measurement on an 8 GB laptop, Sprint 6 at the earliest.
 - Main-thread adapter only: if the WebGPU engine fails after it has started creating a session (for example out of memory), WebAssembly cannot start in the same page until it is reloaded; the worker host (a workerUrl) starts a fresh engine per rung and has no such limit.
 - Main-thread adapter only: on WebAssembly, generation runs on the main thread: the tab does not repaint or run timers until generation ends, and an AbortSignal fired from a timer or a button is honoured only between engine steps that yield; abort from onToken works. The worker host (a workerUrl) keeps the page responsive and lands an abort within about 250 ms by terminating the worker.
 - A rung whose plan counts 0 bytes loads cache-only, and `acquire({ cacheOnly: true })` refuses to fetch (a
@@ -444,12 +472,17 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 
 - **Memory figures** are Chrome's non-standard performance.memory: coarse, quantised, Chrome-only and absent in workers, so worker figures may all be null. They are read, never estimated; there is no GPU-memory figure.
 - **The DevTools panel** installs by Load unpacked from a clone only and is not on the Chrome Web Store; Chrome shows a warning for unpacked extensions and refuses internal pages.
-- **WebLLM is WebGPU only and doubles storage while staged** (the spec's R11): not yet implemented here.
-- **Re-hash on the main thread**: the main thread re-hashes during load. Every verified file is read once and SHA-256 hashed there (the verify phase), so a large model takes seconds, and moving the re-hash into a worker is a Sprint 4 follow-up.
-- **Worker egress relies on the guard plus the inherited CSP, and Pages sends no headers.** Inside the worker `fetch`, XHR, WebSocket, EventSource, WebTransport, `new Worker` and `Cache.add` are refused by the guard, but dynamic `import()` and FontFace loads cannot be intercepted in JavaScript: the Content Security Policy the blob worker inherits stops them (measured in Chrome 157: `script-src-elem` and `font-src` violations, no request left the browser). A page without that policy has no such stop, and a host that cannot send headers (Pages) can only use a `<meta>` policy. The worker host re-hashes nothing itself: the page re-hashes, then hands over the same Blobs, so an OPFS snapshot can still change between the re-hash and the engine's read (a Sprint 4 follow-up).
-- **The worker host has no embeddings yet**: `embed()` rejects `unsupported_operation`; use the main-thread adapter for feature extraction.
-- **An abort terminates the worker**, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded); there is no Stop button in the demo yet.
+- **WebLLM is WebGPU only and doubles storage while staged** (the spec's R11): not yet (cut from Sprint 4), so not implemented here.
+- **Re-hash on the main thread**: the main thread re-hashes during load. Every verified file is read once and SHA-256 hashed there (the verify phase), so a large model takes seconds, and moving the re-hash into a worker is a Sprint 5 follow-up (S1-070).
+- **Worker egress relies on the guard plus the inherited CSP, and Pages sends no headers.** Inside the worker `fetch`, XHR, WebSocket, EventSource, WebTransport, `new Worker` and `Cache.add` are refused by the guard, but dynamic `import()` and FontFace loads cannot be intercepted in JavaScript: the Content Security Policy the blob worker inherits stops them (measured in Chrome 157: `script-src-elem` and `font-src` violations, no request left the browser). A page without that policy has no such stop, and a host that cannot send headers (Pages) can only use a `<meta>` policy. The worker host re-hashes nothing itself: the page re-hashes, then hands over the same Blobs, so an OPFS snapshot can still change between the re-hash and the engine's read (a Sprint 5 follow-up, S1-070).
+- **The worker host has no embeddings yet** (embeddings through the worker host are a Sprint 5 item): `embed()` rejects `unsupported_operation`; use the main-thread adapter for feature extraction.
+- **An abort terminates the worker** when the engine does not answer within 250 ms, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded). The demo's Stop button uses that abort: after a Stop the page says the engine was stopped and asks you to click "Download test model and load" again (the files are already stored).
 - **Per-rung isolation is per adapter instance**: each load() starts a new worker, but two loads on one adapter are serialised, and an abort that the engine does not answer within 250 ms terminates the worker, so the model must be loaded again.
+- **Not measured on 8 GB.** Every timing, memory and size figure in this README is from one Apple-silicon Mac; nothing was measured on an 8 GB Windows laptop (the Benchmarks columns read "not measured").
+- **No key revocation, no transparency log, one signature is enough** (MANIFEST.md, Security considerations). A signed manifest stays valid until its `expiresAt`, and a manifest without one can be replayed on a fresh profile, so publishers should set `expiresAt`.
+- **Consumers must pin the expected manifest id.** A validly signed manifest for another product verifies like any other; an `expectId` verify option with its own reason is a Sprint 5 item, until then the application compares `manifest.id` itself.
+- **The downgrade state is per profile.** It is first-use: a fresh browser profile, or cleared site data, accepts any validly signed older version.
+- **A repeated JSON member is refused only when the manifest arrives as text.** `verifyManifest(text)` and `parseManifest(text)` scan for repeated member names; an already-parsed object cannot be checked, because `JSON.parse` keeps the last member silently.
 - **Apple silicon only**: every figure here is from one Apple-silicon Mac with Chrome 157; Windows and the 8 GB no-GPU laptop are not measured.
 - **Alpha packaging**: the tarball is proven offline into a fresh directory on macOS arm64 only; Linux and Windows runs of `npm run pack:check` are configured in CI and wait for the owner's push.
 
@@ -464,8 +497,10 @@ This library makes no network requests other than the asset and manifest URLs yo
 - `navigator.storage.persist()` is requested once, best effort. Without persistent storage Chrome
   may evict the whole origin under disk pressure, so a 700 MB cache can vanish; `reconcile()`
   survives it by rebuilding an empty index.
-- Trust roots are application configuration and are never fetched with the manifest. The RFC 8032
-  test key is refused unless `allowTestKeys` is set.
+- Trust roots are application configuration and are never fetched with the manifest. A trust set that
+  holds any of the five RFC 8032 section 7.1 test keys (by key id, or by the raw key bytes under any key
+  id) is refused with `test_key_refused`, before the manifest is parsed, unless `allowTestKeys === true`
+  (a strict boolean; the library default is false). `AssetManager` refuses it before it fetches anything.
 - Capability details are allow-listed (vendor, architecture, numeric limits); `navigator.userAgent`
   and `userAgentData` are never read.
 - Events never carry URLs with query strings, document text, prompts or user identifiers;
@@ -474,7 +509,9 @@ This library makes no network requests other than the asset and manifest URLs yo
   signed manifest entry, read through `getBlob(id, { rehash: true })` after `acquire()` (backend adapter
   rules R1 to R3 in [`spec/backend-adapter.md`](spec/backend-adapter.md)). The engine's network function
   is replaced by a shim that serves only those Blobs and refuses everything else with
-  `egress_refused` and a `backend.egress.refused` event carrying the origin only; the engine's remote
+  `egress_refused` and a `backend.egress.refused` event carrying the host's own adapter id, a reporter
+  (`main`, or `worker` with the fixed origin `worker-reported` and a count of at most 16 per load) and the
+  page-computed origin only, never a worker-supplied string (S1-074); the engine's remote
   host, every cache and the CDN `wasmPaths` default are overridden right after `import()` and re-checked
   before every `pipeline()` and `generate()`. The ONNX Runtime wasm is pinned by SHA-256
   (`src/backends/ort-pins.ts`, re-hashed by a test).
@@ -511,6 +548,9 @@ npm run devtools:build                                          # devtools/dist,
 npm run pack:check                                              # pack, check, install offline into a fresh directory, call
 npm run test:install                                            # the packed tarball imported by a bundler-free page
 npm run spec:vectors   # regenerate spec/vectors from test/tools/make-vectors.mjs
+node test/tools/make-tamper-vectors.mjs --check               # the tamper and tamper-assets vectors (add no flag to regenerate)
+npm run test:demo -- tamper.spec.ts                           # the Tamper lab in Chrome (no model needed)
+RUNTIME_MODEL=1 npm run test:demo -- stop.spec.ts             # the Stop button in Chrome, with the test model
 npm run spec:sign-example
 npm run deps:scripts   # which packages carry install scripts (none are run)
 node test/tools/gen-ort-pins.mjs --check   # src/backends/ort-pins.ts against node_modules/onnxruntime-web
@@ -530,7 +570,7 @@ Google Chrome preinstalled on ubuntu-latest (Playwright channel "chrome"; the jo
 package repository). This first ran on GitHub on 9 Nov 2026. A separate, non-required job
 `model-wasm (ubuntu-latest)` fetches the test model (cached, every file re-hashed) and runs the
 WebAssembly leg of `test:model` behind the aborting network gate; it first ran on GitHub on 9 Nov
-2026, green. A Hugging Face outage never turns `check (<os>)` red. New npm dependencies must have been
+2026, green. A Hugging Face outage never turns `check (<os>)` red. For the Sprint 4 work: tests-first evidence Done (red/green logs); local macOS green; CI on three OSes configured, pending the owner's push. New npm dependencies must have been
 published at least 14 days before they are installed (younger transitives are pinned through
 `overrides`), come from registry.npmjs.org with sha512 integrity, and pass `npm audit signatures`.
 

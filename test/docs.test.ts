@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { maxTokensFor } from '../demo/limits';
@@ -21,6 +21,24 @@ describe('documentation hygiene', () => {
       expect(read(rel)).not.toContain('/private/tmp');
     });
   }
+
+  it('no source, test or demo file cites a scratch path: they cite evidence/sprint-N/ paths (T3-S3-035)', () => {
+    const skip = new Set(['docs.test.ts', 'package-meta.test.ts']); // these two assert the absence itself
+    const walk = (dir: string): string[] =>
+      readdirSync(resolve(repoDir, dir), { withFileTypes: true }).flatMap((d) =>
+        d.name === 'node_modules' || d.name === 'dist' || d.name === 'public'
+          ? []
+          : d.isDirectory()
+            ? walk(`${dir}/${d.name}`)
+            : /\.(ts|mjs|html|css)$/.test(d.name) && !skip.has(d.name)
+              ? [`${dir}/${d.name}`]
+              : [],
+      );
+    const offenders = ['src', 'test', 'demo']
+      .flatMap(walk)
+      .filter((f) => readFileSync(resolve(repoDir, f), 'utf8').includes('/private/tmp'));
+    expect(offenders).toEqual([]);
+  });
 
   it('README.md: every evidence/sprint-N/... path it cites exists in the workspace', () => {
     const hasWorkspace = existsSync(resolve(workspace, 'evidence'));
