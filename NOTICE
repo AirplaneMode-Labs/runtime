@@ -12,3 +12,17 @@ a build made with DEMO_MODELS=1 also contains the Apache-2.0 test model SmolLM2-
 notices and licence texts are in demo/THIRD-PARTY-NOTICES.txt (shipped as THIRD-PARTY-NOTICES.txt in
 the built demo) and, for the model and the ONNX Runtime binary, in models/LICENSE-*.txt with
 models/PROVENANCE.json.
+
+Demo models (Sprint 5, scripts/bundle-models.mjs; the dockit demo and the runtime demo bundle them, signed
+per build; the weights are never committed):
+
+- Qwen3-0.6B, q8 ONNX export (Apache-2.0). Source: onnx-community/Qwen3-0.6B-ONNX at revision
+  79346d370dfae34801d26993fda9ae2372900fd0, a quantised export of Qwen/Qwen3-0.6B (Apache-2.0, base card
+  revision c1899de289a04d12100db370d81485cdf75e47ca). The licence text ships as LICENSE-Qwen3-0.6B.txt in the
+  bundle.
+- multilingual-e5-small, q8 ONNX export (MIT). Source: Xenova/multilingual-e5-small at revision
+  761b726dd34fb83930e26aab4e9ac3899aa1fa78, a quantised export of intfloat/multilingual-e5-small (MIT, base
+  card revision 614241f622f53c4eeff9890bdc4f31cfecc418b3). The source repository publishes no copyright line
+  and none is invented here. The licence text ships as LICENSE-multilingual-e5-small.txt in the bundle.
+- SmolLM2-135M-Instruct, q4 (Apache-2.0), the runtime demo's test model, as before.
+- onnxruntime-web 1.31.1 (MIT, Copyright (c) Microsoft Corporation): the WebAssembly binary and its factory.

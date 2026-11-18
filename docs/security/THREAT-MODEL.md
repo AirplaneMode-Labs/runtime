@@ -1,4 +1,4 @@
-# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface (updated through Sprint 4)
+# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface (updated through Sprint 5)
 
 Version 0.3 (Sprint 1, 9 to 22 November 2026, updated after fix round 1 on 9 November; Sprint 2 update of 9 November 2026 in section 7). Written by the security consultant (lane S1).
 Scope: `@airplanemode/runtime` (manifest verification, asset manager, capability profile, events),
@@ -543,3 +543,115 @@ pilots), and retrieval poisoning and prompt injection, which become reachable wh
 retrieved chunks in Sprint 5. Nothing has been measured on the 8 GB laptop, so memory-pressure behaviour (WASM
 growth failure, tab discard), Windows Defender scanning of OPFS files and Windows eviction remain unknowns for
 the owner's runbook.
+
+## 10. Sprint 5 update: the dockit pipeline (PDF to answer, offline)
+
+Sprint 5 makes dockit answer a question over a PDF: read, triage (pagetriage WASM), extract (pdf.js), gate
+(glyphsift WASM), chunk, embed (multilingual-e5-small q8), index (localdata documents API), retrieve (top 4),
+generate (Qwen3-0.6B q8, single-threaded WebAssembly). Findings: `FINDINGS.md`, "Sprint 5 review". Everything here
+was reviewed on the Apple M5 Pro; nothing on 8 GB or Windows.
+
+### 10.1 Assets and trust boundaries
+
+| Asset                                   | Where it lives                                                                                          | Who can read or change it                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| The PDF the user chooses                | A `Blob` in the page; copied once into the pdf worker; never stored, never in Cache Storage             | The page and its workers (same origin)                                                                           |
+| Extracted text, chunks, embeddings      | Memory store by default; with "Keep on this device", OPFS namespace `dockit.d<docId>` under `__ld_doc.` | The page; with the opt-in, anyone with the browser profile or OS account, and any same-origin script (six demos) |
+| Source SHA-256 and docId (first 32 hex) | Same as chunks (kept documents only)                                                                    | Same; the hash confirms whether a known document was processed (S1-112 c)                                        |
+| The question and the answer             | Page memory and the DOM only; never stored, never in an event                                           | The page                                                                                                         |
+| Model files                             | Origin-wide OPFS store `airplanemode-runtime`, content-addressed, re-hashed in the worker on every load | Any same-origin page can evict (S1-108); no page can make the worker accept other bytes (R15)                    |
+| Verified manifest bytes                 | IndexedDB `dockit`/`manifest`, re-verified on every load                                                | Same-origin writer can corrupt it (fails closed `manifest_refused`), cannot forge it                             |
+| Trust root                              | Compiled into the build (`src/generated/trust-root.ts`, git-ignored), one key per build                 | Build only; never fetched, never stored                                                                          |
+| Precache                                | Cache Storage `dockit-precache-<build hash>`, hashed on fill, scope `/dockit/`                          | Same-origin writer can replace an entry (S1-109)                                                                 |
+
+New boundaries: (B1) PDF bytes into pdf.js and pagetriage (parser attack surface); (B2) document text into the
+model prompt (prompt injection); (B3) model text into the DOM (output handling); (B4) the pdf and analysis workers
+back to the page (untrusted responses; the analysis client validates and restarts on error or timeout).
+
+### 10.2 STRIDE: dockit pipeline
+
+| Threat      | Scenario                                                                                                                            | Control / status                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tampering   | A hostile PDF exploits pdf.js (font program, JBIG2, XFA, scripting)                                                                 | pdfjs-dist 6.5.438 (past CVE-2024-4367); text extraction only (`getPage`, `getTextContent`); no rendering, no fonts, no XFA, no eval (`unsafe-eval` absent from the CSP the worker inherits); a fresh worker per document, terminated afterwards; the worker's egress guard allows only `<base>pdfjs/`. Re-pin rule: row 32.                                                                                                                                                |
+| Denial      | A decompression bomb exhausts memory                                                                                                | Content-stream bombs: pagetriage caps a stream at 64 MiB and the page is refused before pdf.js. Font-program or XObject bombs: NOT bounded (S1-107, Low): pdf.js inflates them whole in under a second, so the 60 s timeout does not help. Impact is the user's own tab.                                                                                                                                                                                                    |
+| Denial      | Encrypted, corrupt, oversize or very long PDFs                                                                                      | 20 MiB from `File.size` before any read; 300 pages; `onPassword` refused and never answered; per-page and per-document text caps; analysis and pdf workers terminated on error or after 60 s.                                                                                                                                                                                                                                                                               |
+| Tampering   | Prompt injection in a chunk forges a turn (`<\|im_end\|>`, `<\|im_start\|>system`), closes the source wrapper, or forges a citation | S-PI-1 sanitiser with the loaded tokenizer's added tokens, the generic `<\|...\|>` pattern, `<source` openers, `[S#]`, tag and bidi characters, to a fixed point; sources wrapped with dockit-issued ids and pages; system rule that sources are untrusted data; the question sanitised too. Residual: the model may still follow instructions in text (it is a 0.6B model); the answer is one text node and the sources panel shows the chunk text, so a reader can check. |
+| Info. disc. | Injected text makes the answer exfiltrate (a link, an image URL, markup, a form)                                                    | No sink can act on the answer: one text node, no markdown, no auto-link, no `href`/`src` from model or PDF text (grep test); `img-src 'self'`, `connect-src 'self'`, `form-action 'none'`, `frame-src 'none'`; zero egress after the cache phase is the backstop (CDP counter over every target; e2e `injection.pdf` test).                                                                                                                                                 |
+| Spoofing    | A forged citation points the reader at the wrong page                                                                               | Only `[S<n>]` for a retrieved id maps to a page, taken from the chunk's metadata; unknown ids are dropped and counted; the sources panel shows the chunk text itself.                                                                                                                                                                                                                                                                                                       |
+| Tampering   | Retrieval poisoning: a chunk crafted to rank first for many questions                                                               | Not prevented (flat brute-force index); one document per question limits it to the document the user chose. A held chunk (glyph gate) is never indexed.                                                                                                                                                                                                                                                                                                                     |
+| Elevation   | A tool call or function from model output                                                                                           | No tools argument is ever passed; nothing parses the answer.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Tampering   | Model file swapped in OPFS after download                                                                                           | R15: worker re-hashes every engine-readable file (8 kinds) against the signed manifest entry before the engine gets a byte; the engine reads exactly the hashed snapshot (method ii); `integrity` on any mismatch, never retried (S1-070 closed).                                                                                                                                                                                                                           |
+| Spoofing    | Another product's or demo's signed manifest, or an entry URL into a sibling project on the shared origin                            | `expectManifestId` (`unexpected_id`); distinct ids per bundle; resolved entry URLs must stay under `<base>models/` (S1-097); `allowedOrigins` is the page origin; no remote fallback.                                                                                                                                                                                                                                                                                       |
+| Repudiation | Events reveal document content                                                                                                      | Events carry counts, timings and enums only; `dockit.d<docId>` is emitted as `dockit.d*`; forbidden attr keys are a TypeError; e2e scans every event for the fixture strings.                                                                                                                                                                                                                                                                                               |
+| Info. disc. | Someone with the browser profile reads kept documents                                                                               | Memory by default; opt-in only, with the warning; Delete runs `clear(ns)` (physical removal). Stored unencrypted: disk encryption and OS login are the controls (rows 11, 28).                                                                                                                                                                                                                                                                                              |
+| Tampering   | A same-origin co-tenant poisons the service worker cache or evicts dockit's model                                                   | Accepted for the demo under S1-006 (all co-tenants are this lab's strict-CSP pages): S1-109 (persistent code swap until the next build), S1-108 (availability only). Pilot: own origin (rows 5, 33).                                                                                                                                                                                                                                                                        |
+| Spoofing    | dockit framed by another site (clickjacking)                                                                                        | `window.top !== window.self` refuses document and model actions and shows a link; `frame-ancestors` needs a response header (row 4).                                                                                                                                                                                                                                                                                                                                        |
+
+### 10.3 Supply chain for the demo bundle
+
+The bundle is signed at build time by an Ed25519 key that exists only in memory during `bundle-models.mjs`; the
+public half is compiled into the page. This proves that the manifest and the files came from the same build, not
+who built them; it is not pre-pilot row 1. Models: Qwen3-0.6B q8 from `onnx-community/Qwen3-0.6B-ONNX` at
+`79346d370dfae34801d26993fda9ae2372900fd0` (Apache-2.0 from the base `Qwen/Qwen3-0.6B` card; the ONNX repository
+carries no licence metadata) and multilingual-e5-small q8 from `Xenova/multilingual-e5-small` at
+`761b726dd34fb83930e26aab4e9ac3899aa1fa78` (MIT from the `intfloat/multilingual-e5-small` card). Every file's
+sha256 equals the HF LFS oid (or its git blob id matches) in the committed tree fixture. dockit's `pages.yml`
+builds the four siblings from the SHAs in `deps.lock.json`, with per-job permissions and no secrets; the first
+real deploy is the only check of the Pages size and timeout limits (row 19).
+
+### 10.4 Residual risk after Sprint 5
+
+No Critical, High or Medium finding is open. The pipeline's design keeps a hostile document inside the tab: the
+model's output has no sink but a text node and the network is closed after the cache phase, so the realistic
+harms are a wrong answer that the source panel lets the reader catch, and a memory-exhaustion crash from a hostile
+PDF (S1-107). The demo inherits the shared-origin limits of GitHub Pages (S1-108, S1-109, missing response
+headers), which a pilot removes with its own origin. Unmeasured: memory on the 8 GB laptop (about 7 GB summed RSS
+during a question on the Apple M5 Pro, row 20), Chrome's behaviour when a worker exhausts memory, and every Windows
+path (`--out` containment, the PowerShell sampler) until the owner's push and runbook.
+
+### 10.5 After Sprint 5 fix round 1
+
+- Spoofing of the model bundle, trust-set side (S1-113, Low): the TypeScript `verifyManifest` passes any 32-byte
+  trust key to WebCrypto, and both Chrome (BoringSSL) and Node (OpenSSL) accept `S = 0` forgeries under a
+  small-order key, so a trust set that ever held one would accept a manifest nobody signed; cp-manifest
+  (`verify_strict`) refuses. No shipped or deployable build carries such a key (the dockit stub trust root is
+  all zeros but lives only in stub builds, where every runtime call throws). Mitigation planned: manifest 0.1.3
+  makes the refusal normative and adds a weak-key vector set to the parity table (pre-pilot row 1).
+- Denial of service through a hostile PDF (S1-107, Low): a content-stream bomb is now refused as `too_large`
+  before extraction; a compressed font program is still inflated by pdf.js (observed 8,275 MiB peak summed RSS on
+  the Apple M5 Pro, page usable; not measured on 8 GB).
+- Tampering across co-tenant demos (S1-108): explicit eviction now refuses dockit's pinned rows unless forced;
+  a user who unpins and evicts on the runtime demo still removes them, and dockit fails closed offline.
+- Information disclosure at rest (S1-112 c, BUG-S1-S5-01): the README and the Keep warning now say what a kept
+  document stores (chunk text, embeddings, page numbers, the file's SHA-256), and a Chrome test proves Delete
+  leaves no `__ld_doc.dockit.d<docId>` files after a reload and that the memory-only default leaves nothing.
+
+### 10.6 Sprint 5 close-out (after fix round 2 and the tester round 3 results)
+
+The model above holds as built; no STRIDE row changed its verdict. What the close-out adds:
+
+- Re-load after Stop (spoofing and tampering of the model bundle): Stop ends the engine worker, and the next
+  question re-loads from the device. That path re-verifies the stored manifest (S-OFF-1), re-hashes every
+  engine-readable file in the worker (R15) and pins `expectManifestId`; a flipped stored-manifest digit gives
+  `manifest_refused` and a flipped cached byte gives `integrity`, each with 0 model bytes used and 0 requests (T1
+  round 3). The re-load is not a second, weaker trust path.
+- Repudiation and audit (S1-119, Info): a Stop after the first token leaves no `model.generate` event and dockit
+  logs the partial answer as `ok`. The device-local event record is therefore not yet an audit record (row 6).
+- Elevation through build tools on Windows (S1-116, Info): the symlink-escape refusals of `bundle-models` and
+  `fetch-model` are proven on macOS; on Windows their tests skip rather than fail if no link can be made. Inputs to
+  both tools are the owner's own, so this is a proof gap, not an attack path.
+- Supply chain (S1-117, S1-118, Info): one unhashed, unpinned test-only install in a read-only pagetriage CI job,
+  and two glyphsift release-evidence gaps that let a claim rest on a run that did not test what it names. Neither
+  affects a shipped artefact today, because nothing is published; both gate a publish.
+- Information disclosure through events (S1-120, Info): the privacy test that proves stored values never reach an
+  event can flake on a random UUID; no leak was found (420 events scanned in Chrome, 0 fixture strings).
+- Denial of service (S1-107, Low): final figure 8,121 MiB peak summed RSS for a 1 GiB font bomb on the Apple M5 Pro,
+  page usable. On the 8 GB laptop the realistic outcome is a tab or worker crash, not a data loss; it stays a pilot
+  gate (row 32).
+- Memory headroom (not a finding): the Chrome process tree peaks at about 6.5 to 6.9 GB per question with
+  Qwen3-0.6B on the Apple M5 Pro. On an 8 GB laptop memory pressure is the most likely failure, and a tab discard
+  mid-answer must fail closed (no partial answer shown as complete, see S1-119). Not measured on 8 GB.
+
+Unproven on this Mac and proven only after the owner's push: the Windows `--out` containment in pagetriage and
+glyphsift with real links and junctions, the runtime Windows path test and Linux zero-network gate, the dockit
+Pages deploy limits, and the live demos' CSP as served.

@@ -3,11 +3,82 @@
 All notable changes to `@airplanemode/runtime` are recorded here. The format is based on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/). Nothing is released yet; the package version is
-`0.2.0-alpha.1` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+`0.3.0-beta.0` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
 
 ## [Unreleased]
 
-Nothing yet.
+Runtime `0.3.0-beta.0` on spec release 0.5.0 (Sprint 5): the first beta. Nothing is tagged or published
+(no tag, no publish). It is not tag-ready (TD-30): the three-OS CI read, the 8 GB benchmark and a real
+signing key are open. Not measured on 8 GB.
+
+### Added
+
+- Worker host `embed()` resolves with fresh, plain, non-shared `Float32Array` copies, finite-checked again after
+  the copy (BUG-T2-S5-06), so a shared, offset or subclass view held by the worker cannot change afterwards.
+- Spec release 0.5.0: manifest 0.1.2 (the verifier option `expectId` and the reason `unexpected_id`; the
+  asset manager option `expectManifestId`; S1-097 and S1-102 as normative sentences; the Demo bundles rules),
+  event 0.1.4 (`model.embed`, `model.memory`, `storage.doc.*`, `DOCKIT_EVENT_NAMES`, `PIPELINE_STAGES`,
+  `PIPELINE_REASONS`), storage API 0.3.0 (the documents API), backend adapter 0.4.0 (embed, R4b, R14, R15).
+  The vectors `expect-id/`, `state-ids/` and `tamper/tamper-base.json`; every 0.4.0 vector is byte-identical.
+- Embeddings through the worker host (R14): `embed(texts, opts)` with the EMBED limits, host-side validation
+  of the worker's answer, `model.embed`, abort that leaves the worker usable.
+- In-worker integrity (R15, S1-070): the worker hashes every file the engine can read before the engine sees a
+  byte; the `verify` phase event comes from the worker; the page no longer calls `getBlob(id, { rehash: true })`
+  on the worker load path.
+- A token budget (R4b): `budget`, `context_overflow` before decode, finishReason `length` at the budget, Stop
+  after the first token keeps the partial text, an abort before it rejects `aborted`.
+- `model.memory`: the peak WebAssembly.Memory the worker could read, per phase (load, generate, embed), or
+  `unavailable`; never estimated.
+- `@airplanemode/runtime/worker-support`: `installEgressGuard({ allowPathPrefixes })` and
+  `startModuleWorker(url, { policyName })`.
+- `scripts/bundle-models.mjs` (bundle-models): the demo model bundles (`dockit` and `runtime-demo`), a manifest
+  per set with a distinct id, no `expiresAt`, every engine-readable file an entry, signed by a key that lives
+  only in memory; pins for Qwen3-0.6B q8 and multilingual-e5-small q8 checked against the Hugging Face LFS oids.
+- DevTools panel: Storage (source localdata) and Pipeline (source dockit) sections.
+- The demo: an Embed card, a 14th Tamper lab case (a manifest for another product), the budget and finish
+  reason, a Sprint 5 status line.
+- Local model run (`RUNTIME_MODEL_QWEN06=1 npm run test:model`): Qwen3-0.6B answers one prompt and
+  multilingual-e5-small embeds, with load time, first token, wasm memory and the Chrome process-tree RSS peak
+  (Apple M5 Pro 48 GB; not measured on 8 GB).
+
+### Changed
+
+- `AssetManager.evict(entryId)` now refuses a pinned row (`AssetError 'store'`, "asset is pinned"; S1-108,
+  TD-54) unless called with `{ force: true }`; `evictToFit` and quota eviction already skipped pinned rows.
+  The runtime demo shows the refusal as text. Tests on the memory, IndexedDB-fake and OPFS-fake stores.
+  The spec sentence follows in the next spec patch (no re-land this round).
+- The demo's build label follows the convention: 'Built from main at <sha12>' in CI, 'Local build <sha12>[-dirty]'
+  from git HEAD otherwise, and 'Local build local (no .git checkout)' when there is no .git.
+- README: the Benchmarks 8 GB column reads "not measured on 8 GB" in every cell; the CI status line names the
+  pushed head 3bf53c6 and the red run 43667709960.
+- Version `0.3.0-beta.0`. README: the Sprint 5 status line, What beta means, the Limitations (not measured on
+  8 GB; re-hashing by host).
+- The demo's `index.html` policy is `connect-src 'self'` and its paste-a-manifest field accepts the page's own
+  origin only (TD-47; S1-039 re-opened and closed).
+- `fetch-model.mjs` follows redirects itself, only to https and at most five hops.
+- `ci.yml` and `pages.yml` install with `npm ci --ignore-scripts`.
+- Abort before the first token now rejects `aborted` (it resolved an empty `abort` before); the tested
+  behaviour is in `test/budget.test.ts`.
+
+### Fixed
+
+- `devtools-hook.test.ts` compared `src\devtools-hook.ts` with `src/devtools-hook.ts` on windows-latest (run
+  43667709960): the test now uses POSIX-form paths (`test/helpers.ts` `toPosix`, `relPosix`) and has a test that
+  feeds backslash paths so the fault reproduces on macOS.
+- `test/browser/model.spec.ts` expected the Event 0.1.2 attrs of `backend.egress.refused` and failed on
+  ubuntu-latest (run 43667709960); it was a stale assertion, not an egress defect. The expectation is shared
+  with a Node unit test, and a second probe runs inside the engine worker. The failure had skipped five
+  serial tests, so the zero-network gate for them had never run on CI.
+- S1-102: a validly signed manifest whose id is `constructor` never verified, because the downgrade state was
+  looked up on a plain object; every store now returns null-prototype index objects and the lookup is an own-member lookup.
+
+### Security
+
+- S1-097 (the resolve-and-recheck rule for entry urls) and S1-102 are normative in `spec/MANIFEST.md`.
+- S1-070: file hashing moved into the worker, and the bytes served are the bytes hashed.
+- The signing key of the demo bundles is generated in memory and never exported: no file, no log line, no
+  private-key PEM header and no PKCS#8 prefix (a test greps the bundle, stdout and stderr).
+- The worker-support guard refuses everything outside the allowed same-origin path prefixes.
 
 ## [0.2.0-alpha.1] - 2026-11-14 (untagged)
 
