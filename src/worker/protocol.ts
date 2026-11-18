@@ -14,7 +14,11 @@
  * after the egress guard.
  */
 
-import type { AdapterErrorCode, ChatMessage } from '../../spec/backend-adapter';
+import {
+  EMBED_MAX_TEXTS,
+  type AdapterErrorCode,
+  type ChatMessage,
+} from '../../spec/backend-adapter';
 import {
   MEMORY_SAMPLE_POINTS,
   MODEL_LOAD_PHASES,
@@ -37,7 +41,10 @@ export interface InitFile {
   entryId: string;
   sha256: string;
   size: number;
-  /** The very Blob the page obtained from getBlob(id, { rehash: true }) (R2w). */
+  /**
+   * The Blob the page got from the asset manager (R2w). Since backend adapter 0.4.0 the page does NOT
+   * re-hash it: the worker hashes it against `sha256` and `size` before the engine sees a byte (R15).
+   */
   blob: Blob;
 }
 
@@ -66,6 +73,13 @@ export interface GenerateMessage {
   prompt: string | ChatMessage[];
   opts: { maxTokens?: number; temperature?: number; topP?: number; stop?: string[]; seed?: number };
 }
+export interface EmbedMessage {
+  v: 1;
+  type: 'embed';
+  id: number;
+  texts: string[];
+  opts: { pooling?: 'mean' | 'cls'; normalize?: boolean };
+}
 export interface AbortMessage {
   v: 1;
   type: 'abort';
@@ -80,9 +94,14 @@ export interface UnloadMessage {
 
 export type MemoryApi = 'performance.memory' | 'measureUserAgentSpecificMemory' | 'none';
 
+export type PeakPhase = 'load' | 'generate' | 'embed';
+export const PEAK_PHASES: readonly PeakPhase[] = ['load', 'generate', 'embed'];
+
 export interface WorkerGenerateResult {
   text: string;
   finishReason: 'stop' | 'length' | 'abort' | 'error';
+  /** The token budget this call ran with (R4b). */
+  budget?: number;
   usage: { promptTokens?: number; completionTokens?: number };
   timings: {
     prefillMs?: number;
@@ -107,6 +126,18 @@ export type WorkerMessage =
   | { type: 'ready' }
   | { type: 'token'; id: number; text: string }
   | { type: 'done'; id: number; result: WorkerGenerateResult }
+  /** Embeddings (R14). The vectors are NOT validated here: the host checks them against the request. */
+  | {
+      type: 'embedded';
+      id: number;
+      dims: number;
+      vectors: unknown[];
+      normalized: boolean;
+      truncated: number;
+      totalMs: number;
+    }
+  /** The peak WebAssembly.Memory byteLength the worker read during a phase; bytes only when it could read one. */
+  | { type: 'peak'; phase: PeakPhase; measure: 'wasm-memory' | 'unavailable'; bytes?: number }
   | { type: 'error'; code: AdapterErrorCode }
   /** The worker's origin text is validated for shape and discarded (S1-074): the host never forwards it. */
   | { type: 'egress' };
@@ -124,6 +155,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set<AdapterErrorCode>([
   'egress_refused',
   'integrity',
   'not_cached',
+  'context_overflow',
 ]);
 const FINISH: ReadonlySet<string> = new Set(['stop', 'length', 'abort', 'error']);
 const APIS: ReadonlySet<string> = new Set([
@@ -243,7 +275,9 @@ export function createWorkerMessageValidator(): (raw: unknown) => ValidatedMessa
           if (!keysOk(raw, ['v', 'type', 'id', 'result'])) return fail;
           const { id, result } = raw;
           if (!safeInt(id) || !plain(result)) return fail;
-          if (!keysOk(result, ['text', 'finishReason', 'usage', 'timings'])) return fail;
+          if (!keysOk(result, ['text', 'finishReason', 'usage', 'timings'], ['budget']))
+            return fail;
+          if (own(result, 'budget') && !safeInt(result['budget'])) return fail;
           const { text, finishReason, usage, timings } = result;
           if (typeof text !== 'string' || text.length > MAX_RESULT_CHARS) return fail;
           if (typeof finishReason !== 'string' || !FINISH.has(finishReason)) return fail;
@@ -274,6 +308,7 @@ export function createWorkerMessageValidator(): (raw: unknown) => ValidatedMessa
               result: {
                 text,
                 finishReason: finishReason as WorkerGenerateResult['finishReason'],
+                ...(own(result, 'budget') ? { budget: result['budget'] as number } : {}),
                 usage: {
                   ...(own(usage, 'promptTokens')
                     ? { promptTokens: usage['promptTokens'] as number }
@@ -290,6 +325,56 @@ export function createWorkerMessageValidator(): (raw: unknown) => ValidatedMessa
               },
             },
           };
+        }
+        case 'embedded': {
+          if (
+            !keysOk(raw, [
+              'v',
+              'type',
+              'id',
+              'dims',
+              'vectors',
+              'normalized',
+              'truncated',
+              'totalMs',
+            ])
+          )
+            return fail;
+          const { id, dims, vectors, normalized, truncated, totalMs } = raw;
+          if (!safeInt(id) || !safeInt(dims) || dims < 1 || dims > 65_536) return fail;
+          if (!Array.isArray(vectors) || vectors.length > EMBED_MAX_TEXTS) return fail;
+          if (typeof normalized !== 'boolean' || !safeInt(truncated)) return fail;
+          if (typeof totalMs !== 'number' || !Number.isFinite(totalMs) || totalMs < 0) return fail;
+          // count, length, element type and finiteness of the vectors are the host's job (R14)
+          return {
+            ok: true,
+            message: {
+              type: 'embedded',
+              id,
+              dims,
+              vectors: [...vectors],
+              normalized,
+              truncated,
+              totalMs,
+            },
+          };
+        }
+        case 'peak': {
+          if (!keysOk(raw, ['v', 'type', 'phase', 'measure'], ['bytes'])) return fail;
+          const { phase, measure } = raw;
+          if (typeof phase !== 'string' || !(PEAK_PHASES as readonly string[]).includes(phase))
+            return fail;
+          if (measure !== 'wasm-memory' && measure !== 'unavailable') return fail;
+          // nothing is estimated: a figure comes with 'wasm-memory' and only with it
+          if (measure === 'wasm-memory') {
+            if (!safeInt(raw['bytes'])) return fail;
+            return {
+              ok: true,
+              message: { type: 'peak', phase: phase as PeakPhase, measure, bytes: raw['bytes'] },
+            };
+          }
+          if (own(raw, 'bytes')) return fail;
+          return { ok: true, message: { type: 'peak', phase: phase as PeakPhase, measure } };
         }
         case 'error': {
           if (!keysOk(raw, ['v', 'type', 'code'], ['cause'])) return fail;

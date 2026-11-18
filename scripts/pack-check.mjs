@@ -188,8 +188,24 @@ ok(
   'the packaged README carries the "Not published yet" sentence',
 );
 ok(
-  /alpha, not tagged/.test(readFileSync(join(root, 'README.md'), 'utf8')),
-  'the packaged README says "alpha, not tagged"',
+  /beta, not tagged/.test(readFileSync(join(root, 'README.md'), 'utf8')),
+  'the packaged README says "beta, not tagged"',
+);
+// no test hook ships: a build-time define that exists only in test builds must be absent from dist/ (D1-02, D1-09)
+const hookHits = [];
+for (const f of files) {
+  if (!/^dist\/.*\.(js|mjs|cjs)$/.test(f.path)) continue;
+  const text = readFileSync(join(root, f.path), 'utf8');
+  for (const marker of ['RUNTIME_TEST_HOOKS', 'test-probe', '__AMT_TEST'])
+    if (text.includes(marker)) hookHits.push(`${f.path} (${marker})`);
+}
+ok(
+  hookHits.length === 0,
+  `no test hook in the packed build${hookHits.length ? ` (${hookHits.join(', ')})` : ''}`,
+);
+ok(
+  files.some((f) => f.path === 'dist/worker-support.js'),
+  'contains dist/worker-support.js (exports ./worker-support: installEgressGuard, startModuleWorker)',
 );
 
 // ---- 2. no engine-default URL in dist ---------------------------------------------------------
@@ -252,6 +268,7 @@ const callSource = `
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { verifyManifest, SPEC_RELEASE, SPEC_STATUS, SPEC_VERSIONS } from '@airplanemode/runtime';
+import { installEgressGuard, startModuleWorker } from '@airplanemode/runtime/worker-support';
 const publicKey = Uint8Array.from(Buffer.from('d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a', 'hex'));
 const keyId = createHash('sha256').update(publicKey).digest('hex');
 const manifest = JSON.parse(readFileSync(process.env.EXAMPLE, 'utf8'));
@@ -259,8 +276,17 @@ const result = await verifyManifest(manifest, new Map([[keyId, publicKey]]), { a
 // tamper-01: one hex digit of an entry's sha256 changed after signing, verified from its TEXT
 const tampered = await verifyManifest(readFileSync(process.env.TAMPER, 'utf8'), new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z') });
 const tamperReason = tampered.ok ? 'accepted' : tampered.reason;
+// manifest 0.1.2: expectId. A validly signed manifest of another id is refused with unexpected_id; a bad id is a TypeError.
+const other = await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z'), expectId: 'other-product' });
+let badExpectId = 'accepted';
+try { await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, expectId: 'BAD ID' }); } catch (e) { badExpectId = e instanceof TypeError ? e.message : 'other error'; }
+// the worker-support exports load from the tarball and refuse what they must
+let workerSupport = 'missing';
+try { installEgressGuard({ allowPathPrefixes: ['not-a-prefix'] }); workerSupport = 'accepted a bad prefix'; } catch (e) { workerSupport = e instanceof TypeError ? 'TypeError' : 'other error'; }
+let moduleWorker = 'missing';
+try { startModuleWorker('https://evil.test/w.js', { policyName: 'x-policy', origin: 'https://app.test', baseURI: 'https://app.test/' }); moduleWorker = 'accepted'; } catch (e) { moduleWorker = e.code ?? e.name; }
 const tamperSignatures = tampered.signatures.map((s) => (s.valid ? 'valid' : s.reason));
-console.log(JSON.stringify({ valid: result.ok, tamper01: tamperReason, tamper01Signatures: tamperSignatures, specRelease: SPEC_RELEASE, specStatus: SPEC_STATUS, specVersions: SPEC_VERSIONS }));
+console.log(JSON.stringify({ valid: result.ok, unexpectedId: other.ok ? 'accepted' : other.reason, badExpectId, workerSupport, moduleWorker, tamper01: tamperReason, tamper01Signatures: tamperSignatures, specRelease: SPEC_RELEASE, specStatus: SPEC_STATUS, specVersions: SPEC_VERSIONS }));
 `;
 writeFileSync(join(fresh, 'call.mjs'), callSource);
 const called = execFileSync(process.execPath, ['call.mjs'], {
@@ -279,12 +305,22 @@ ok(
   `verifyManifest() on tamper-01 prints ${parsed.tamper01} (${(parsed.tamper01Signatures ?? []).join(', ')})`,
 );
 ok(
-  parsed.specRelease === '0.4.0' &&
+  parsed.specRelease === '0.5.0' &&
     parsed.specStatus?.manifest === 'published' &&
-    parsed.specVersions?.manifest === '0.1.1' &&
-    parsed.specVersions?.backendAdapter === '0.3.1' &&
+    parsed.specVersions?.manifest === '0.1.2' &&
+    parsed.specVersions?.event === '0.1.4' &&
+    parsed.specVersions?.storageApi === '0.3.0' &&
+    parsed.specVersions?.backendAdapter === '0.4.0' &&
     parsed.specVersions?.modelDescriptor === '0.2.1',
-  'the installed package carries spec release 0.4.0 (manifest 0.1.1 published, backend adapter 0.3.1, model descriptor 0.2.1)',
+  'the installed package carries spec release 0.5.0 (manifest 0.1.2 published, event 0.1.4, storage API 0.3.0, backend adapter 0.4.0, model descriptor 0.2.1)',
+);
+ok(
+  parsed.unexpectedId === 'unexpected_id' && parsed.badExpectId === 'invalid expectId',
+  `verifyManifest() with expectId from the tarball: another id gives ${parsed.unexpectedId}, a bad id throws TypeError '${parsed.badExpectId}'`,
+);
+ok(
+  parsed.workerSupport === 'TypeError' && parsed.moduleWorker === 'egress_refused',
+  `@airplanemode/runtime/worker-support from the tarball: a bad prefix is ${parsed.workerSupport}, an off-origin worker URL is ${parsed.moduleWorker}`,
 );
 
 const summary = {

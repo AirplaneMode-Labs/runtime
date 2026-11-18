@@ -1,7 +1,7 @@
 {
   "name": "@airplanemode/runtime",
-  "version": "0.2.0-alpha.1",
-  "description": "Offline-first browser runtime (alpha): capability profile, verified asset manager, backend adapters with WebGPU to WASM fallback, observability events and open contracts (manifest, capability profile, event, storage API, backend adapter, model descriptor).",
+  "version": "0.3.0-beta.0",
+  "description": "Offline-first browser runtime (beta): capability profile, verified asset manager, backend adapters with WebGPU to WASM fallback, embeddings through a worker host, observability events and open contracts (manifest, capability profile, event, storage API, backend adapter, model descriptor).",
   "license": "Apache-2.0",
   "type": "module",
   "private": false,
@@ -29,6 +29,10 @@
     "./worker": {
       "types": "./dist/backends/index.d.ts",
       "import": "./dist/worker/engine-worker.js"
+    },
+    "./worker-support": {
+      "types": "./dist/worker-support.d.ts",
+      "import": "./dist/worker-support.js"
     },
     "./spec": {
       "types": "./dist/spec/index.d.ts",

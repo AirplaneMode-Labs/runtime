@@ -16,6 +16,7 @@ export default defineConfig([
       index: 'src/index.ts',
       'spec/index': 'spec/index.ts',
       'backends/index': 'src/backends/index.ts',
+      'worker-support': 'src/worker-support.ts',
     },
     format: ['esm'],
     target: 'es2022',

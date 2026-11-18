@@ -86,8 +86,40 @@ export interface IndexFile {
   manifests: Record<string, { version: string; createdAt: string }>;
 }
 
+/**
+ * A null-prototype copy of `source` (S1-102, S1-100): own enumerable string keys only, each defined as a data
+ * property, so a stored key such as 'constructor', 'toString' or '__proto__' is plain data that can neither
+ * find an inherited member on lookup nor set a prototype on decode. A non-object gives an empty one.
+ */
+export function nullProtoRecord<T>(source: unknown): Record<string, T> {
+  const out = Object.create(null) as Record<string, T>;
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) return out;
+  for (const key of Object.keys(source)) {
+    Object.defineProperty(out, key, {
+      value: (source as Record<string, T>)[key],
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return out;
+}
+
+/**
+ * What every store returns from readIndex(): `rows` and `manifests` are null-prototype objects, so no id or
+ * sha a store holds can collide with an inherited Object member (S1-102). Anything that is not an object
+ * becomes empty.
+ */
+export function normaliseIndex(v: Partial<IndexFile>): IndexFile {
+  return {
+    version: 1,
+    rows: nullProtoRecord<IndexRowStored>(v.rows),
+    manifests: nullProtoRecord<{ version: string; createdAt: string }>(v.manifests),
+  };
+}
+
 export function emptyIndex(): IndexFile {
-  return { version: 1, rows: {}, manifests: {} };
+  return normaliseIndex({});
 }
 
 export interface StoreEstimate {

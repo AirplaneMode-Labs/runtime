@@ -1,5 +1,10 @@
 /**
- * Manifest parsing and verification (manifest spec v0.1, manifest 0.1.1). See spec/MANIFEST.md.
+ * Manifest parsing and verification (manifest spec v0.1, manifest 0.1.2). See spec/MANIFEST.md.
+ *
+ * 0.1.2: an optional `expectId` pins the manifest id. An invalid value throws TypeError('invalid expectId')
+ * before anything is parsed (a caller error, no reason); a validly signed manifest of another id is refused
+ * with `unexpected_id` after the signature check and BEFORE the downgrade state is read, so the state store
+ * is neither read nor written for it. Without expectId every verdict is the 0.1.1 verdict.
  *
  * test keys (before anything is parsed) -> parse (repeated members, floats, > 2^53-1, digit-leading
  * keys, lone surrogates; over the whole document, signatures[] included) -> schema (the manifest schema
@@ -332,9 +337,18 @@ export class InMemoryManifestState implements ManifestStateStore {
   }
 }
 
+/** The manifest id grammar (spec/manifest.ts Manifest.id): also the grammar of `expectId`. */
+const MANIFEST_ID = /^[a-z0-9][a-z0-9.-]{2,127}$/;
+
 export interface VerifyOptions {
   /** Epoch milliseconds used for the expiry check; default Date.now(). */
   now?: number;
+  /**
+   * 0.1.2: the manifest id the caller expects. Must match `^[a-z0-9][a-z0-9.-]{2,127}$`, otherwise
+   * verifyManifest throws TypeError('invalid expectId') before parsing. After at least one valid signature
+   * and before the downgrade state is read, a manifest with another id is refused: 'unexpected_id'.
+   */
+  expectId?: string | undefined;
   allowDowngrade?: boolean;
   /**
    * Required when the trust set contains any of the five RFC 8032 test keys (by keyId or by raw bytes).
@@ -433,6 +447,12 @@ export async function verifyManifest(
   trust: TrustSet,
   opts: VerifyOptions = {},
 ): Promise<VerifyResult> {
+  // 0.1.2: a caller error, before anything else is looked at (no reason, no event, no state access)
+  if (
+    opts.expectId !== undefined &&
+    !(typeof opts.expectId === 'string' && MANIFEST_ID.test(opts.expectId))
+  )
+    throw new TypeError('invalid expectId');
   if (opts.allowTestKeys !== true) assertTestKeysAllowed(trust, opts.allowTestKeys);
   const now = opts.now ?? Date.now();
   let textError: ManifestError | undefined;
@@ -569,6 +589,10 @@ export async function verifyManifest(
   }
 
   if (!checks.some((c) => c.valid)) return fail('no_valid_signature', checks);
+
+  // 0.1.2: a validly signed manifest of another product. Judged before the state is read or written.
+  if (opts.expectId !== undefined && manifest.id !== opts.expectId)
+    return fail('unexpected_id', checks);
 
   if (opts.state) {
     // Fail closed (S1-013): without the stored state the downgrade rule cannot be applied, so the

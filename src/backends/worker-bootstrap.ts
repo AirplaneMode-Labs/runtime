@@ -68,7 +68,7 @@ export function bootstrapSource(abs: string): string {
   return `import ${JSON.stringify(abs)};`;
 }
 
-const policies = new WeakMap<object, WorkerUrlPolicy>();
+const policies = new WeakMap<object, Map<string, WorkerUrlPolicy>>();
 const passthrough: WorkerUrlPolicy = {
   allow: () => undefined,
   revoke: () => undefined,
@@ -80,15 +80,18 @@ export function getWorkerUrlPolicy(
   env: { trustedTypes?: TrustedTypesLike | undefined } = globalThis as unknown as {
     trustedTypes?: TrustedTypesLike;
   },
+  policyName: string = WORKER_POLICY_NAME,
 ): WorkerUrlPolicy {
   const tt = env.trustedTypes;
   if (!tt || typeof tt.createPolicy !== 'function') return passthrough;
-  const existing = policies.get(tt);
+  let byName = policies.get(tt);
+  if (!byName) policies.set(tt, (byName = new Map()));
+  const existing = byName.get(policyName);
   if (existing) return existing;
   const allowed = new Set<string>();
   let policy: { createScriptURL(input: string): unknown } | undefined;
   try {
-    policy = tt.createPolicy(WORKER_POLICY_NAME, {
+    policy = tt.createPolicy(policyName, {
       createScriptURL(input: string): string {
         if (!allowed.has(input)) throw new TypeError('this URL was not created by the runtime');
         return input;
@@ -96,7 +99,7 @@ export function getWorkerUrlPolicy(
     });
   } catch {
     // the page's CSP forbids the name or a duplicate: use the string and let the browser decide
-    policies.set(tt, passthrough);
+    byName.set(policyName, passthrough);
     return passthrough;
   }
   const made: WorkerUrlPolicy = {
@@ -104,7 +107,7 @@ export function getWorkerUrlPolicy(
     revoke: (url) => void allowed.delete(url),
     wrap: (url) => policy!.createScriptURL(url) as string,
   };
-  policies.set(tt, made);
+  byName.set(policyName, made);
   return made;
 }
 

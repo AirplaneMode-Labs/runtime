@@ -14,6 +14,7 @@
 
 import {
   emptyIndex,
+  normaliseIndex,
   type AssetStore,
   type IndexFile,
   type PartState,
@@ -279,7 +280,7 @@ export class OpfsAssetStore implements AssetStore {
 
   async list(): Promise<StoreListing> {
     const bins: string[] = [];
-    const binModified: Record<string, number> = {};
+    const binModified: Record<string, number> = Object.create(null) as Record<string, number>;
     const parts: string[] = [];
     const partStates: string[] = [];
     for (const [name, handle] of await listEntries(this.root())) {
@@ -309,7 +310,7 @@ export class OpfsAssetStore implements AssetStore {
       const fh = await this.root().getFileHandle('index.json');
       const parsed = JSON.parse(await (await fh.getFile()).text()) as Partial<IndexFile>;
       if (!parsed || parsed.version !== 1 || typeof parsed.rows !== 'object') return emptyIndex();
-      return { version: 1, rows: parsed.rows ?? {}, manifests: parsed.manifests ?? {} };
+      return normaliseIndex(parsed);
     } catch {
       return emptyIndex();
     }

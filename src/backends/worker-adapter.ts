@@ -1,11 +1,14 @@
 /**
- * The Transformers.js adapter with the engine in a dedicated worker (backend adapter 0.3.0: host
- * 'worker', rules R2w, R3w and R7 to R13).
+ * The Transformers.js adapter with the engine in a dedicated worker (backend adapter 0.4.0: host
+ * 'worker', rules R2w, R3w, R7 to R13 and R15).
  *
- * On the page (this file) R1 and R2 run exactly as on the main thread: the descriptor is read and
- * cross-checked, every file is acquired and re-hashed with getBlob(id, { rehash: true }), and the SAME
- * Blob objects are posted to the worker. The worker never opens storage and never fetches; its network
- * function is the verified-file shim behind the egress guard (src/worker/).
+ * On the page (this file) R1 and R2 run as on the main thread, except the load-time re-hash: every file is
+ * acquired and the SAME Blob objects are posted to the worker together with their manifest entries. In the
+ * worker (R15, spec/backend-adapter.md) the size is checked first, SHA-256 then runs over every
+ * engine-readable file, and the engine is served exactly the hashed bytes, by method (ii) chosen in R15 (the
+ * very File snapshot that was hashed). The main thread does not re-hash at load time; the asset manager's
+ * download-time verification stays. The worker never opens storage and never fetches; its network function
+ * is the verified-file shim behind the egress guard (src/worker/).
  *
  * Isolation (R7): every load() starts a fresh module worker named
  * 'airplanemode-engine-<adapter>-<device>' from a blob: bootstrap, and unload(), an abort that is not
@@ -26,6 +29,7 @@ import {
   type AssetSource,
   type BackendAdapter,
   type ChatMessage,
+  type EmbedOptions,
   type EmbedResult,
   type ExecutionDevice,
   type GenerateOptions,
@@ -62,6 +66,9 @@ import { ORT_PINS } from './ort-pins';
 import {
   probeWebGpuDevice,
   usableModelId,
+  checkEmbedTexts,
+  checkMaxTokens,
+  resolveEmbedOptions,
   checkSessionOptions,
   now,
   type OrtPin,
@@ -78,8 +85,11 @@ import {
 
 const ADAPTER_ID = 'transformers-js';
 const VERIFIED_SUFFIX = '__airplanemode/verified/';
-/** The phases the worker reports itself; acquire and verify are timed on the page. */
-const WORKER_PHASES: ReadonlySet<string> = new Set(['handoff', 'session', 'first_token']);
+/**
+ * The phases the worker reports itself; acquire is timed on the page. 'verify' is the worker's since backend
+ * adapter 0.4.0 (R15): the worker hashes every file, and the page no longer re-hashes on the load path.
+ */
+const WORKER_PHASES: ReadonlySet<string> = new Set(['verify', 'handoff', 'session', 'first_token']);
 
 /** The slice of Worker this adapter uses. */
 export interface WorkerLike {
@@ -113,12 +123,24 @@ export interface WorkerAdapterOptions {
 }
 
 interface Pending {
+  kind: 'generate';
   resolve(r: GenerateResult): void;
   reject(e: Error): void;
   onToken: ((t: string) => void) | undefined;
   text: string;
   startedAt: number;
   graceTimer: ReturnType<typeof setTimeout> | undefined;
+  signal: AbortSignal | undefined;
+  onAbort: (() => void) | undefined;
+}
+
+/** A call to embed() waiting for the worker: what the host checks the answer against (R14). */
+interface PendingEmbed {
+  kind: 'embed';
+  resolve(r: EmbedResult): void;
+  reject(e: Error): void;
+  startedAt: number;
+  count: number;
   signal: AbortSignal | undefined;
   onAbort: (() => void) | undefined;
 }
@@ -133,7 +155,7 @@ interface Session {
   descriptor: ModelDescriptor;
   entryId: string;
   validate: ReturnType<typeof createWorkerMessageValidator>;
-  pending: Map<number, Pending>;
+  pending: Map<number, Pending | PendingEmbed>;
   nextId: number;
   spawnedAt: number;
   ready: { resolve(): void; reject(e: Error): void } | undefined;
@@ -200,7 +222,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     const task = this.session?.descriptor.task;
     return {
       generate: task === undefined ? true : task === 'text-generation',
-      embed: false,
+      embed: task === 'feature-extraction',
       streaming: true,
     };
   }
@@ -360,6 +382,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         onProgress,
         cacheOnly: opts.cacheOnly,
         timer,
+        hashOnPage: true,
       });
       aborted();
       const d = loaded.descriptor;
@@ -371,7 +394,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           'runtimeWasm is not the pinned ONNX runtime binary for this device',
         );
 
-      // R2 on the page: acquire every file, then re-hash every file; the worker gets those Blobs
+      // R2 on the page: acquire every file (download-time verification); the worker re-hashes (R15)
       const acquireOpts: Parameters<NonNullable<AssetSource['acquire']>>[1] = { onProgress };
       if (opts.signal) acquireOpts.signal = opts.signal;
       if (opts.cacheOnly === true) acquireOpts.cacheOnly = true;
@@ -385,15 +408,14 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       }
       timer.add('acquire', 0, meter.bytes());
       timer.emit('acquire');
+      // R15 (backend adapter 0.4.0, S1-070): the page does NOT re-hash. It posts the stored files with the
+      // sha256 and size of their manifest entries; the worker hashes every one before the engine sees a byte
+      // and emits the verify phase. The asset manager's download-time verification is unchanged.
       const files: InitMessage['files'] = [];
       let bytes = entry.size;
       for (const f of loaded.files) {
-        const blob = await timer.measure(
-          'verify',
-          () => forEntry(f.entry.id, () => opts.assets.getBlob(f.entry.id, { rehash: true })),
-          (b) => b.size,
-        );
-        bytes += blob.size;
+        const blob = await forEntry(f.entry.id, () => opts.assets.getBlob(f.entry.id));
+        bytes += f.entry.size;
         files.push({
           path: f.path,
           entryId: f.entry.id,
@@ -402,7 +424,6 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           blob,
         });
       }
-      timer.emit('verify');
       aborted();
 
       // R7: a fresh module worker from a blob bootstrap
@@ -596,7 +617,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         return;
       case 'token': {
         const p = s.pending.get(m.id);
-        if (!p) return;
+        if (!p || p.kind !== 'generate') return;
         p.text += m.text;
         try {
           p.onToken?.(m.text);
@@ -607,7 +628,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       }
       case 'done': {
         const p = s.pending.get(m.id);
-        if (!p) return;
+        if (!p || p.kind !== 'generate') return;
         this.finish(s, m.id, p);
         this.emitGenerate(s, m.result, now() - p.startedAt);
         p.resolve({
@@ -615,9 +636,76 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           finishReason: m.result.finishReason,
           usage: m.result.usage,
           timings: m.result.timings,
+          ...(m.result.budget !== undefined ? { budget: m.result.budget } : {}),
         });
         return;
       }
+      case 'embedded': {
+        const p = s.pending.get(m.id);
+        if (!p || p.kind !== 'embed') return;
+        this.finish(s, m.id, p);
+        // R14: the worker's answer is untrusted. Count, type, length and finiteness are checked here; a lie
+        // rejects 'backend' for this call (the worker is not otherwise trusted more or less afterwards).
+        const bad = (): boolean => {
+          if (m.vectors.length !== p.count) return true;
+          for (const v of m.vectors) {
+            if (!(v instanceof Float32Array) || v.length !== m.dims) return true;
+            for (let i = 0; i < v.length; i++) if (!Number.isFinite(v[i])) return true;
+          }
+          return false;
+        };
+        if (bad()) {
+          this.emitEmbed(s, p, 'backend', { dims: m.dims, truncated: 0 });
+          p.reject(
+            new AdapterError('backend', 'the inference engine returned an unusable embedding'),
+          );
+          return;
+        }
+        // Copy into fresh, non-shared, plain Float32Arrays and re-check finiteness on the copy, so nothing the
+        // worker still holds (shared memory, a view of a bigger buffer, a subclass) can change after validation.
+        const copies: Float32Array[] = [];
+        for (const v of m.vectors as Float32Array[]) {
+          const c = new Float32Array(v.length);
+          c.set(v);
+          for (let i = 0; i < c.length; i++) {
+            if (!Number.isFinite(c[i])) {
+              this.emitEmbed(s, p, 'backend', { dims: m.dims, truncated: 0 });
+              p.reject(
+                new AdapterError('backend', 'the inference engine returned an unusable embedding'),
+              );
+              return;
+            }
+          }
+          copies.push(c);
+        }
+        this.emitEmbed(s, p, 'ok', { dims: m.dims, truncated: m.truncated });
+        p.resolve({
+          vectors: copies,
+          dims: m.dims,
+          normalized: m.normalized,
+          truncated: m.truncated > 0,
+          timings: { totalMs: m.totalMs },
+        });
+        return;
+      }
+      case 'peak':
+        safeEmit(s.events, () =>
+          newEvent({
+            source: 'runtime',
+            kind: 'memory',
+            name: 'model.memory',
+            level: 'info',
+            ...(m.measure === 'wasm-memory' && m.bytes !== undefined ? { bytes: m.bytes } : {}),
+            attrs: {
+              adapter: this.id,
+              host: 'worker',
+              loadId: s.loadId,
+              phase: m.phase,
+              measure: m.measure,
+            },
+          }),
+        );
+        return;
       case 'error': {
         const err = new AdapterError(m.code, 'the inference engine reported an error');
         if (s.ready) {
@@ -626,6 +714,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         }
         for (const [id, p] of [...s.pending]) {
           this.finish(s, id, p);
+          if (p.kind === 'embed') this.emitEmbed(s, p, m.code, { dims: 0, truncated: 0 });
           p.reject(err);
         }
         return;
@@ -649,10 +738,39 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     }
   }
 
-  private finish(s: Session, id: number, p: Pending): void {
+  private finish(s: Session, id: number, p: Pending | PendingEmbed): void {
     s.pending.delete(id);
-    if (p.graceTimer !== undefined) clearTimeout(p.graceTimer);
+    if (p.kind === 'generate' && p.graceTimer !== undefined) clearTimeout(p.graceTimer);
     if (p.signal && p.onAbort) p.signal.removeEventListener('abort', p.onAbort);
+  }
+
+  /** model.embed (Event 0.1.4): counts, the dims and the outcome; never an input text or a vector. */
+  private emitEmbed(
+    s: Session,
+    p: PendingEmbed,
+    outcome: string,
+    r: { dims: number; truncated: number },
+  ): void {
+    safeEmit(s.events, () =>
+      newEvent({
+        source: 'runtime',
+        kind: 'timing',
+        name: 'model.embed',
+        level: outcome === 'ok' ? 'info' : 'warn',
+        durationMs: Math.max(0, Math.min(now() - p.startedAt, MAX_PHASE_MS)),
+        attrs: {
+          adapter: this.id,
+          model: s.entryId,
+          device: this.device,
+          host: 'worker',
+          loadId: s.loadId,
+          inputs: p.count,
+          truncated: r.truncated,
+          dims: r.dims,
+          outcome,
+        },
+      }),
+    );
   }
 
   private emitGenerate(s: Session, r: WorkerGenerateResult, wallMs: number): void {
@@ -674,6 +792,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           decodeMs: r.timings.decodeMs ?? 0,
           firstTokenMs: r.timings.firstTokenMs ?? null,
           host: 'worker',
+          ...(r.budget !== undefined ? { budget: r.budget } : {}),
         },
       }),
     );
@@ -710,7 +829,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     const ready = s.ready;
     const pending = [...s.pending.values()];
     for (const p of pending) {
-      if (p.graceTimer !== undefined) clearTimeout(p.graceTimer);
+      if (p.kind === 'generate' && p.graceTimer !== undefined) clearTimeout(p.graceTimer);
       if (p.signal && p.onAbort) p.signal.removeEventListener('abort', p.onAbort);
     }
     s.pending.clear();
@@ -747,12 +866,18 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       return Promise.reject(
         new AdapterError('unsupported_operation', 'this model does not generate text'),
       );
+    try {
+      checkMaxTokens(opts.maxTokens);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (opts.signal?.aborted)
-      return Promise.resolve({ text: '', finishReason: 'abort', usage: {}, timings: {} });
+      return Promise.reject(new AdapterError('aborted', 'the generation was aborted'));
     const id = ++s.nextId;
     const grace = this.o.abortGraceMs ?? 250;
     return new Promise<GenerateResult>((resolve, reject) => {
       const p: Pending = {
+        kind: 'generate',
         resolve,
         reject,
         onToken: opts.onToken,
@@ -773,8 +898,11 @@ export class WorkerTransformersAdapter implements BackendAdapter {
           p.graceTimer = setTimeout(() => {
             if (!s.pending.has(id)) return;
             this.finish(s, id, p);
+            // R4b: Stop after the first token keeps the partial text; before it, the call is rejected
             void this.terminate(s, 'abort').then(() =>
-              resolve({ text: p.text, finishReason: 'abort', usage: {}, timings: {} }),
+              p.text === ''
+                ? reject(new AdapterError('aborted', 'the generation was aborted'))
+                : resolve({ text: p.text, finishReason: 'abort', usage: {}, timings: {} }),
             );
           }, grace);
         };
@@ -800,13 +928,56 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     });
   }
 
-  embed(_texts: string[], _opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
-    return Promise.reject(
-      new AdapterError(
-        'unsupported_operation',
-        'embeddings are not available through the worker host yet',
-      ),
-    );
+  /**
+   * R14. The input rules are checked here, before any message leaves the page. An abort rejects 'aborted' at
+   * once and leaves the worker usable: an embedding is one engine call that cannot be interrupted, so its
+   * late answer is ignored (its id is no longer pending) instead of terminating the worker.
+   */
+  embed(texts: string[], opts: EmbedOptions = {}): Promise<EmbedResult> {
+    const s = this.session;
+    if (!s || s.closed) return Promise.reject(new AdapterError('not_loaded', 'call load() first'));
+    if (s.descriptor.task !== 'feature-extraction')
+      return Promise.reject(
+        new AdapterError('unsupported_operation', 'this model does not produce embeddings'),
+      );
+    let resolved: ReturnType<typeof resolveEmbedOptions>;
+    try {
+      checkEmbedTexts(texts);
+      resolved = resolveEmbedOptions(opts);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (opts.signal?.aborted)
+      return Promise.reject(new AdapterError('aborted', 'the embedding was aborted'));
+    const id = ++s.nextId;
+    return new Promise<EmbedResult>((resolve, reject) => {
+      const p: PendingEmbed = {
+        kind: 'embed',
+        resolve,
+        reject,
+        startedAt: now(),
+        count: texts.length,
+        signal: opts.signal,
+        onAbort: undefined,
+      };
+      if (opts.signal) {
+        p.onAbort = () => {
+          if (!s.pending.has(id)) return;
+          this.finish(s, id, p);
+          this.emitEmbed(s, p, 'aborted', { dims: 0, truncated: 0 });
+          reject(new AdapterError('aborted', 'the embedding was aborted'));
+        };
+        opts.signal.addEventListener('abort', p.onAbort, { once: true });
+      }
+      s.pending.set(id, p);
+      s.worker.postMessage({
+        v: 1,
+        type: 'embed',
+        id,
+        texts: [...texts],
+        opts: { pooling: resolved.pooling, normalize: resolved.normalize },
+      });
+    });
   }
 }
 

@@ -17,6 +17,7 @@
 
 import {
   emptyIndex,
+  normaliseIndex,
   type AssetStore,
   type IndexFile,
   type PartState,
@@ -248,7 +249,7 @@ export class IndexedDbAssetStore implements AssetStore {
     const tx = this.conn().transaction(['assets', 'parts', 'chunkmeta'], 'readonly');
     const assetRows = (await req(tx.objectStore('assets').getAll())) as AssetRow[];
     const bins = assetRows.map((r) => r.sha);
-    const binModified: Record<string, number> = {};
+    const binModified: Record<string, number> = Object.create(null) as Record<string, number>;
     for (const r of assetRows)
       if (typeof r.committedAt === 'number') binModified[r.sha] = r.committedAt;
     const partStates = (await req(tx.objectStore('parts').getAllKeys())) as string[];
@@ -263,7 +264,7 @@ export class IndexedDbAssetStore implements AssetStore {
       this.conn().transaction('meta', 'readonly').objectStore('meta').get('index'),
     )) as Partial<IndexFile> | undefined;
     if (!v || v.version !== 1 || typeof v.rows !== 'object') return emptyIndex();
-    return { version: 1, rows: v.rows ?? {}, manifests: v.manifests ?? {} };
+    return normaliseIndex(v);
   }
 
   async writeIndex(index: IndexFile): Promise<void> {

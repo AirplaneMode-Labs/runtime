@@ -5,10 +5,13 @@
  * Order of work on `init`: the egress guard sentinel is checked FIRST (without it nothing runs); the
  * verifiedPrefix must be absolute, end in '__airplanemode/verified/', carry no query or fragment and
  * share its origin with this script; every file's Blob must have exactly the manifest size (a Blob that
- * is not readable or has another size is 'integrity'); then hand-off (register the Blobs the page
- * re-hashed, read the wasm binary), the engine is configured exactly as on the main thread
+ * is not readable or has another size is 'integrity'); then R15 (S1-070): every file the engine can read
+ * is hashed HERE against the sha256 the manifest entry carries and the engine is served the bytes that
+ * were hashed (verify-files.ts), before anything is registered or imported; then hand-off (register the
+ * verified bytes, take the wasm binary), the engine is configured exactly as on the main thread
  * (configureEnv with the shim built from an EXPLICIT location, never from self.location, which is
- * non-hierarchical in a blob worker), and pipeline() creates the session.
+ * non-hierarchical in a blob worker), and pipeline() creates the session. A text-generation model
+ * answers `generate`; a feature-extraction model answers `embed` (R14). Engine calls run one at a time.
  *
  * The worker never opens storage and never fetches; it posts plain payloads (phases, memory, tokens,
  * the result) and the page builds the events (R12). It posts an enum error code and nothing else on
@@ -20,10 +23,13 @@ import type { ModelDescriptor } from '../../spec/model-descriptor';
 import {
   assertEnv,
   buildSessionOptions,
+  checkEmbedTexts,
   configureEnv,
+  embedTexts,
   expectedThreads,
   generateText,
   now,
+  resolveEmbedOptions,
   usableModelId,
   type EnginePipeline,
   type EnvContext,
@@ -36,7 +42,14 @@ import {
 } from '../backends/verified-files';
 import { sampleMemory } from '../observability';
 import { isEgressGuardInstalled, setGuardedFetch } from './egress-guard';
-import type { GenerateMessage, InitMessage } from './protocol';
+import type { EmbedMessage, GenerateMessage, InitMessage, PeakPhase } from './protocol';
+import { verifyFiles } from './verify-files';
+import {
+  installWasmMemoryProbe,
+  type PeakReading,
+  type WasmMemoryProbe,
+  type WebAssemblyLike,
+} from './wasm-memory';
 
 const VERIFIED_SUFFIX = '__airplanemode/verified/';
 
@@ -49,6 +62,11 @@ export interface TjsEngineDeps {
   selfOrigin: string;
   /** The scope that carries the guard sentinel. Default: globalThis. */
   scope?: object;
+  /**
+   * Reads the peak WebAssembly.Memory of the engine (event model.memory). Default: a probe installed on this
+   * scope's WebAssembly when it has one (the real worker), otherwise none and the answer is 'unavailable'.
+   */
+  wasmProbe?: WasmMemoryProbe | undefined;
 }
 
 const defaultLoader = (): Promise<TransformersModule> =>
@@ -78,12 +96,42 @@ export class TjsEngine {
   private current: { id: number; ctl: AbortController } | undefined;
   private firstTokenPosted = false;
   private inited = false;
+  private readonly probe: WasmMemoryProbe | undefined;
+  /** Engine calls (generate, embed) run one at a time: a session does not take two runs at once. */
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(deps: TjsEngineDeps) {
     this.post = (m) => deps.post({ v: 1, ...m });
     this.loadEngine = deps.loadEngine ?? defaultLoader;
     this.selfOrigin = deps.selfOrigin;
     this.scope = deps.scope ?? globalThis;
+    // installed before the engine module is imported, so its memories are reachable
+    const wa = (this.scope as { WebAssembly?: WebAssemblyLike }).WebAssembly;
+    this.probe = 'wasmProbe' in deps ? deps.wasmProbe : wa ? installWasmMemoryProbe(wa) : undefined;
+  }
+
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Runs `fn` under the memory probe and posts the peak BEFORE its caller posts the result. */
+  private async measured<T>(phase: PeakPhase, fn: () => Promise<T>): Promise<T> {
+    if (!this.probe) {
+      const result = await fn();
+      this.post({ type: 'peak', phase, measure: 'unavailable' });
+      return result;
+    }
+    let outcome: { result: T; peak: PeakReading };
+    outcome = await this.probe.measure(phase, fn);
+    const peak = outcome.peak;
+    this.post(
+      peak.measure === 'wasm-memory'
+        ? { type: 'peak', phase, measure: 'wasm-memory', bytes: peak.bytes }
+        : { type: 'peak', phase, measure: 'unavailable' },
+    );
+    return outcome.result;
   }
 
   /** Dispatches a message from the page. Never throws. */
@@ -94,7 +142,9 @@ export class TjsEngine {
         case 'init':
           return await this.init(raw as unknown as InitMessage);
         case 'generate':
-          return await this.generate(raw as unknown as GenerateMessage);
+          return await this.enqueue(() => this.generate(raw as unknown as GenerateMessage));
+        case 'embed':
+          return await this.enqueue(() => this.embed(raw as unknown as EmbedMessage));
         case 'abort':
           if (this.current && this.current.id === raw['id']) this.current.ctl.abort();
           return;
@@ -166,17 +216,27 @@ export class TjsEngine {
       const d = m.descriptor;
       this.descriptor = d;
 
-      // hand-off: the Blobs the page re-hashed, the wasm binary the engine is given
+      // R15 (S1-070): hash every file the engine can read, here, before anything is registered or imported.
+      // A failure throws 'integrity' and the engine has received 0 bytes.
+      const tv = now();
+      const verified = await verifyFiles(m.files, { keepBuffer: m.runtimeWasm });
+      this.post({
+        type: 'phase',
+        phase: 'verify',
+        durationMs: Math.max(0, now() - tv),
+        bytes: verified.bytes,
+      });
+
+      // hand-off: the bytes that were hashed, and the wasm binary the engine is given
       const t0 = now();
-      const wasm = m.files.find((f) => f.path === m.runtimeWasm)!;
-      const wasmBinary = await wasm.blob.arrayBuffer();
+      const wasmFile = verified.files.find((f) => f.path === m.runtimeWasm)!;
+      const wasmBinary = wasmFile.buffer!;
       this.set = registerVerifiedFiles(
         prefix.pathname,
         m.descriptorEntryId,
-        m.files.map((f) => ({ path: f.path, blob: f.blob, sha256: f.sha256 })),
+        verified.files.map((f) => ({ path: f.path, blob: f.blob, sha256: f.sha256 })),
       );
-      let bytes = 0;
-      for (const f of m.files) bytes += f.blob.size;
+      const bytes = verified.bytes;
       this.post({ type: 'phase', phase: 'handoff', durationMs: Math.max(0, now() - t0), bytes });
 
       // the engine's network function is the verified shim, built from an explicit location
@@ -189,8 +249,29 @@ export class TjsEngine {
         },
       });
       setGuardedFetch(shim as never);
-      const mod = await this.loadEngine();
+      // the engine and its session are created under the memory probe (phase 'load')
+      const { mod, sessionMs } = await this.measured('load', () =>
+        this.createSession(m, d, shim, prefix, wasmBinary),
+      );
       this.mod = mod;
+      this.post({ type: 'phase', phase: 'session', durationMs: sessionMs });
+      this.postMemory('after_session');
+      this.post({ type: 'ready' });
+    } catch (e) {
+      this.cleanup();
+      this.fail(e);
+    }
+  }
+
+  private async createSession(
+    m: InitMessage,
+    d: ModelDescriptor,
+    shim: ReturnType<typeof createVerifiedFetch>,
+    prefix: URL,
+    wasmBinary: ArrayBuffer,
+  ): Promise<{ mod: TransformersModule; sessionMs: number }> {
+    {
+      const mod = await this.loadEngine();
       // localModelPath must stay a PATH: the engine treats an absolute http URL as a remote location and
       // skips its local-file check (so it would find no tokenizer). The shim resolves the path against
       // the explicit location above, which is how it reaches the page origin from a blob worker.
@@ -216,12 +297,7 @@ export class TjsEngine {
         local_files_only: true,
         ...(sessionOptions ? { session_options: sessionOptions } : {}),
       });
-      this.post({ type: 'phase', phase: 'session', durationMs: Math.max(0, now() - t1) });
-      this.postMemory('after_session');
-      this.post({ type: 'ready' });
-    } catch (e) {
-      this.cleanup();
-      this.fail(e);
+      return { mod, sessionMs: Math.max(0, now() - t1) };
     }
   }
 
@@ -252,17 +328,22 @@ export class TjsEngine {
     try {
       assertEnv(mod.env, env);
       const o = m.opts;
-      const r = await generateText(mod, generator, descriptor, m.prompt, {
-        ...(typeof o.maxTokens === 'number' ? { maxTokens: o.maxTokens } : {}),
-        ...(typeof o.temperature === 'number' ? { temperature: o.temperature } : {}),
-        ...(typeof o.topP === 'number' ? { topP: o.topP } : {}),
-        ...(typeof o.seed === 'number' ? { seed: o.seed } : {}),
-        ...(Array.isArray(o.stop)
-          ? { stop: o.stop.filter((s): s is string => typeof s === 'string') }
-          : {}),
-        signal: ctl.signal,
-        onToken: (text) => this.post({ type: 'token', id: m.id, text }),
-      });
+      const r = await this.measured('generate', () =>
+        generateText(mod, generator, descriptor, m.prompt, {
+          ...(typeof o.maxTokens === 'number' ? { maxTokens: o.maxTokens } : {}),
+          ...(typeof o.temperature === 'number' ? { temperature: o.temperature } : {}),
+          ...(typeof o.topP === 'number' ? { topP: o.topP } : {}),
+          ...(typeof o.seed === 'number' ? { seed: o.seed } : {}),
+          ...(Array.isArray(o.stop)
+            ? { stop: o.stop.filter((s): s is string => typeof s === 'string') }
+            : {}),
+          signal: ctl.signal,
+          onToken: (text) => {
+            this.probe?.tick(); // a sample between decode steps, where the event loop turns
+            this.post({ type: 'token', id: m.id, text });
+          },
+        }),
+      );
       if (!this.firstTokenPosted && r.firstTokenMs !== undefined) {
         this.firstTokenPosted = true;
         this.post({ type: 'phase', phase: 'first_token', durationMs: r.firstTokenMs });
@@ -274,6 +355,7 @@ export class TjsEngine {
         result: {
           text: r.text,
           finishReason: r.finishReason,
+          ...(r.budget !== undefined ? { budget: r.budget } : {}),
           usage: { promptTokens: r.inTokens, completionTokens: r.outTokens },
           timings: {
             prefillMs: r.prefillMs,
@@ -286,6 +368,33 @@ export class TjsEngine {
     } finally {
       this.current = undefined;
     }
+  }
+
+  /** R14: one feature-extraction call; the peak is posted before the result. */
+  private async embed(m: EmbedMessage): Promise<void> {
+    const { mod, generator, descriptor, env } = this;
+    if (!mod || !generator || !descriptor || !env)
+      throw new AdapterError('not_loaded', 'not loaded');
+    if (!Number.isSafeInteger(m.id) || m.id < 0 || !isRecord(m.opts))
+      throw new AdapterError('backend', 'the embed message is not usable');
+    if (descriptor.task !== 'feature-extraction')
+      throw new AdapterError('unsupported_operation', 'this model does not produce embeddings');
+    // the worker re-checks what the page already checked: the page is not the only possible sender
+    checkEmbedTexts(m.texts);
+    const opts = resolveEmbedOptions(m.opts);
+    assertEnv(mod.env, env);
+    const out = await this.measured('embed', () =>
+      embedTexts(generator, descriptor, m.texts, opts),
+    );
+    this.post({
+      type: 'embedded',
+      id: m.id,
+      dims: out.dims,
+      vectors: out.vectors,
+      normalized: out.normalized,
+      truncated: out.truncated,
+      totalMs: out.totalMs,
+    });
   }
 
   private cleanup(): void {

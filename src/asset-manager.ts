@@ -7,7 +7,8 @@
  *   committed to `<sha>.bin` only when the full SHA-256 matches; the index row with verifiedAt is
  *   written after the file; no partial file is ever exposed;
  * - eviction removes the index row before the file; pinned rows, held rows (refcount > 0) and the
- *   asset being downloaded are never evicted;
+ *   asset being downloaded are never evicted by quota pressure; the explicit evict(entryId) also refuses
+ *   a pinned row (AssetError 'store', 'asset is pinned') unless called with {force:true} (S1-108);
  * - quota arithmetic never trusts navigator.storage.estimate() alone: usage is the larger of the
  *   estimate and the bytes this manager accounts for (index rows plus in-flight parts), because
  *   Chrome under-reports IndexedDB usage (T1R-01);
@@ -85,6 +86,12 @@ export interface AssetManagerOptions {
   locks?: LockProvider;
   events?: EventSink;
   allowTestKeys?: boolean;
+  /**
+   * Manifest 0.1.2: the manifest id this manager accepts, passed to the verifier as `expectId`. A validly
+   * signed manifest of another id is refused with reason 'unexpected_id' before the downgrade state is
+   * read; an invalid value is the verifier's TypeError('invalid expectId') at loadManifest().
+   */
+  expectManifestId?: string;
   /** Minimum interval between progress events. Default 250 ms. */
   progressIntervalMs?: number;
   /** Age after which reconcile() removes a partial download. Default 30 days. */
@@ -119,7 +126,7 @@ export interface LoadManifestOptions {
 }
 
 export interface EvictOptions {
-  /** Evict even when the asset is held through acquire() or its download is in flight. */
+  /** Evict even when the asset is pinned, held through acquire() or its download is in flight. */
   force?: boolean;
 }
 
@@ -218,6 +225,7 @@ export class AssetManager implements AssetSource {
   private holdUnknownWarned = false;
   private readonly sink: EventSink | undefined;
   private readonly allowTestKeys: boolean;
+  private readonly expectManifestId: string | undefined;
   private readonly progressInterval: number;
   private readonly stalePartMs: number;
   private readonly now: () => number;
@@ -255,6 +263,7 @@ export class AssetManager implements AssetSource {
         'allowTestKeys must be the boolean true or false',
       );
     this.allowTestKeys = options.allowTestKeys === true;
+    this.expectManifestId = options.expectManifestId;
     this.progressInterval = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
     this.stalePartMs = options.stalePartMaxAgeMs ?? DEFAULT_STALE_PART_MS;
     this.now = options.now ?? (() => Date.now());
@@ -362,6 +371,7 @@ export class AssetManager implements AssetSource {
       state: this.manifestState(),
       events: this.allSinks(),
     };
+    if (this.expectManifestId !== undefined) verifyOpts.expectId = this.expectManifestId;
     if (opts.allowDowngrade !== undefined) verifyOpts.allowDowngrade = opts.allowDowngrade;
     if (opts.now !== undefined) verifyOpts.now = opts.now;
     const result = await verifyManifest(manifest, trust, verifyOpts);
@@ -431,10 +441,20 @@ export class AssetManager implements AssetSource {
 
   private manifestState(): ManifestStateStore {
     return {
-      get: async (id) => (await this.store.readIndex()).manifests[id],
+      // S1-102: an own-member lookup. The index is read as a null-prototype object by every store, and the
+      // hasOwn guard keeps an id such as 'constructor' from finding an inherited member whatever the store is.
+      get: async (id) => {
+        const manifests = (await this.store.readIndex()).manifests;
+        return Object.hasOwn(manifests, id) ? manifests[id] : undefined;
+      },
       set: async (id, state) => {
         await this.withIndex((index) => {
-          index.manifests[id] = state;
+          Object.defineProperty(index.manifests, id, {
+            value: state,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
           return true;
         });
       },
@@ -684,6 +704,7 @@ export class AssetManager implements AssetSource {
   /**
    * Removes a verified asset. Refuses (AssetError 'store', "asset is held or downloading") while
    * the asset is held through acquire() or its download is in flight, unless `force` (S1-020).
+   * Also refuses a pinned row (AssetError 'store', "asset is pinned") unless `force` (S1-108).
    * Emits asset.evict with reason 'explicit' only on success.
    */
   async evict(entryId: string, opts: EvictOptions = {}): Promise<boolean> {
@@ -702,6 +723,9 @@ export class AssetManager implements AssetSource {
       const index = await this.store.readIndex();
       const row = index.rows[sha];
       if (!row) return false;
+      if (row.pinned && opts.force !== true) {
+        throw new AssetError('store', 'asset is pinned', { details: { entryId, pinned: true } });
+      }
       await this.evictRow(index, row, 'explicit');
       return true;
     });

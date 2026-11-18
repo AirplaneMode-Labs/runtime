@@ -63,6 +63,13 @@ export interface DescriptorContext {
   cacheOnly?: boolean | undefined;
   /** Receives the time the descriptor's own acquire and re-hash took (the load phases acquire and verify). */
   timer?: { add(phase: 'acquire' | 'verify', ms: number, bytes?: number): void } | undefined;
+  /**
+   * The worker adapter (backend adapter 0.4.0, R15) sets this: the files are re-hashed in the worker, not on
+   * the page, so the page does not call getBlob(id, { rehash: true }) on the load path. The descriptor itself
+   * (at most 65536 bytes) is parsed here, before a worker exists, so the page checks its SHA-256 directly
+   * against the manifest entry (crypto.subtle) and the verify phase stays the worker's alone.
+   */
+  hashOnPage?: boolean | undefined;
 }
 
 /** An AdapterError 'bad_descriptor' that names which rule rejected the descriptor. */
@@ -208,17 +215,31 @@ export async function loadDescriptor(
 
   const verifyStart = clock();
   let blob: Blob;
+  let bytes: ArrayBuffer | undefined;
   try {
-    blob = await forEntry(entry.id, () => ctx.assets.getBlob(entry.id, { rehash: true }));
+    if (ctx.hashOnPage === true) {
+      blob = await forEntry(entry.id, () => ctx.assets.getBlob(entry.id));
+      if (blob.size > MODEL_DESCRIPTOR_MAX_BYTES)
+        throw bad(`the stored model descriptor is larger than ${MODEL_DESCRIPTOR_MAX_BYTES} bytes`);
+      // one read: the bytes hashed are the bytes parsed
+      bytes = await blob.arrayBuffer();
+      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+      let hex = '';
+      for (const b of digest) hex += (b < 16 ? '0' : '') + b.toString(16);
+      if (blob.size !== entry.size || hex !== entry.sha256)
+        throw new AdapterError('integrity', 'the model descriptor does not match its signed hash');
+    } else {
+      blob = await forEntry(entry.id, () => ctx.assets.getBlob(entry.id, { rehash: true }));
+    }
   } finally {
-    ctx.timer?.add('verify', clock() - verifyStart);
+    if (ctx.hashOnPage !== true) ctx.timer?.add('verify', clock() - verifyStart);
   }
-  ctx.timer?.add('verify', 0, blob.size);
+  if (ctx.hashOnPage !== true) ctx.timer?.add('verify', 0, blob.size);
   if (blob.size > MODEL_DESCRIPTOR_MAX_BYTES)
     throw bad(`the stored model descriptor is larger than ${MODEL_DESCRIPTOR_MAX_BYTES} bytes`);
   let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer());
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes ?? (await blob.arrayBuffer()));
   } catch (e) {
     throw bad('the model descriptor is not valid UTF-8', e);
   }

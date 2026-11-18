@@ -220,6 +220,16 @@ export function createVerifiedFetch(opts: VerifiedFetchOptions): VerifiedFetch {
 
     const row = REGISTRY.get(url.pathname);
     if (row) {
+      // R15 method (ii): the worker serves the very File snapshot it hashed. A snapshot that was written
+      // after it was taken is unreadable (NotReadableError); one byte is read here so that the failure is
+      // 'integrity' BEFORE the engine receives anything, not an opaque network error halfway through.
+      if (row.blob.size > 0) {
+        try {
+          await row.blob.slice(0, 1).arrayBuffer();
+        } catch {
+          throw new AdapterError('integrity', 'a verified file can no longer be read as verified');
+        }
+      }
       try {
         opts.onServe?.(url.pathname, method);
       } catch {

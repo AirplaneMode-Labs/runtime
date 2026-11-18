@@ -10,7 +10,10 @@
 
 import {
   AdapterError,
+  EMBED_MAX_TEXTS,
+  EMBED_TEXT_MAX,
   type ChatMessage,
+  type EmbedOptions,
   type GenerateOptions,
   type GenerateResult,
 } from '../../spec/backend-adapter';
@@ -18,6 +21,15 @@ import type { ModelDescriptor } from '../../spec/model-descriptor';
 import type { VerifiedFetch } from './verified-files';
 
 export const DEFAULT_MAX_NEW_TOKENS = 256;
+/** The largest maxTokens a caller may ask for (R4b). */
+export const MAX_TOKENS_LIMIT = 32768;
+
+/** R4b: maxTokens is absent, or an integer 1..MAX_TOKENS_LIMIT; anything else is a TypeError before any work. */
+export function checkMaxTokens(v: unknown): asserts v is number | undefined {
+  if (v === undefined) return;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > MAX_TOKENS_LIMIT)
+    throw new TypeError(`maxTokens must be an integer from 1 to ${MAX_TOKENS_LIMIT}`);
+}
 
 export const now = (): number =>
   typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -225,6 +237,8 @@ export function extractText(out: unknown): string {
 
 export interface GenerationOutcome {
   text: string;
+  /** The token budget the call ran with (R4b). */
+  budget?: number;
   finishReason: GenerateResult['finishReason'];
   inTokens: number;
   outTokens: number;
@@ -249,12 +263,14 @@ export async function generateText(
   prompt: string | ChatMessage[],
   opts: GenerateOptions,
 ): Promise<GenerationOutcome> {
+  checkMaxTokens(opts.maxTokens);
+  if (opts.signal?.aborted) throw new AdapterError('aborted', 'the generation was aborted');
   const messages: ChatMessage[] =
     typeof prompt === 'string' ? [{ role: 'user', content: prompt }] : prompt;
-  const maxTokens = opts.maxTokens ?? descriptor.generation?.maxNewTokens ?? DEFAULT_MAX_NEW_TOKENS;
+  const requested = opts.maxTokens ?? descriptor.generation?.maxNewTokens ?? DEFAULT_MAX_NEW_TOKENS;
   const greedy =
     opts.temperature === 0 || (opts.temperature === undefined && opts.seed !== undefined);
-  const kwargs: Record<string, unknown> = { max_new_tokens: maxTokens };
+  const kwargs: Record<string, unknown> = {};
   if (greedy) kwargs['do_sample'] = false;
   else if (opts.temperature !== undefined || opts.topP !== undefined) {
     kwargs['do_sample'] = true;
@@ -262,8 +278,27 @@ export async function generateText(
     if (opts.topP !== undefined) kwargs['top_p'] = opts.topP;
   }
   const templateKwargs = descriptor.generation?.chatTemplateKwargs;
-  if (templateKwargs && Object.keys(templateKwargs).length > 0)
-    kwargs['tokenizer_encode_kwargs'] = copyTemplateKwargs(templateKwargs);
+  const copiedKwargs =
+    templateKwargs && Object.keys(templateKwargs).length > 0
+      ? copyTemplateKwargs(templateKwargs)
+      : undefined;
+  if (copiedKwargs) kwargs['tokenizer_encode_kwargs'] = copiedKwargs;
+
+  // R4b: the budget. The prompt is rendered and counted with the engine's own tokenizer BEFORE decode; a
+  // prompt that leaves no room is context_overflow and the engine never runs. When the tokenizer cannot
+  // say (an engine without these functions) the requested count stands and nothing is guessed.
+  let budget = requested;
+  const promptTokens = countPromptTokens(generator.tokenizer, messages, copiedKwargs);
+  if (promptTokens !== undefined) {
+    const room = descriptor.contextLength - promptTokens;
+    if (room < 1)
+      throw new AdapterError(
+        'context_overflow',
+        'the prompt leaves no room in the context to answer',
+      );
+    budget = Math.min(requested, room);
+  }
+  kwargs['max_new_tokens'] = budget;
 
   const stopper = new mod.InterruptableStoppingCriteria();
   const onAbort = () => stopper.interrupt();
@@ -321,15 +356,19 @@ export async function generateText(
     }
   }
   const aborted = opts.signal?.aborted === true;
+  // R4b: Stop after the first token keeps the partial text; Stop before it is a rejection
+  if (aborted && stats.outTokens < 1)
+    throw new AdapterError('aborted', 'the generation was aborted');
   const finishReason: GenerateResult['finishReason'] = aborted
     ? 'abort'
-    : !stoppedOnString && stats.outTokens >= maxTokens
+    : !stoppedOnString && stats.outTokens >= budget
       ? 'length'
       : 'stop';
   const prefillMs = Math.max(0, (stats.firstTokenAt ?? t1) - t0);
   const decodeMs = Math.max(0, t1 - (stats.firstTokenAt ?? t1));
   return {
     text,
+    budget,
     finishReason,
     inTokens: stats.inTokens,
     outTokens: stats.outTokens,
@@ -392,4 +431,144 @@ export async function probeWebGpuDevice(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ---- embeddings (backend adapter 0.4.0, R14) -------------------------------------------------------
+
+/**
+ * The embed() input rules: 1..EMBED_MAX_TEXTS texts, each a well-formed string of 1..EMBED_TEXT_MAX UTF-16
+ * units. Anything else is a TypeError, thrown before any work and before any message leaves the page.
+ */
+export function checkEmbedTexts(texts: unknown): asserts texts is string[] {
+  if (!Array.isArray(texts)) throw new TypeError('embed() takes an array of strings');
+  if (texts.length < 1 || texts.length > EMBED_MAX_TEXTS)
+    throw new TypeError(`embed() takes 1 to ${EMBED_MAX_TEXTS} texts`);
+  for (const t of texts) {
+    if (typeof t !== 'string') throw new TypeError('embed() takes an array of strings');
+    if (t.length < 1 || t.length > EMBED_TEXT_MAX)
+      throw new TypeError(`an embed() text has 1 to ${EMBED_TEXT_MAX} UTF-16 units`);
+    if (!t.isWellFormed()) throw new TypeError('an embed() text is not well-formed Unicode');
+  }
+}
+
+/** The pooling and normalisation an embed() call runs with: 'mean' and true unless the caller says otherwise. */
+export function resolveEmbedOptions(opts: EmbedOptions | undefined): {
+  pooling: 'mean' | 'cls';
+  normalize: boolean;
+} {
+  const pooling = opts?.pooling ?? 'mean';
+  if (pooling !== 'mean' && pooling !== 'cls')
+    throw new TypeError("embed() pooling is 'mean' or 'cls'");
+  const normalize = opts?.normalize ?? true;
+  if (typeof normalize !== 'boolean') throw new TypeError('embed() normalize is a boolean');
+  return { pooling, normalize };
+}
+
+/**
+ * The token count of `text` through the engine's own tokenizer, or undefined when the tokenizer cannot say.
+ * Used for the context checks (truncation of an embedding input, the prompt of a generation): never a guess.
+ */
+export function countTokens(
+  tokenizer: unknown,
+  text: string,
+  options: Record<string, unknown>,
+): number | undefined {
+  try {
+    if (typeof tokenizer !== 'function') return undefined;
+    const t = (tokenizer as (t: string, o: Record<string, unknown>) => unknown)(text, options) as {
+      input_ids?: { dims?: unknown };
+    };
+    const dims = t?.input_ids?.dims;
+    if (!Array.isArray(dims) || dims.length === 0) return undefined;
+    const n = dims[dims.length - 1];
+    return typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The length, in the model's own tokens, of the chat-templated prompt that generation will feed the engine:
+ * the template is rendered the way the text-generation pipeline renders it (add_generation_prompt, the
+ * descriptor's chatTemplateKwargs) and the result tokenised without special tokens. undefined when the
+ * tokenizer cannot say.
+ */
+export function countPromptTokens(
+  tokenizer: unknown,
+  messages: ChatMessage[],
+  templateKwargs: Record<string, string | number | boolean> | undefined,
+): number | undefined {
+  try {
+    const t = tokenizer as {
+      apply_chat_template?: (m: unknown, o: Record<string, unknown>) => unknown;
+    };
+    if (!t || typeof t.apply_chat_template !== 'function') return undefined;
+    const rendered = t.apply_chat_template(messages, {
+      tokenize: false,
+      add_generation_prompt: true,
+      ...templateKwargs,
+    });
+    if (typeof rendered !== 'string') return undefined;
+    return countTokens(tokenizer, rendered, {
+      add_special_tokens: false,
+      padding: false,
+      truncation: false,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export interface EmbedOutcome {
+  vectors: Float32Array[];
+  dims: number;
+  normalized: boolean;
+  /** How many texts were longer than the model's context and were cut. */
+  truncated: number;
+  totalMs: number;
+}
+
+/** One feature-extraction call over `texts` with the engine's pipeline: one Float32Array per text. */
+export async function embedTexts(
+  extractor: EnginePipeline,
+  descriptor: ModelDescriptor,
+  texts: string[],
+  opts: { pooling: 'mean' | 'cls'; normalize: boolean },
+): Promise<EmbedOutcome> {
+  const t0 = now();
+  let truncated = 0;
+  for (const text of texts) {
+    const n = countTokens(extractor.tokenizer, text, {
+      add_special_tokens: true,
+      truncation: false,
+      padding: false,
+    });
+    if (n !== undefined && n > descriptor.contextLength) truncated++;
+  }
+  const out = (await extractor(texts, { pooling: opts.pooling, normalize: opts.normalize })) as {
+    dims?: number[];
+    data?: ArrayLike<number>;
+  };
+  const dims = out?.dims?.[1];
+  if (
+    !out?.data ||
+    typeof dims !== 'number' ||
+    !Number.isSafeInteger(dims) ||
+    dims < 1 ||
+    out.dims?.[0] !== texts.length ||
+    out.data.length !== texts.length * dims
+  )
+    throw new AdapterError(
+      'backend',
+      'the inference engine returned an unexpected embedding shape',
+    );
+  const data = Float32Array.from(out.data);
+  const vectors = texts.map((_, i) => data.slice(i * dims, (i + 1) * dims));
+  return {
+    vectors,
+    dims,
+    normalized: opts.normalize,
+    truncated,
+    totalMs: Math.max(0, now() - t0),
+  };
 }

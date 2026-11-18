@@ -29,6 +29,7 @@ import {
   type AssetSource,
   type BackendAdapter,
   type ChatMessage,
+  type EmbedOptions,
   type EmbedResult,
   type ExecutionDevice,
   type GenerateOptions,
@@ -52,9 +53,13 @@ import {
   buildSessionOptions,
   checkSessionOptions,
   configureEnv,
+  checkEmbedTexts,
+  checkMaxTokens,
+  embedTexts,
   expectedThreads,
   generateText,
   now,
+  resolveEmbedOptions,
   probeWebGpuDevice,
   usableModelId,
   type EngineEnv,
@@ -541,8 +546,9 @@ export class TransformersAdapter implements BackendAdapter {
     const st = this.requireLoaded();
     if (st.descriptor.task !== 'text-generation')
       throw new AdapterError('unsupported_operation', 'this model does not generate text');
+    checkMaxTokens(opts.maxTokens);
     assertEnv(st.mod.env, st.env);
-    if (opts.signal?.aborted) return { text: '', finishReason: 'abort', usage: {}, timings: {} };
+    if (opts.signal?.aborted) throw new AdapterError('aborted', 'the generation was aborted');
 
     let r: Awaited<ReturnType<typeof generateText>>;
     try {
@@ -573,12 +579,14 @@ export class TransformersAdapter implements BackendAdapter {
           decodeMs,
           firstTokenMs: firstTokenMs ?? null,
           host: this.host,
+          budget: r.budget ?? 0,
         },
       }),
     );
     return {
       text,
       finishReason,
+      ...(r.budget !== undefined ? { budget: r.budget } : {}),
       usage: { promptTokens: stats.inTokens, completionTokens: stats.outTokens },
       timings: {
         prefillMs,
@@ -589,29 +597,27 @@ export class TransformersAdapter implements BackendAdapter {
     };
   }
 
-  async embed(texts: string[], opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
+  async embed(texts: string[], opts: EmbedOptions = {}): Promise<EmbedResult> {
     const st = this.requireLoaded();
     if (st.descriptor.task !== 'feature-extraction')
       throw new AdapterError('unsupported_operation', 'this model does not produce embeddings');
+    checkEmbedTexts(texts);
+    const resolved = resolveEmbedOptions(opts);
     if (opts.signal?.aborted) throw new AdapterError('aborted', 'the embedding was aborted');
     assertEnv(st.mod.env, st.env);
-    if (texts.length === 0) return { vectors: [], dims: 0, normalized: true };
-    let out: unknown;
+    let out: Awaited<ReturnType<typeof embedTexts>>;
     try {
-      out = await st.generator(texts, { pooling: 'mean', normalize: true });
+      out = await embedTexts(st.generator, st.descriptor, texts, resolved);
     } catch (e) {
       throw mapError(e, 'the inference engine failed while embedding');
     }
-    const t = out as { dims?: number[]; data?: ArrayLike<number> };
-    const dims = t.dims?.[1];
-    if (!t.data || typeof dims !== 'number' || dims < 1)
-      throw new AdapterError(
-        'backend',
-        'the inference engine returned an unexpected embedding shape',
-      );
-    const data = Float32Array.from(t.data);
-    const vectors = texts.map((_, i) => data.slice(i * dims, (i + 1) * dims));
-    return { vectors, dims, normalized: true };
+    return {
+      vectors: out.vectors,
+      dims: out.dims,
+      normalized: out.normalized,
+      truncated: out.truncated > 0,
+      timings: { totalMs: out.totalMs },
+    };
   }
 
   async unload(): Promise<void> {

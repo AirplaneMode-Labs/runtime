@@ -1,5 +1,6 @@
 import {
   emptyIndex,
+  normaliseIndex,
   type AssetStore,
   type IndexFile,
   type PartState,
@@ -107,7 +108,7 @@ export class MemoryAssetStore implements AssetStore {
   }
 
   async readIndex(): Promise<IndexFile> {
-    return structuredClone(this.index ?? emptyIndex());
+    return normaliseIndex(structuredClone(this.index ?? emptyIndex()));
   }
 
   async writeIndex(index: IndexFile): Promise<void> {
