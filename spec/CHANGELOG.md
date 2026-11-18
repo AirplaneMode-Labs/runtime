@@ -5,6 +5,60 @@ All notable changes to the open contracts. The format is based on
 Semantic Versioning: the wire discriminator `airplanemode.<name>/<major>.<minor>` changes only on
 major or minor, never on patch.
 
+## [0.5.0] - 2026-11-18 (untagged)
+
+Spec release 0.5.0 ships manifest 0.1.2 (published, an additive patch), capability profile 0.1.0 (unchanged,
+draft), event 0.1.4 (draft, patch), storage API 0.3.0 (draft, minor), backend adapter 0.4.0 (draft, minor)
+and model descriptor 0.2.1 (unchanged, draft). The published manifest 0.1.1 wire format is unchanged: wire
+strings stay `airplanemode.manifest/0.1`, `airplanemode.capability/0.1`, `airplanemode.event/0.1` and
+`airplanemode.model/0.2` (0.1 still accepted). The release minor rises because storage API 0.3.0 and backend
+adapter 0.4.0 are minor changes. The files are committed; public after the owner's push.
+
+### Added
+
+- Manifest 0.1.2: the verifier option `expectId` (an invalid value throws TypeError 'invalid expectId' before
+  parsing; a validly signed manifest of another id is refused with the new reason `unexpected_id`, stage
+  verify, before the downgrade state is read, and the state store is neither read nor written);
+  `MANIFEST_REJECT_PRECEDENCE` gains `unexpected_id` between `no_valid_signature` and `downgrade`; the
+  asset manager option `expectManifestId`; `cp-manifest verify --expect-id`. S1-097: the normative sentence
+  that a consumer resolves every entry url against the manifest URL and re-checks scheme and origin before any
+  request, and the informative shared-origin note. S1-102: the normative sentence that the downgrade state
+  must be keyed so that no id (`constructor`, `prototype`) collides with an inherited member. MANIFEST.md
+  gains Manifest 0.1.2 and Demo bundles (the rules for the manifests `scripts/bundle-models.mjs` writes:
+  distinct ids, no `expiresAt`, every engine-readable file an entry, relative urls, `pin: true` for dockit,
+  an in-memory per-build key that is never exported).
+- Vectors: `vectors/expect-id/` (eight rows) and `vectors/state-ids/` (three manifests, four rows), and
+  `vectors/tamper/tamper-base.json` (the unmodified signed base of the tamper vectors). The 5 positives, the
+  32 negatives, the 15 tamper vectors, the 3 asset-tamper cases and the 20 descriptor vectors are
+  byte-identical to release 0.4.0 (`test/spec-0.5.test.ts` checks them against a sha256 list).
+- Event 0.1.4: `model.embed` and `model.memory`; the attr `budget` of `model.generate` (and `finishReason`
+  'abort'); `unexpected_id` as a `manifest.verify.failed` reason; the `verify` phase emitted by the worker host
+  (R15); `STORAGE_EVENT_NAMES` grows from 7 to 10 (`storage.doc.put`, `storage.doc.delete`,
+  `storage.doc.query`); `DOCKIT_EVENT_NAMES` (`pipeline.stage`, `pipeline.answer`, `pipeline.memory`),
+  `PIPELINE_STAGES` and `PIPELINE_REASONS`; the SDK rule that a namespace registered with
+  `redactNamespacePrefix(prefix)` is emitted as `prefix + '*'` ('dockit.d' is registered by the SDK).
+- Storage API 0.3.0 (minor): the documents API, `putDocument`, `getDocument`, `listDocuments`,
+  `deleteDocument`, `queryChunks`, `redactNamespacePrefix`, the types `DocumentInput`, `DocumentInfo`,
+  `ChunkInput`, `PutDocumentResult`, `ChunkHit`, `QueryChunksOptions`, the constants `DOC_ID_PATTERN`,
+  `DOC_TITLE_MAX`, `DOC_META_KEYS_MAX`, `CHUNK_TEXT_UTF8_MAX`, `DOC_CHUNKS_MAX`, `CHUNK_GATE_KEYS_MAX`,
+  `DOC_QUERY_K_MAX` and `UsageResult.documents`. Document data lives in `'__ld_doc.' + ns`, separate from the
+  key-value data and the generic vector index; `putDocument` is all-or-nothing; the normative sentence that
+  `deleteDocument` hides chunks while `clear(ns)` MUST physically remove every file or record of the document
+  namespace (S-REST-1).
+- Backend adapter 0.4.0 (minor): `embed(texts, opts?)` with `EmbedOptions`, `EMBED_MAX_TEXTS` (64) and
+  `EMBED_TEXT_MAX` (8192), `EmbedResult.truncated` and `timings`; the error code `context_overflow`;
+  `GenerateResult.budget`. R4b (token budget, `context_overflow`, Stop), R14 (embeddings through the worker
+  host, with host-side validation of the worker's answer), R15 (in-worker integrity over all eight file
+  kinds, S1-070; bytes served equal bytes hashed, by method (ii): the very File snapshot is served and probed;
+  the main-thread load-time re-hash leaves the load path of the worker adapter) and the worker-support exports `installEgressGuard({ allowPathPrefixes })` and
+  `startModuleWorker(url, { policyName })`.
+
+### Changed
+
+- The schema `$id` of manifest moves to `urn:airplanemode:spec:manifest:0.1.2` and of event to
+  `urn:airplanemode:spec:event:0.1.4`; both bodies are byte-identical.
+- The Security considerations bullet 'a runtime expectId option is Sprint 5' now points at the option.
+
 ## [0.4.0] - 2026-11-14 (untagged)
 
 The plan's 'manifest spec v0.1' is the manifest contract on wire airplanemode.manifest/0.1. Release 0.4.0

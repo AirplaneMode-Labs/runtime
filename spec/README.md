@@ -7,32 +7,34 @@ touching the open code. This directory is the source of truth; every other repo 
 `// Vendored from AirplaneMode-Labs/runtime spec/<file> @ <that contract's own version>; source of
 truth is runtime/spec; do not edit here`. Mismatches are fixed on the consumer side.
 
-Spec release **0.4.0** (2026-11-14, untagged) ships these versions together (each contract keeps its own
+Spec release **0.5.0** (2026-11-18, untagged) ships these versions together (each contract keeps its own
 version, so a vendored file carries the version of its own contract, not the release number):
-manifest 0.1.1: published; other contracts: draft. The plan's "manifest spec v0.1" is the manifest contract
-on wire `airplanemode.manifest/0.1`, published as manifest 0.1.1 in [`MANIFEST.md`](MANIFEST.md); it is
-committed; public after the owner's push.
+manifest 0.1.2: published; other contracts: draft. The plan's "manifest spec v0.1" is the manifest contract
+on wire `airplanemode.manifest/0.1`, published as manifest 0.1.2 in [`MANIFEST.md`](MANIFEST.md); it is
+committed; public after the owner's push (release 0.4.0 with manifest 0.1.1 was pushed on 15 Nov 2026).
+Manifest 0.1.2 is an additive patch: the manifest 0.1.1 wire format is unchanged.
 
 The contracts are published under Apache-2.0 and never move behind the control-plane licence.
 
 | Contract           | Files                                                     | Version | Status    |
 | ------------------ | --------------------------------------------------------- | ------- | --------- |
-| Manifest           | `MANIFEST.md`, `manifest.schema.json`, `manifest.ts`      | 0.1.1   | published |
+| Manifest           | `MANIFEST.md`, `manifest.schema.json`, `manifest.ts`      | 0.1.2   | published |
 | Capability profile | `capability-profile.schema.json`, `capability-profile.ts` | 0.1.0   | draft     |
-| Event              | `event.schema.json`, `event.ts`                           | 0.1.3   | draft     |
-| Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.2.0   | draft     |
-| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.3.1   | draft     |
+| Event              | `event.schema.json`, `event.ts`                           | 0.1.4   | draft     |
+| Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.3.0   | draft     |
+| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.4.0   | draft     |
 | Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.2.1   | draft     |
 
 `index.ts` re-exports everything and carries `SPEC_RELEASE`, `SPEC_VERSIONS` and `SPEC_STATUS` (one key per
 contract). Examples live in `examples/`, the shared vectors in `vectors/` (canonicalisation, negative,
-`tamper/`, `tamper-assets/`, `descriptor/`), and the change history in `CHANGELOG.md`.
+`tamper/`, `tamper-assets/`, `descriptor/`, `expect-id/`, `state-ids/`), and the change history in
+`CHANGELOG.md`.
 
 ## Versioning
 
 Each schema has `"$schema": "https://json-schema.org/draft/2020-12/schema"` and
-`"$id": "urn:airplanemode:spec:<name>:<full version>"` (the event schema is
-`urn:airplanemode:spec:event:0.1.3`); each instance carries a `spec` discriminator
+`"$id": "urn:airplanemode:spec:<name>:<full version>"` (the manifest schema is
+`urn:airplanemode:spec:manifest:0.1.2` and the event schema `urn:airplanemode:spec:event:0.1.4`); each instance carries a `spec` discriminator
 `airplanemode.<name>/<major>.<minor>` (patch never changes the wire format; the model descriptor's is
 `airplanemode.model/0.2`, and consumers also accept `airplanemode.model/0.1`). Consumers reject unknown spec strings. All object keys match
 `^[A-Za-z_][A-Za-z0-9_]{0,63}$` (never digit-leading; see canonicalisation);
@@ -47,7 +49,7 @@ alias.
 
 Each contract has a status, "draft" or "published". "published" means frozen on its wire string: later
 changes are additive patches that change no accepted or refused input, or a new wire string. "draft" may
-change in a minor version. Release 0.4.0: manifest 0.1.1 is published; every other contract is a draft.
+change in a minor version. Release 0.5.0: manifest 0.1.2 is published; every other contract is a draft.
 
 ### Release numbering
 
@@ -56,8 +58,10 @@ minor bumps when any contract takes a minor bump, and the patch bumps otherwise;
 changes only on a contract major or minor. Release 0.4.0 bumps the minor because storage API 0.2.0 is a
 minor change; manifest 0.1.1, event 0.1.3, backend adapter 0.3.1 and model descriptor 0.2.1 are patches
 and keep their wire strings. The planned 0.3.1 patch release was folded into 0.4.0 for that reason.
+Release 0.5.0 bumps the minor again, because storage API 0.3.0 and backend adapter 0.4.0 are minor changes;
+manifest 0.1.2 and event 0.1.4 are patches and keep their wire strings.
 
-## Manifest 0.1.1 ("manifest spec v0.1", published)
+## Manifest 0.1.2 ("manifest spec v0.1", published)
 
 A `Manifest` lists each model or data file with its SHA-256, size, version, licence and minimum
 capability profile, and is signed with Ed25519. The runtime verifies the signature and every hash before
@@ -65,6 +69,12 @@ any consumer can read a byte. The full normative text is [`MANIFEST.md`](MANIFES
 canonicalisation, the duplicate-member rule, signing, trust roots, the verification order, the reason
 precedence, the downgrade rule, the test keys, the tamper vectors, security considerations and
 conformance. Shapes: `manifest.ts`; validation: `manifest.schema.json`.
+
+0.1.2 (spec release 0.5.0) is an additive patch: the verifier takes an optional `expectId` (a manifest of
+another id is refused with `unexpected_id`, before the downgrade state is read; an invalid `expectId` is a
+TypeError, 'invalid expectId'), the S1-097 and S1-102 sentences are normative in Security considerations,
+and `MANIFEST.md` has a Demo bundles section for the manifests the demo builds write. The wire format of
+0.1.1 is unchanged; vectors `expect-id/` and `state-ids/` pin the new behaviour.
 
 Summary:
 
@@ -120,7 +130,7 @@ and `maxComputeInvocationsPerWorkgroup`; adapter description and device strings 
 (driver-version fingerprint); `navigator.userAgent` and `navigator.userAgentData` are never read;
 no personal data. `satisfies(profile, minProfile)` implements the MinProfile rule above.
 
-## Event 0.1.3
+## Event 0.1.4
 
 One JSON shape for logs, timings, memory, model-load and asset records. `attrs` is flat, at most
 32 keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`, string values at most 1024 UTF-16 units, never
@@ -160,15 +170,37 @@ worker report) and, for a worker report, `count` (1 to 16 per `loadId`; later re
 worker-provided string, without exception, reaches an event. `STORAGE_EVENT_NAMES` grows from four to seven
 with `storage.query`, `storage.index.open` and `storage.index.write`.
 
-## Storage API 0.2.0
+0.1.4 is a patch (the wire string stays `airplanemode.event/0.1`; only the schema `$id` moves to
+`urn:airplanemode:spec:event:0.1.4`; spec release 0.5.0): it reserves `model.embed` and `model.memory`,
+adds the attr `budget` to `model.generate` (and `finishReason` 'abort'), the reason `unexpected_id` to
+`manifest.verify.failed`, `STORAGE_EVENT_NAMES` grows from seven to ten with `storage.doc.put`,
+`storage.doc.delete` and `storage.doc.query`, and `event.ts` exports `DOCKIT_EVENT_NAMES` (source `dockit`),
+`PIPELINE_STAGES` and `PIPELINE_REASONS`. The localdata SDK emits a namespace registered with
+`redactNamespacePrefix(prefix)` as `prefix + '*'`, so a per-document namespace never reveals a document id.
 
-See `storage-api.md` and the normative `storage-api.ts`. 0.2.0 is a minor change (draft): `query()` is
+## Storage API 0.3.0
+
+See `storage-api.md` and the normative `storage-api.ts`. 0.3.0 is a minor change (draft): the documents API
+(`putDocument`, `getDocument`, `listDocuments`, `deleteDocument`, `queryChunks` and `redactNamespacePrefix`):
+a document and its text chunks with vectors are written all-or-nothing under the reserved driver
+namespace `'__ld_doc.' + ns`, queried by a brute-force top-k, and `clear(ns)` physically removes them.
+0.2.0 was a minor change (draft): `query()` is
 implemented (brute-force top-k, `cosine` or `dot`, bit-exact f32 scoring), `putVectors()` and `indexInfo()`
 are new, a vector index sits beside the key-value data in each namespace, writes are all-or-nothing,
 `UsageResult` gains `vectorRows` and `vectorBytes`, and the error code `corrupt` is new. The prefix `__ld_`
 is reserved for the SDK's own driver namespaces. The on-disk format is localdata-internal.
 
-## Backend adapter 0.3.1
+## Backend adapter 0.4.0
+
+0.4.0 is a minor change (draft): `embed(texts, opts?)` with `EmbedOptions` (`pooling`, `normalize`),
+`EMBED_MAX_TEXTS` and `EMBED_TEXT_MAX`, `EmbedResult.truncated` and `timings`, the error code
+`context_overflow`, `GenerateResult.budget`, and the rules R4b (token budget, `context_overflow`, Stop),
+R14 (embeddings through the worker host, with host-side validation of the worker's answer) and R15
+(in-worker integrity over every file the engine can read; the main-thread load-time re-hash leaves the
+load path), plus the worker-support exports `installEgressGuard({ allowPathPrefixes })` and
+`startModuleWorker(url, { policyName })`. Earlier history follows.
+
+### Backend adapter 0.3.1
 
 See `backend-adapter.md` (rules R1 to R6: descriptor, verify-on-hand-off, no egress, generate, error
 hygiene, Chrome built-in model; R2w and R3w for an engine in a worker; R7 to R13: isolation, abort and

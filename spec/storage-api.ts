@@ -1,8 +1,18 @@
 /**
- * Storage API contract 0.2.0 (draft; normative; see storage-api.md for prose).
+ * Storage API contract 0.3.0 (draft; normative; see storage-api.md for prose).
  *
  * Implemented by @airplanemode/localdata over OPFS with an IndexedDB fallback. The SDK does
  * validation, codec and quota accounting above a StorageDriver.
+ *
+ * 0.3.0 (minor, spec release 0.5.0) adds the documents API for the dockit pipeline: `putDocument()`,
+ * `getDocument()`, `listDocuments()`, `deleteDocument()`, `queryChunks()` and `redactNamespacePrefix()`, the
+ * types `DocumentInput`, `DocumentInfo`, `ChunkInput`, `PutDocumentResult`, `ChunkHit` and
+ * `QueryChunksOptions`, the constants DOC_ID_PATTERN, DOC_TITLE_MAX, DOC_META_KEYS_MAX,
+ * CHUNK_TEXT_UTF8_MAX, DOC_CHUNKS_MAX, CHUNK_GATE_KEYS_MAX and DOC_QUERY_K_MAX, and `UsageResult.documents`.
+ * Document data lives in the SDK-reserved driver namespace '__ld_doc.' + ns, apart from the key-value
+ * data and the generic vector index of ns. putDocument is ALL-OR-NOTHING; `clear(ns)` MUST physically
+ * remove every file or record of the document namespace (storage-api.md, Documents (0.3.0)). Nothing of
+ * 0.2.0 changes.
  *
  * 0.2.0 (minor, spec release 0.4.0) implements `query()` and adds the vector index API: `putVectors()`,
  * `indexInfo()`, `VectorRow`, `VectorMetric`, `QueryOptions.metric` and `values`, the error code
@@ -120,7 +130,7 @@ export interface ListResult {
 }
 
 export interface UsageResult {
-  /** All bytes, including vectorBytes. */
+  /** All bytes, including vectorBytes and the bytes of the documents. */
   bytes: number;
   quotaBytes?: number;
   /** KV items only. */
@@ -129,12 +139,99 @@ export interface UsageResult {
   vectorRows?: number;
   /** Bytes of the vector index (omitted when there is no index in scope). */
   vectorBytes?: number;
+  /** 0.3.0: live documents (omitted when there is no document namespace in scope). */
+  documents?: number;
 }
 
 export interface QueryHit {
   key: string;
   score: number;
   value?: StorableValue;
+}
+
+// ---- documents API (0.3.0) -----------------------------------------------------------------------
+
+/** A document id: `^[a-z0-9][a-z0-9_-]{0,63}$`. 'constructor' and 'prototype' are legal ids. */
+export const DOC_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+/** Maximum DocumentInput.title length, in UTF-16 code units; String.prototype.isWellFormed() must hold. */
+export const DOC_TITLE_MAX = 256;
+/** Maximum number of keys in DocumentInput.meta. */
+export const DOC_META_KEYS_MAX = 16;
+/** Maximum UTF-8 length of ChunkInput.text, in bytes. */
+export const CHUNK_TEXT_UTF8_MAX = 16384;
+/** Maximum number of chunks of one document (ordinals 0..DOC_CHUNKS_MAX - 1). */
+export const DOC_CHUNKS_MAX = 20000;
+/** Maximum number of keys in ChunkInput.gate. */
+export const CHUNK_GATE_KEYS_MAX = 8;
+/** Maximum k of queryChunks(). */
+export const DOC_QUERY_K_MAX = 1000;
+
+/**
+ * What the application says about a document. `sha256` is computed by the application over the source
+ * bytes (64 lowercase hex). `meta` has at most DOC_META_KEYS_MAX keys matching
+ * `^[A-Za-z][A-Za-z0-9_]{0,63}$`; only __proto__, constructor and prototype are refused (details.reason
+ * 'reserved_key'): toString, valueOf, hasOwnProperty and the like are legal and round-trip as own members.
+ * String values are at most 1024 UTF-16 units.
+ */
+export interface DocumentInput {
+  docId: string;
+  title: string;
+  sha256: string;
+  /** Integer 0..2^53-1. */
+  bytes: number;
+  /** Integer 0..100000. */
+  pages: number;
+  meta?: Record<string, Primitive>;
+}
+
+export interface DocumentInfo extends DocumentInput {
+  /** Chunks stored for the document. */
+  chunks: number;
+  /** The vector length of the document's namespace; 0 when `chunks` is 0. */
+  dim: number;
+  /** Epoch milliseconds, set by the SDK at the commit. */
+  createdAt: number;
+}
+
+/**
+ * One text chunk of a document with its vector. `ordinal` is an integer 0..DOC_CHUNKS_MAX-1, unique in the
+ * call; `pageStart` is 1..pages and `pageEnd` is pageStart..pages; `text` is 1..CHUNK_TEXT_UTF8_MAX UTF-8
+ * bytes and well-formed; `vector` follows the VectorRow rules and has the namespace dim; `gate` (at most
+ * CHUNK_GATE_KEYS_MAX keys, the meta key rules) carries the extraction gate's verdict for the chunk.
+ */
+export interface ChunkInput {
+  ordinal: number;
+  pageStart: number;
+  pageEnd: number;
+  text: string;
+  vector: Float32Array;
+  gate?: Record<string, Primitive>;
+}
+
+export interface PutDocumentResult {
+  docId: string;
+  chunks: number;
+  /** True when the call replaced a document with the same docId (in the same commit). */
+  replaced: boolean;
+  /** Live chunk rows in ns after the call. */
+  rows: number;
+}
+
+export interface ChunkHit {
+  docId: string;
+  title: string;
+  ordinal: number;
+  pageStart: number;
+  pageEnd: number;
+  text: string;
+  score: number;
+}
+
+export interface QueryChunksOptions {
+  /** Only chunks of this document are candidates. */
+  docId?: string;
+  /** Default 'cosine'. */
+  metric?: VectorMetric;
 }
 
 export interface StorageApi {
@@ -161,6 +258,42 @@ export interface StorageApi {
   ): Promise<PutVectorsResult>;
   /** Index facts, or undefined when the namespace has no index. */
   indexInfo(ns: string): Promise<VectorIndexInfo | undefined>;
+  /**
+   * 0.3.0. Stores a document and every chunk in ONE commit (all-or-nothing); a document with the same
+   * docId is replaced in that same commit (replaced: true). Zero chunks is allowed. Validation order and
+   * the details.reason values are normative (storage-api.md, Documents (0.3.0)).
+   */
+  putDocument(
+    ns: string,
+    doc: DocumentInput,
+    chunks: Iterable<ChunkInput> | AsyncIterable<ChunkInput>,
+  ): Promise<PutDocumentResult>;
+  /** 0.3.0. The document, or undefined. */
+  getDocument(ns: string, docId: string): Promise<DocumentInfo | undefined>;
+  /** 0.3.0. Every document of ns, sorted by docId (UTF-8 bytes). */
+  listDocuments(ns: string): Promise<DocumentInfo[]>;
+  /**
+   * 0.3.0. One commit. After it resolves true no queryChunks returns the document's chunks, including after
+   * a reopen. The bytes may remain in the driver until clear(ns) (no compaction).
+   */
+  deleteDocument(ns: string, docId: string): Promise<boolean>;
+  /**
+   * 0.3.0. Brute-force top-k over the document chunks of ns: score descending, then docId ascending by
+   * UTF-8 bytes, then ordinal ascending; length min(k, candidates), [] when there are no documents. k is an
+   * integer 1..DOC_QUERY_K_MAX.
+   */
+  queryChunks(
+    ns: string,
+    vector: Float32Array,
+    k: number,
+    opts?: QueryChunksOptions,
+  ): Promise<ChunkHit[]>;
+  /**
+   * 0.3.0, events only. A namespace that starts with `prefix` is emitted in event attrs as prefix + '*'
+   * (an application registers 'dockit.d' so that 'dockit.d<docId>' never reaches an event). The SDK
+   * registers 'dockit.d' itself.
+   */
+  redactNamespacePrefix(prefix: string): void;
   usage(ns?: string): Promise<UsageResult>;
   clear(ns: string): Promise<void>;
   list(ns: string, opts?: ListOptions): Promise<ListResult>;
@@ -178,7 +311,7 @@ export type StorageErrorCode =
   | 'driver_unavailable'
   | 'io'
   | 'closed'
-  /** The vector index failed a structural or checksum check; details { ns, file, reason }. */
+  /** A vector index or document record failed a structural or checksum check; details { ns, file, reason }. */
   | 'corrupt';
 
 export class StorageError extends Error {

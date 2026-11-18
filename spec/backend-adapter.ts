@@ -1,5 +1,13 @@
 /**
- * Backend adapter contract 0.3.1 (see backend-adapter.md for prose).
+ * Backend adapter contract 0.4.0 (see backend-adapter.md for prose).
+ *
+ * 0.4.0 (minor, spec release 0.5.0): `embed(texts, opts?)` takes `EmbedOptions` (`pooling`, `normalize`,
+ * `signal`) and returns `EmbedResult` with `truncated` and `timings`; the limits EMBED_MAX_TEXTS and
+ * EMBED_TEXT_MAX; the error code 'context_overflow'; `GenerateResult.budget`. backend-adapter.md adds R4b
+ * (token budget, context_overflow, Stop), R14 (embeddings through the worker host, with host-side
+ * validation of the worker's answer) and R15 (in-worker integrity over every file the engine can read; the
+ * main-thread load-time re-hash leaves the load path), and names the worker-support exports
+ * installEgressGuard({ allowPathPrefixes }) and startModuleWorker(url, { policyName }).
  *
  * 0.3.1 (spec release 0.4.0, patch): no type changed; backend-adapter.md amends R13 (worker-reported
  * egress refusals are recorded per Event 0.1.3, and the host never forwards worker text; S1-074).
@@ -86,7 +94,13 @@ export interface GenerateOptions {
 
 export interface GenerateResult {
   text: string;
+  /**
+   * 'length' when the token budget (R4b) was reached; 'abort' when the signal fired after the first token
+   * (the partial text is returned; an abort before the first token rejects 'aborted').
+   */
   finishReason: 'stop' | 'length' | 'abort' | 'error';
+  /** 0.4.0: the token budget this call ran with (R4b); absent on adapters that do not budget. */
+  budget?: number;
   usage: { promptTokens?: number; completionTokens?: number };
   timings: {
     prefillMs?: number;
@@ -97,10 +111,27 @@ export interface GenerateResult {
   };
 }
 
+/** Texts per embed() call, at most. A count outside 1..EMBED_MAX_TEXTS is a TypeError before any work. */
+export const EMBED_MAX_TEXTS = 64;
+/** UTF-16 code units per text, at most. A length outside 1..EMBED_TEXT_MAX, or a string that is not well-formed, is a TypeError. */
+export const EMBED_TEXT_MAX = 8192;
+
+export interface EmbedOptions {
+  signal?: AbortSignal;
+  /** Default 'mean'. */
+  pooling?: 'mean' | 'cls';
+  /** Default true: each vector has unit length. */
+  normalize?: boolean;
+}
+
 export interface EmbedResult {
+  /** One Float32Array of length `dims` per input text, in input order; every value finite. */
   vectors: Float32Array[];
   dims: number;
   normalized: boolean;
+  /** True when at least one text was cut to the model's context length. */
+  truncated?: boolean;
+  timings?: { totalMs: number };
 }
 
 export interface LoadOptions {
@@ -149,7 +180,7 @@ export interface BackendAdapter {
    */
   load(entry: ManifestEntry, opts: LoadOptions): Promise<void>;
   generate(prompt: string | ChatMessage[], opts?: GenerateOptions): Promise<GenerateResult>;
-  embed(texts: string[], opts?: { signal?: AbortSignal }): Promise<EmbedResult>;
+  embed(texts: string[], opts?: EmbedOptions): Promise<EmbedResult>;
   unload(): Promise<void>;
 }
 
@@ -164,6 +195,8 @@ export type AdapterErrorCode =
   | 'egress_refused'
   /** A file failed its SHA-256 check (at download or at the R2 re-hash): never used, never retried in one chain. */
   | 'integrity'
+  /** The prompt leaves no room to generate: contextLength - promptTokens < 1 (R4b). Rejected before decode. */
+  | 'context_overflow'
   /** cacheOnly was requested and the file is not stored in full, or the stored file disappeared. */
   | 'not_cached';
 

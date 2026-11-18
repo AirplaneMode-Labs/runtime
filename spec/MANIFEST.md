@@ -3,11 +3,12 @@
 The open, signed model-asset manifest of Airplane Mode Labs. This document is normative and standalone:
 an implementation can be written from it, the schema and the vectors alone. It is the plan's "manifest
 spec v0.1": the manifest contract on the wire string `airplanemode.manifest/0.1`, published as manifest
-0.1.1 in spec release 0.4.0, status: published (committed; public after the owner's push). Published
-means frozen on its wire string: later changes are additive patches that change no accepted or refused
-input, or a new wire string.
+0.1.2 in spec release 0.5.0, status: published (committed; public after the owner's push; manifest 0.1.1
+was pushed on 15 Nov 2026). Published means frozen on its wire string: later changes are additive patches
+that change no accepted or refused input, or a new wire string. Manifest 0.1.2 is such a patch (see
+Manifest 0.1.2 below): the wire format of manifest 0.1.1 is unchanged.
 
-Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.1`),
+Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.2`),
 `manifest.ts` (the TypeScript mirror and the shared constants), `vectors/` (positive, negative and
 tamper vectors), `examples/` (a signed and an unsigned example, `TEST-KEY.md`). The key words MUST,
 MUST NOT, SHOULD and MAY are used as in RFC 2119.
@@ -222,14 +223,16 @@ verifier that finds an entry whose key does not hash to its `keyId` reports the 
    A verifier that applies step 3 never reports them, because the same faults are `schema` there.
 
 6. At least one valid signature, else `no_valid_signature`. One signature is enough.
-7. The downgrade rule (see Downgrade).
-8. Every entry's bytes are hashed in full and compared to `sha256` before any consumer can read them; no
+7. When the caller passed `expectId`: the manifest `id` must equal it, else `unexpected_id` (see Manifest
+   0.1.2). The downgrade state is not read for a manifest refused here.
+8. The downgrade rule (see Downgrade).
+9. Every entry's bytes are hashed in full and compared to `sha256` before any consumer can read them; no
    partial file is ever exposed.
 
 Malformed input never throws out of a verifier: it is a rejection with a reason. The reasons are
 `invalid_json`, `float`, `bigint`, `digit_key`, `invalid_key`, `lone_surrogate`, `bad_spec`, `bad_url`,
-`schema`, `unsorted_entries`, `duplicate_entries`, `expired`, `no_valid_signature`, `downgrade`, `state`
-and `test_key_refused`. A verifier reports the per-signature reasons (`unknown_alg`, `malformed_key_id`,
+`schema`, `unsorted_entries`, `duplicate_entries`, `expired`, `no_valid_signature`, `unexpected_id`,
+`downgrade`, `state` and `test_key_refused`. A verifier reports the per-signature reasons (`unknown_alg`, `malformed_key_id`,
 `untrusted_key`, `key_mismatch`, `malformed_sig`, `bad_signature`, or `valid`) in signature order.
 
 ## Reason precedence
@@ -245,7 +248,8 @@ The reason is the first stage that fails, in this order (`MANIFEST_REJECT_PRECED
 6. `duplicate_entries`;
 7. `expired`;
 8. `no_valid_signature`;
-9. `downgrade` or `state`.
+9. `unexpected_id` (only when the caller passed `expectId`);
+10. `downgrade` or `state`.
 
 A missing "spec" key is bad_spec, never schema. A missing or non-array "signatures" member is schema,
 judged after the parse stage: a document with such a member and a parse-stage fault (a digit-leading key, a
@@ -255,7 +259,7 @@ earliest listed. Shared vectors never combine two parse-stage faults, so the ord
 is not tested; every other pair is.
 
 `stage` in the vector tables is `parse` for reasons 1 to 6 (the manifest is refused before any signature
-is examined) and `verify` for reasons 7 to 9.
+is examined) and `verify` for reasons 7 to 10.
 
 ## Downgrade
 
@@ -345,8 +349,15 @@ code this runtime returns).
   names, not that the manifest names a safe file. The trust root is application configuration; whoever
   controls it controls what is accepted.
 - Consumers MUST check that manifest.id equals the id they expect: a validly signed manifest for another
-  product verifies like any other (mix-and-match). A runtime expectId option is Sprint 5; until then the
-  application checks `manifest.id` itself.
+  product verifies like any other (mix-and-match). Since 0.1.2 the verifier does it for the caller: pass
+  the expectId option (see Manifest 0.1.2).
+- A consumer MUST resolve every entry url against the manifest URL and re-check the resolved URL's scheme
+  (https, or http to a loopback host in tests) and origin against its allowed origins before any request; a
+  network-path reference (//host/...) or a backslash form that the WHATWG URL parser treats as one can leave
+  the manifest's origin. (S1-097, normative since 0.1.2.) Informative: on a shared origin, a consumer SHOULD
+  also require each resolved pathname to start with its own model directory.
+- Implementations MUST key the downgrade state so that no id (for example constructor or prototype) collides
+  with an inherited member of the host language's map or object type. (S1-102, normative since 0.1.2.)
 - The downgrade state is first-use and per-profile: a fresh profile, or cleared site data, accepts any
   validly signed older version.
 - A manifest without `expiresAt` can be replayed indefinitely on a fresh profile, so publishers SHOULD set expiresAt.
@@ -377,3 +388,55 @@ fetches assets.
 `.canonical.txt`, and the Ed25519 signature of those bytes under the TEST 1 seed equals its `.sig.txt`.
 The runtime (`@airplanemode/runtime`) runs the full set in `test/spec-0.4.test.ts` and
 `test/tamper-vectors.test.ts`.
+
+## Manifest 0.1.2
+
+Manifest 0.1.2 is an additive patch of 0.1.1 (spec release 0.5.0). The wire string, the shape, the canonical
+bytes, every vector verdict and every input a verifier accepted or refused are unchanged: a verifier
+that is not given `expectId` behaves exactly as at 0.1.1. The `$id` of the schema moves to
+`urn:airplanemode:spec:manifest:0.1.2`; its body is byte-identical.
+
+**expectId.** A verifier takes an optional `expectId`, the manifest id the application expects.
+
+- When present it must match the manifest id grammar `^[a-z0-9][a-z0-9.-]{2,127}$`. Otherwise
+  `verifyManifest` throws a TypeError with the exact message 'invalid expectId' before it parses
+  anything. This is a caller error: it has no `ManifestRejectReason`, and cp-manifest reports it as a usage
+  error with exit status 2.
+- After at least one valid signature and BEFORE the downgrade state is read, a manifest whose `id` differs
+  from `expectId` is rejected with the reason 'unexpected_id' (stage 'verify'). The state store is neither
+  read nor written for that manifest. The stages before it keep their precedence: a manifest that is
+  expired, or has no valid signature, reports that reason, not `unexpected_id`.
+- The runtime asset manager takes the same option as `expectManifestId`, passes it to the verifier and
+  reports a refusal as `manifest.verify.failed` with `reason` 'unexpected_id'. cp-manifest takes
+  `verify --expect-id <id>`.
+- Vectors: `vectors/expect-id/` (eight rows; file names are relative to `vectors/`). Rows 07 and 08 expect
+  `throws: 'TypeError'` with `message: 'invalid expectId'`; T2 parity compares on the `throws` field.
+  `vectors/state-ids/` (four rows with ids `constructor` and `prototype`) pins the S1-102 rule. An
+  implementation with no state store skips the rows with `requiresState` and says why.
+
+**S1-097 and S1-102.** The two sentences in Security considerations (resolve and re-check every entry url;
+key the downgrade state so that no id collides with an inherited member) are normative from 0.1.2. They
+describe what a conforming consumer already had to do; no verdict of the verifier changes.
+
+## Demo bundles
+
+The demo builds of this repository write manifests that other repositories verify. These rules are
+normative for the files `scripts/bundle-models.mjs` writes; they do not change the manifest wire format.
+
+- The id is 'dev.airplanemode.dockit-models' (the dockit model set) or 'dev.airplanemode.runtime-demo-models'
+  (the runtime demo model set). Each consumer pins its own id with `expectId` / `expectManifestId`, so a
+  validly signed bundle of the other product is refused with 'unexpected_id'.
+- The version is the consumer's package.json version. The publisher is 'AirplaneMode-Labs demo build'.
+  `createdAt` is the build time in UTC to the second. There is no expiresAt: the demo must keep working
+  offline, and the trust root changes with every build, so an old manifest cannot verify against a new
+  bundle.
+- EVERY file the engine can read is an entry with `sha256`, `size` and `licence`: the .onnx graph, the ORT
+  .wasm and its .mjs factory, tokenizer.json, tokenizer_config.json, config.json, generation_config.json,
+  chat_template.jinja and special_tokens_map.json.
+- Entry urls are relative paths under the manifest directory: no leading '/', no '..', no backslash, no '//'
+  and no scheme. A consumer still applies the S1-097 rule above to each resolved url.
+- The dockit entries carry pin: true.
+- The manifest carries one ed25519 signature, made with a key generated in memory per build and never
+  exported (no file, no log line, no serialised form). The public half is compiled into the consumer as its
+  trust root: trust-root.ts exports exactly one { keyId, publicKeyB64 }. The signature proves only that the
+  manifest and the bundle came from the same build, not who published it.

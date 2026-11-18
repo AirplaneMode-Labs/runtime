@@ -1,0 +1,54 @@
+[
+  {
+    "file": "constructor-1.1.0.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": true,
+    "expect": {
+      "valid": true
+    }
+  },
+  {
+    "file": "constructor-1.1.0.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": {
+      "version": "1.1.0",
+      "createdAt": "2026-11-01T00:00:00Z"
+    },
+    "requiresState": true,
+    "expect": {
+      "valid": true
+    }
+  },
+  {
+    "file": "constructor-1.0.0.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": {
+      "version": "1.1.0",
+      "createdAt": "2026-11-01T00:00:00Z"
+    },
+    "requiresState": true,
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "downgrade"
+    }
+  },
+  {
+    "file": "prototype-1.1.0.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": true,
+    "expect": {
+      "valid": true
+    }
+  }
+]

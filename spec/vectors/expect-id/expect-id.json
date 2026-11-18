@@ -1,0 +1,118 @@
+[
+  {
+    "file": "tamper/tamper-base.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "tamper-base",
+    "expect": {
+      "valid": true
+    }
+  },
+  {
+    "file": "tamper/tamper-base.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "other-product",
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "unexpected_id"
+    }
+  },
+  {
+    "file": "tamper/tamper-03-sig-bitflip.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "other-product",
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "no_valid_signature"
+    }
+  },
+  {
+    "file": "tamper/tamper-10-expired.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "other-product",
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "expired"
+    }
+  },
+  {
+    "file": "tamper/tamper-08-rollback.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": {
+      "version": "1.1.0",
+      "createdAt": "2026-11-01T00:00:00Z"
+    },
+    "requiresState": true,
+    "expectId": "other-product",
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "unexpected_id"
+    }
+  },
+  {
+    "file": "tamper/tamper-08-rollback.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": {
+      "version": "1.1.0",
+      "createdAt": "2026-11-01T00:00:00Z"
+    },
+    "requiresState": true,
+    "expectId": "tamper-base",
+    "expect": {
+      "valid": false,
+      "stage": "verify",
+      "reason": "downgrade"
+    }
+  },
+  {
+    "file": "tamper/tamper-base.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "BAD ID",
+    "expect": {
+      "valid": false,
+      "throws": "TypeError",
+      "message": "invalid expectId"
+    }
+  },
+  {
+    "file": "tamper/tamper-base.json",
+    "trust": ["rfc8032-1"],
+    "allowTestKeys": true,
+    "now": "2026-11-14T00:00:00Z",
+    "state": null,
+    "requiresState": false,
+    "expectId": "",
+    "expect": {
+      "valid": false,
+      "throws": "TypeError",
+      "message": "invalid expectId"
+    }
+  }
+]

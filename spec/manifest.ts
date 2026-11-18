@@ -1,11 +1,20 @@
 /**
- * Manifest contract 0.1.1 (airplanemode.manifest/0.1), status "published": this is the plan's
- * "manifest spec v0.1" (committed; public after the owner's push).
+ * Manifest contract 0.1.2 (airplanemode.manifest/0.1), status "published": this is the plan's
+ * "manifest spec v0.1" (pushed 15 Nov 2026 as 0.1.1).
+ *
+ * 0.1.2 (spec release 0.5.0) is an additive patch of 0.1.1 and changes the verdict of no input unless the
+ * caller opts in: `VerifyOptions.expectId` (the verifier throws TypeError 'invalid expectId' for an
+ * invalid value, and rejects a validly signed manifest of another id with the new reason `unexpected_id`
+ * before it reads the downgrade state); the normative sentence of S1-097 (resolve and re-check every
+ * entry url) and the S1-102 sentence (key the downgrade state so that no id collides with an inherited
+ * member) in Security considerations; and the normative rules for the manifests the demo builds write
+ * (MANIFEST.md, Demo bundles). The wire format is unchanged: every document 0.1.1 accepted or refused
+ * has the same verdict without expectId. The schema body is unchanged: only its $id moves.
  *
  * Normative prose: MANIFEST.md (scope, shape, canonicalisation, duplicate members, signing, trust
  * roots, verification order, reason precedence, downgrade, test keys, tamper vectors, security
  * considerations, conformance). Normative JSON Schema: manifest.schema.json ($id
- * urn:airplanemode:spec:manifest:0.1.1; the body is unchanged since 0.1.0). This file is the
+ * urn:airplanemode:spec:manifest:0.1.2; the body is unchanged since 0.1.0). This file is the
  * TypeScript mirror of the schema plus the constants every implementation shares.
  *
  * 0.1.1 is an additive patch of 0.1.0 (spec release 0.4.0): it changes no input that 0.1.0 accepted
@@ -210,6 +219,8 @@ export type ManifestRejectReason =
   | 'duplicate_entries'
   | 'expired'
   | 'no_valid_signature'
+  /** 0.1.2: the caller passed expectId and the validly signed manifest has another id. */
+  | 'unexpected_id'
   | 'downgrade'
   | 'state'
   | 'test_key_refused';
@@ -250,7 +261,8 @@ export const RFC8032_TEST_KEY_IDS = Object.freeze([
  * Reason precedence (normative, MANIFEST.md "Reason precedence"): when several faults hold, the
  * reason is the first stage below that fails. Each group is one stage; shared vectors never combine
  * two parse-stage faults, so the order inside the first group is not tested.
- * test_key_refused is not listed: it is raised before parsing and is the only reason that throws.
+ * test_key_refused is not listed: it is raised before parsing and is the only reason that throws. The
+ * TypeError 'invalid expectId' (0.1.2) is a caller error, not a reason.
  *
  *  1. parse stage: invalid_json (including a repeated member name at any depth), lone_surrogate, float,
  *     bigint, digit_key, invalid_key
@@ -261,7 +273,8 @@ export const RFC8032_TEST_KEY_IDS = Object.freeze([
  *  6. duplicate_entries
  *  7. expired
  *  8. no_valid_signature
- *  9. downgrade or state
+ *  9. unexpected_id (0.1.2; only when the caller passed expectId; the state store is neither read nor written)
+ * 10. downgrade or state
  */
 export const MANIFEST_REJECT_PRECEDENCE: readonly (readonly ManifestRejectReason[])[] =
   Object.freeze([
@@ -280,5 +293,6 @@ export const MANIFEST_REJECT_PRECEDENCE: readonly (readonly ManifestRejectReason
     Object.freeze(['duplicate_entries'] as const),
     Object.freeze(['expired'] as const),
     Object.freeze(['no_valid_signature'] as const),
+    Object.freeze(['unexpected_id'] as const),
     Object.freeze(['downgrade', 'state'] as const),
   ]);

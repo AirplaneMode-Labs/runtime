@@ -1,7 +1,17 @@
 /**
- * Event contract 0.1.3 (airplanemode.event/0.1; the wire string never changes on a patch).
+ * Event contract 0.1.4 (airplanemode.event/0.1; the wire string never changes on a patch).
  *
- * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.3).
+ * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.4).
+ *
+ * 0.1.4 (wire-compatible, spec release 0.5.0): reserves model.embed and model.memory (RUNTIME_EVENT_NAMES);
+ * model.generate gains the attr budget (an integer) and its finishReason may be 'abort'; the reason of
+ * manifest.verify.failed may be 'unexpected_id' (manifest 0.1.2, expectId); the model.load.phase 'verify'
+ * event is emitted by the worker host with host 'worker' and its bytes equal the total re-hashed in the
+ * worker (backend adapter R15); STORAGE_EVENT_NAMES grows from 7 to 10 with storage.doc.put,
+ * storage.doc.delete and storage.doc.query (documents API, storage API 0.3.0); and the application events
+ * of the dockit pipeline are named: DOCKIT_EVENT_NAMES (source 'dockit'), PIPELINE_STAGES and
+ * PIPELINE_REASONS. No event ever carries a file name, document id, title, page text, question, prompt or
+ * answer. The schema body is unchanged: only its $id moves.
  *
  * 0.1.3 (wire-compatible, spec release 0.4.0): backend.egress.refused is re-specified so that no
  * worker-supplied string ever reaches an event (S1-074): attrs adapter (the host's own adapter id),
@@ -119,7 +129,10 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
   'capability.measured',
   /** attrs: manifestId, version */
   'manifest.verify.ok',
-  /** attrs: manifestId, reason */
+  /**
+   * attrs: manifestId, version, reason (a ManifestRejectReason, or 'state_unavailable'; 'unexpected_id'
+   * since manifest 0.1.2, when the caller passed expectId and the validly signed manifest has another id).
+   */
   'manifest.verify.failed',
   /**
    * kind log; level info (selected) or warn (anything else).
@@ -160,8 +173,9 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
   'model.load.failed',
   /**
    * kind timing. attrs: adapter, device, finishReason, inTokens, outTokens, tokensPerSecond,
-   * prefillMs, decodeMs, firstTokenMs (number, or null when no token was produced), host; top-level
-   * durationMs. Never the prompt or the output.
+   * prefillMs, decodeMs, firstTokenMs (number, or null when no token was produced), host and, since
+   * 0.1.4, budget (integer: the token budget of backend adapter R4b); finishReason may be 'abort' (Stop
+   * after the first token); top-level durationMs. Never the prompt or the output.
    */
   'model.generate',
   /**
@@ -195,6 +209,20 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
    * 'abort' | 'error'). durationMs is the spawn-to-ready time on state 'ready'.
    */
   'backend.worker',
+  /**
+   * kind timing; level info (warn when the outcome is not 'ok'). attrs: adapter, model, device, host
+   * 'worker' | 'main', loadId, inputs (integer: the number of texts), truncated (integer: how many were
+   * cut to the model's context), dims (integer), outcome 'ok' or an AdapterErrorCode; top-level durationMs.
+   * Never the input text or a vector (backend adapter R14).
+   */
+  'model.embed',
+  /**
+   * kind memory; level info. attrs: adapter, host 'worker' | 'main', loadId, phase 'load' | 'generate' |
+   * 'embed', measure 'wasm-memory' | 'unavailable'; top-level bytes = the peak WebAssembly.Memory
+   * buffer.byteLength sampled every 50 ms inside the worker during that phase, omitted when measure is
+   * 'unavailable'. Read from the engine's own memory object, never estimated.
+   */
+  'model.memory',
 ] as const);
 
 export type RuntimeEventName = (typeof RUNTIME_EVENT_NAMES)[number];
@@ -222,7 +250,7 @@ export type MemorySamplePoint = (typeof MEMORY_SAMPLE_POINTS)[number];
  * Event names localdata emits (source 'localdata'), through an optional EventSink outside the
  * Storage API contract. The sink is called synchronously inside try/catch and never awaited. No
  * event carries a key, a prefix, a query vector, a score or a value; the namespace (attr 'ns') does
- * appear. Seven names since Event 0.1.3.
+ * appear. Seven names since Event 0.1.3, ten since 0.1.4 (the documents API of storage API 0.3.0).
  */
 export const STORAGE_EVENT_NAMES = Object.freeze([
   /** kind timing. attrs: ns, driver 'opfs' | 'indexeddb' | 'memory', outcome 'ok' | StorageErrorCode; bytes; durationMs. */
@@ -254,6 +282,91 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * rows (rows after the call), replaced (rows replaced by the call), segments; bytes and durationMs.
    */
   'storage.index.write',
+  /**
+   * kind timing; level debug, warn on failure. attrs: ns, driver, outcome ('ok' or a StorageErrorCode),
+   * chunks (integer), replaced (boolean: the call replaced a document), rows (live chunk rows in ns after the
+   * call); bytes, durationMs. Never docId, title, sha256, meta, chunk text, a vector or a score.
+   */
+  'storage.doc.put',
+  /**
+   * kind timing; level debug, warn on failure. attrs: ns, driver, outcome 'removed' | 'absent' |
+   * StorageErrorCode; durationMs. Never the docId.
+   */
+  'storage.doc.delete',
+  /**
+   * kind timing; level debug, warn on failure. attrs: ns, driver, outcome ('ok' or a StorageErrorCode), k,
+   * candidates (chunk rows that matched), metric 'cosine' | 'dot', kernel 'simd' | 'scalar' | 'none';
+   * durationMs. Never the query vector, a docId, text or a score.
+   *
+   * Namespaces. The localdata SDK replaces any ns starting 'dockit.d' with the literal 'dockit.d*' in
+   * event attrs. This is a normative SDK rule: a per-document ns prefix registered by the application with
+   * redactNamespacePrefix(prefix) is emitted as prefix+'*', so a document id that a namespace carries
+   * never reaches an event or the DevTools snapshot.
+   */
+  'storage.doc.query',
 ] as const);
 
 export type StorageEventName = (typeof STORAGE_EVENT_NAMES)[number];
+
+/**
+ * Event names of the dockit reference application (source 'dockit'), emitted through the same EventSink.
+ * Attrs documented beside each name. No event ever carries a file name, document id, title, page text,
+ * question, prompt or answer: the attrs are enums, counts and numbers.
+ */
+export const DOCKIT_EVENT_NAMES = Object.freeze([
+  /**
+   * kind timing. attrs: stage (a PipelineStage), outcome 'ok' | 'refused' | 'error' | 'skipped', reason
+   * ('' or a PipelineReason), pages, chunks, held (integers; 0 where a stage has no such count);
+   * durationMs, bytes.
+   */
+  'pipeline.stage',
+  /**
+   * kind timing. attrs: outcome, reason, k, sources, budget (integers), firstTokenMs (number or null),
+   * unknownCitations (integer: citations the model invented that matched no retrieved chunk); durationMs.
+   */
+  'pipeline.answer',
+  /**
+   * kind memory. attrs: worker 'analysis', stage, measure 'wasm-memory' | 'unavailable'; bytes = the peak
+   * wasm-bindgen memory.buffer.byteLength in the analysis worker.
+   */
+  'pipeline.memory',
+] as const);
+
+export type DockitEventName = (typeof DOCKIT_EVENT_NAMES)[number];
+
+/** The stages of the dockit pipeline, in order (pipeline.stage attrs.stage). */
+export const PIPELINE_STAGES = Object.freeze([
+  'read',
+  'triage',
+  'extract',
+  'gate',
+  'chunk',
+  'embed',
+  'index',
+  'retrieve',
+  'generate',
+] as const);
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+/** Why a pipeline stage or answer was refused, skipped or failed (attrs.reason; '' when there is none). */
+export const PIPELINE_REASONS = Object.freeze([
+  'not_pdf',
+  'too_large',
+  'too_many_pages',
+  'encrypted',
+  'corrupt',
+  'no_text_layer',
+  'timeout',
+  'model_not_cached',
+  'manifest_refused',
+  'integrity',
+  'unsupported_profile',
+  'context_overflow',
+  'no_index',
+  'ocr_not_yet',
+  'legacy_encoding',
+  'not_analysed',
+  'held_low_score',
+  'framed',
+] as const);
+export type PipelineReason = (typeof PIPELINE_REASONS)[number];

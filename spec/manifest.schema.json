@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:manifest:0.1.1",
+  "$id": "urn:airplanemode:spec:manifest:0.1.2",
   "title": "Manifest",
   "description": "A signed list of model or data files. Each entry carries the SHA-256, size, version, licence and minimum capability profile of one file. The manifest body (every member except `signatures`) is canonicalised per the restricted RFC 8785 profile described in spec/README.md and signed with Ed25519. Wire format: airplanemode.manifest/0.1.",
   "type": "object",

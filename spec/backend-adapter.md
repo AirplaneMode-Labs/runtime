@@ -1,10 +1,17 @@
-# Backend adapter 0.3.1 (with model descriptor 0.2.1)
+# Backend adapter 0.4.0 (with model descriptor 0.2.1)
 
 Normative definition: `backend-adapter.ts` and, for the descriptor, `model-descriptor.ts` and
 `model-descriptor.schema.json`. One interface over Transformers.js (ONNX Runtime Web), WebLLM and the
 Chrome Prompt API, so the fallback chain WebGPU -> WASM -> Chrome built-in can pick a backend without
 the application changing. `backend-adapter.ts` imports nothing from `model-descriptor.ts`; the two are
 released together and versioned separately.
+
+0.4.0 (spec release 0.5.0, draft) is a minor change over 0.3.1: `embed(texts, opts?)` takes `EmbedOptions`
+(`signal`, `pooling`, `normalize`) and returns an `EmbedResult` with `truncated` and `timings`; the limits
+`EMBED_MAX_TEXTS` (64) and `EMBED_TEXT_MAX` (8192 UTF-16 units); the error code `context_overflow`;
+`GenerateResult.budget`. R4b (token budget and Stop), R14 (embeddings through the worker host), R15 (in-worker
+integrity, S1-070) and the worker-support exports are new, and R2w, R3w and R7 to R13 apply to them.
+Model descriptor 0.2.1 is unchanged.
 
 0.3.1 (spec release 0.4.0, draft) is a patch over 0.3.0: no type changes. R13 is amended: a worker-reported
 egress refusal is recorded per Event 0.1.3 (reporter 'worker', origin 'worker-reported', a count) and the
@@ -198,6 +205,23 @@ binary.
 to the chat template. Events follow Event 0.1.2 (`model.load`, `model.load.failed`, `model.generate`,
 `model.load.phase`, `memory.sample`, `backend.worker`).
 
+## R4b Token budget
+
+`generate` runs with a token budget: budget = min(opts.maxTokens ?? descriptor.generation.maxNewTokens ?? 256,
+contextLength - promptTokens), where `promptTokens` is the length of the chat-templated prompt in the
+model's own tokens and `contextLength` is the descriptor's.
+
+- If contextLength - promptTokens < 1, generate rejects 'context_overflow' before decode: no token is
+  produced and the engine does no decode work.
+- Reaching the budget gives finishReason 'length'. The budget is reported in `GenerateResult.budget` and in
+  the `budget` attr of `model.generate` (Event 0.1.4).
+- maxTokens must be an integer 1..32768, otherwise a TypeError is thrown before any work.
+- Stop. An abort after the first token resolves with finishReason 'abort' and the partial text. An abort
+  before the first token rejects 'aborted'. The adapter that hosts the engine in a worker answers an abort
+  within 250 ms: the engine stops at its next step, or the worker is terminated (R8) and the model must be
+  loaded again (the files are already stored, so nothing is downloaded). The tested behaviour is in
+  `test/budget.test.ts` and `test/browser/stop.spec.ts`.
+
 ## R5 Error hygiene
 
 `userMessage` and every `backend.*` or `model.*` event are built only from `AdapterErrorCode` and the
@@ -246,8 +270,9 @@ events?, signal?, onProgress? })` returns `{ adapter, rung, model, attempts }`.
 
 ## R2w Hand-off across a worker
 
-When the engine runs in a dedicated worker (`host: 'worker'`), the main thread runs R1, `acquire()` and
-`getBlob(id, { rehash: true })`, and posts **those same Blob objects** to the worker. The worker checks
+When the engine runs in a dedicated worker (`host: 'worker'`), the main thread runs R1 and `acquire()`
+(and, before 0.4.0, `getBlob(id, { rehash: true })`; since 0.4.0 the re-hash runs inside the worker, R15),
+and posts **the Blob objects** to the worker. The worker checks
 `blob.size === entry.size`; a Blob it cannot read is `integrity`. The worker never opens storage and never
 derives an origin or a prefix from `self.location`, which is non-hierarchical in a blob worker.
 
@@ -376,9 +401,64 @@ request). A refusal by the page's own guard is recorded with reporter 'main' and
 `new URL(x).origin` as the page computes it (`'null'` when the origin is opaque or the URL does not
 parse), and no `count`. The host never forwards worker text.
 
-Worker RPC (runtime-internal, `src/worker/protocol.ts`, `v: 1`): main to worker `init`, `generate`, `abort`,
-`unload`; worker to main `phase`, `memory`, `ready`, `token`, `done`, `error` (the `cause` never leaves the
-`AdapterError`) and `egress`.
+Worker RPC (runtime-internal, `src/worker/protocol.ts`, `v: 1`): main to worker `init`, `generate`, `embed`,
+`abort`, `unload`; worker to main `phase`, `memory`, `ready`, `token`, `done`, `embedded`, `error` (the
+`cause` never leaves the `AdapterError`) and `egress`.
+
+## R14 Embeddings through the worker host
+
+Available when the descriptor task is 'feature-extraction'; `capabilities().embed` is then true.
+`generate()` on an embedder, or `embed()` on a generator, rejects 'unsupported_operation'. R2w, R3w and R7 to
+R13 apply: the worker host loads the embedder exactly as it loads a generator.
+
+`embed(texts, opts?)` takes 1..EMBED_MAX_TEXTS (64) texts of 1..EMBED_TEXT_MAX (8192) UTF-16 units each; a
+count or length outside those bounds, or a string that is not well-formed, is a TypeError before any work.
+`opts.pooling` is 'mean' (default) or 'cls'; `opts.normalize` defaults to true; `opts.signal` aborts a call
+in progress (rejects 'aborted' and leaves the worker usable). Texts longer than the model's context are cut
+and `EmbedResult.truncated` says so.
+
+The worker's embed response is untrusted (R13). The host checks that vectors.length === texts.length, that
+every vector is a Float32Array of length `dims`, and that every value is finite; otherwise it rejects
+'backend'. The host emits `model.embed` (Event 0.1.4: adapter, model, device, host, loadId, inputs,
+truncated, dims, outcome; durationMs) and never records an input text or a vector. Vectors are
+bit-identical for identical input, device and build.
+
+## R15 In-worker integrity
+
+The main thread's re-hash of a file at load time (R2) is moved into the worker (S1-070): the host sends each
+file with its manifest entry `{ sha256, size }`, and inside the worker
+
+1. the worker first checks blob.size === entry.size;
+2. then it computes SHA-256 with crypto.subtle over every file the engine can read: the .onnx graph, the ORT
+   .wasm, tokenizer.json, tokenizer_config.json, config.json, generation_config.json, chat_template.jinja and
+   special_tokens_map.json. No kind is exempt;
+3. The bytes served to the engine are exactly the bytes hashed. The worker chooses method (ii) of the two the
+   contract allows: it serves the very File snapshot it hashed, not a copy. An OPFS File snapshot becomes
+   unreadable (NotReadableError) when the file is written after the snapshot was taken, so the shim reads one
+   byte of the snapshot before it serves it, and a write after the hash is `integrity` before the engine
+   receives a byte. IndexedDB and memory Blobs are immutable. The one file the engine takes as bytes (the ORT
+   wasm binary) is handed over as the very buffer that was hashed. (Method (i), serving a copy made from the
+   hashed buffer, was tried and refused: a 617 MB model copied into a new Blob inside the worker made the
+   engine's own read of it fail, and the copy would hold a second full copy of every model in memory.)
+4. a mismatch of size or digest rejects 'integrity' and the engine receives 0 bytes; a Blob that cannot be
+   read (NotReadableError) is 'integrity' too.
+
+The `verify` phase of `model.load.phase` is emitted by the worker host with host 'worker', and its `bytes`
+equals the total re-hashed in the worker. The main-thread load-time re-hash is removed from the load path of
+the worker adapter: the asset manager's download-time verification stays, and `getBlob(id, { rehash: true })`
+is not called on that path. The main-thread engine adapter (no worker) keeps R2 unchanged.
+
+## Worker support exports
+
+For an application that runs its own workers beside the engine worker (the dockit PDF and analysis
+workers), `@airplanemode/runtime/worker-support` exports two functions:
+
+- installEgressGuard({ allowPathPrefixes }): the behaviour of the engine worker's guard (R3w) over fetch,
+  XMLHttpRequest, WebSocket, EventSource, importScripts and nested Worker. It allows only same-origin URLs
+  whose path starts with one of the given prefixes and refuses everything else with 'egress_refused'. It is
+  the first statement of a worker.
+- startModuleWorker(url, { policyName }): the worker-bootstrap pattern (R7): one static import of an exact
+  same-origin URL, and anything else is refused before URL.createObjectURL. The worker inherits the page CSP.
 
 ## Informative: Known limitation (0.3.0 draft)
 
