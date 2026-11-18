@@ -5,7 +5,15 @@
  * assigns markup, so a hostile string in an event is shown as text.
  */
 
-import { MODEL_LOAD_PHASES, type Event, type ModelLoadPhase } from '../../spec/event';
+import {
+  DOCKIT_EVENT_NAMES,
+  MODEL_LOAD_PHASES,
+  PIPELINE_REASONS,
+  PIPELINE_STAGES,
+  STORAGE_EVENT_NAMES,
+  type Event,
+  type ModelLoadPhase,
+} from '../../spec/event';
 import { parseSnapshot } from './validate';
 
 export const EMPTY_MESSAGE =
@@ -43,6 +51,23 @@ export interface RecentRow {
   summary: string;
 }
 
+/**
+ * One line of the Storage or Pipeline section: events of one documented name (for the pipeline stage, of one
+ * documented stage). Only documented attrs are read (outcome, driver, ns, reason, the wasm-memory bytes), each
+ * checked against what the contract allows; nothing else of an event ever reaches the model.
+ */
+export interface GroupRow {
+  name: string;
+  count: number;
+  lastDurationMs: number | null;
+  outcomes: Record<string, number>;
+  drivers: string[];
+  namespaces: string[];
+  reasons: string[];
+  /** pipeline.memory only: the last wasm-memory figure, shown under its own name. */
+  lastBytes: number | null;
+}
+
 export interface PanelModel {
   state: PanelState;
   message: string;
@@ -54,6 +79,10 @@ export interface PanelModel {
   invalid: number;
   loads: LoadRow[];
   memory: MemoryRow[];
+  /** Source 'localdata': the ten STORAGE_EVENT_NAMES that were seen, in the order of the contract. */
+  storage: GroupRow[];
+  /** Source 'dockit': pipeline.stage per stage (in pipeline order), pipeline.answer, pipeline.memory. */
+  pipeline: GroupRow[];
   recent: RecentRow[];
 }
 
@@ -85,6 +114,8 @@ export function statusModel(state: PanelState, message: string): PanelModel {
     invalid: 0,
     loads: [],
     memory: [],
+    storage: [],
+    pipeline: [],
     recent: [],
   };
 }
@@ -137,6 +168,76 @@ function summaryOf(e: Event): string {
   return parts.slice(0, 7).join(' ');
 }
 
+const DRIVERS: ReadonlySet<string> = new Set(['opfs', 'indexeddb', 'memory', 'custom']);
+const OUTCOME = /^[a-z][a-z_]{0,31}$/;
+const NAMESPACE = /^[a-z0-9][a-z0-9._*-]{0,64}$/;
+const STORAGE_NAMES: readonly string[] = STORAGE_EVENT_NAMES;
+const DOCKIT_NAMES: readonly string[] = DOCKIT_EVENT_NAMES;
+const STAGES: readonly string[] = PIPELINE_STAGES;
+const REASONS: readonly string[] = PIPELINE_REASONS;
+
+/**
+ * The Storage (source localdata) and Pipeline (source dockit) sections: events of a documented name are counted
+ * per name, with the last duration and the outcomes. A name the contract does not list, a stage that is not in
+ * PIPELINE_STAGES and a reason that is not in PIPELINE_REASONS are ignored; an attr that is not documented for
+ * the section is never read.
+ */
+function groupRows(events: Event[], source: 'localdata' | 'dockit'): GroupRow[] {
+  const groups = new Map<string, GroupRow>();
+  const order: string[] = [];
+  const names = source === 'localdata' ? STORAGE_NAMES : DOCKIT_NAMES;
+  for (const e of events) {
+    if (e.source !== source || !names.includes(e.name)) continue;
+    let key = e.name;
+    if (e.name === 'pipeline.stage') {
+      const stage = e.attrs['stage'];
+      if (typeof stage !== 'string' || !STAGES.includes(stage)) continue;
+      key = `pipeline.stage: ${stage}`;
+    }
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        name: key,
+        count: 0,
+        lastDurationMs: null,
+        outcomes: {},
+        drivers: [],
+        namespaces: [],
+        reasons: [],
+        lastBytes: null,
+      };
+      groups.set(key, g);
+      order.push(key);
+    }
+    g.count++;
+    g.lastDurationMs = num(e.durationMs);
+    const outcome = e.attrs['outcome'];
+    if (typeof outcome === 'string' && OUTCOME.test(outcome))
+      g.outcomes[outcome] = (g.outcomes[outcome] ?? 0) + 1;
+    if (source === 'localdata') {
+      const driver = e.attrs['driver'];
+      if (typeof driver === 'string' && DRIVERS.has(driver) && !g.drivers.includes(driver))
+        g.drivers.push(driver);
+      const ns = e.attrs['ns'];
+      if (typeof ns === 'string' && NAMESPACE.test(ns) && !g.namespaces.includes(ns))
+        g.namespaces.push(ns);
+    } else {
+      const reason = e.attrs['reason'];
+      if (typeof reason === 'string' && REASONS.includes(reason) && !g.reasons.includes(reason))
+        g.reasons.push(reason);
+      if (e.name === 'pipeline.memory' && e.attrs['measure'] === 'wasm-memory')
+        g.lastBytes = int(e.bytes);
+    }
+  }
+  // storage: the order of the contract; pipeline: stages in pipeline order, then answer, then memory
+  const rank = (name: string): number => {
+    if (source === 'localdata') return STORAGE_NAMES.indexOf(name);
+    if (name.startsWith('pipeline.stage: ')) return STAGES.indexOf(name.slice(16));
+    return STAGES.length + DOCKIT_NAMES.indexOf(name);
+  };
+  return order.sort((a, b) => rank(a) - rank(b)).map((k) => groups.get(k)!);
+}
+
 /** Builds the model from the page's raw answer: null is the empty state. */
 export function buildPanelModel(raw: unknown): PanelModel {
   if (raw === null || raw === undefined) return statusModel('empty', EMPTY_MESSAGE);
@@ -154,6 +255,8 @@ export function buildPanelModel(raw: unknown): PanelModel {
     invalid: s.invalid,
     loads: [],
     memory: [],
+    storage: [],
+    pipeline: [],
     recent: [],
   };
 
@@ -233,6 +336,8 @@ export function buildPanelModel(raw: unknown): PanelModel {
       AT_ORDER.indexOf(x.at) - AT_ORDER.indexOf(y.at) ||
       (x.scope < y.scope ? -1 : x.scope > y.scope ? 1 : 0),
   );
+  model.storage = groupRows(accepted, 'localdata');
+  model.pipeline = groupRows(accepted, 'dockit');
   model.recent = accepted.slice(-MAX_RECENT).map((e) => ({
     time: clock(e.ts),
     name: printable(e.name),
@@ -287,6 +392,11 @@ function bytes(v: number | null): string {
   if (v === null) return '—';
   return `${String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} B`;
 }
+
+const outcomesText = (o: Record<string, number>): string =>
+  Object.entries(o)
+    .map(([k, v]) => `${k} ${v}`)
+    .join(', ') || '—';
 
 function table(headers: string[], rows: ViewNode[][]): ViewNode {
   return n('div', undefined, { class: 'scroll' }, [
@@ -411,6 +521,49 @@ export function buildPanelView(m: PanelModel): ViewNode {
     n(
       'p',
       'Memory figures are read from the browser, never estimated. Chrome’s performance.memory is coarse, Chrome-only and absent in workers; a dash means the browser did not expose it.',
+      { class: 'muted' },
+    ),
+  );
+  add(n('h2', 'Storage'));
+  add(
+    m.storage.length === 0
+      ? n('p', 'No storage event has been recorded yet.', { class: 'muted' })
+      : table(
+          ['Event', 'Count', 'Last duration', 'Outcomes', 'Driver', 'Namespace'],
+          m.storage.map((g) => [
+            cellOf('storageName', g.name),
+            cellOf('storageCount', String(g.count), 'num'),
+            cellOf('storageLast', ms(g.lastDurationMs), 'num'),
+            cellOf('storageOutcomes', outcomesText(g.outcomes)),
+            cellOf('storageDriver', g.drivers.join(', ') || '—'),
+            cellOf('storageNamespace', g.namespaces.join(', ') || '—'),
+          ]),
+        ),
+  );
+  add(n('h2', 'Pipeline'));
+  add(
+    m.pipeline.length === 0
+      ? n('p', 'No pipeline event has been recorded yet.', { class: 'muted' })
+      : table(
+          ['Event', 'Count', 'Last duration', 'Outcomes', 'Reasons', 'Peak wasm memory'],
+          m.pipeline.map((g) => [
+            cellOf('pipelineName', g.name),
+            cellOf('pipelineCount', String(g.count), 'num'),
+            cellOf('pipelineLast', ms(g.lastDurationMs), 'num'),
+            cellOf('pipelineOutcomes', outcomesText(g.outcomes)),
+            cellOf('pipelineReasons', g.reasons.join(', ') || '—'),
+            cellOf(
+              'pipelineBytes',
+              g.name === 'pipeline.memory' ? `${bytes(g.lastBytes)} (wasm memory)` : '—',
+              'num',
+            ),
+          ]),
+        ),
+  );
+  add(
+    n(
+      'p',
+      'Counts, durations and outcomes only. No file name, document id, title, text, question or answer is ever carried by these events.',
       { class: 'muted' },
     ),
   );

@@ -2,7 +2,11 @@
 
 A real Chrome DevTools extension (Manifest V3) that adds an **Airplane Mode** tab to DevTools. For a
 page that opts in, it shows the model-load timing (acquire, verify, hand-off, session, first token),
-the memory figures Chrome exposes, and the last 50 runtime events. It is part of the runtime alpha; it
+the memory figures Chrome exposes, a **Storage** section (events of source `localdata`: the ten
+`STORAGE_EVENT_NAMES`, with counts, the last duration and the outcomes), a **Pipeline** section (events of
+source `dockit`: `pipeline.stage` per stage, `pipeline.answer`, `pipeline.memory`) and the last 50 runtime
+events. Both new sections show counts, durations and outcomes only, never a file name, document id, title,
+text, question or answer, and only attrs the contract documents. It is part of the runtime alpha; it
 is **not** in the npm tarball and **not** on the Chrome Web Store.
 
 ## Install (from a clone)
