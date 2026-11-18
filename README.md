@@ -78,7 +78,7 @@ mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
 npm i /path/to/airplanemode-runtime-0.3.0-beta.0.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
 ```
 
-Packed size 221,709 B in 37 files on macOS arm64 (the Sprint 5 pack-check.json of the runtime lane, not measured on 8 GB); `node_modules` then holds exactly
+Packed size 222,230 B in 37 files on macOS arm64 (`npm run pack:check` re-run at the Sprint 5 wrap-up, not measured on 8 GB); `node_modules` then holds exactly
 `@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
 
 **After the owner publishes** (not possible today; the scope is not reserved):
@@ -416,7 +416,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 | Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured on 8 GB |
 | Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured on 8 GB |
 | A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured on 8 GB |
-| Packed tarball `airplanemode-runtime-0.3.0-beta.0.tgz` (pack-check.json)                                                            | 221,709 B in 37 files (773,410 B unpacked), installed offline into a fresh empty directory                                                                   | not measured on 8 GB |
+| Packed tarball `airplanemode-runtime-0.3.0-beta.0.tgz` (pack-check.json)                                                            | 222,230 B in 37 files (775,106 B unpacked), installed offline into a fresh empty directory                                                                   | not measured on 8 GB |
 | `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured on 8 GB |
 
 ## Limitations

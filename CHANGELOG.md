@@ -71,6 +71,8 @@ signing key are open. Not measured on 8 GB.
   serial tests, so the zero-network gate for them had never run on CI.
 - S1-102: a validly signed manifest whose id is `constructor` never verified, because the downgrade state was
   looked up on a plain object; every store now returns null-prototype index objects and the lookup is an own-member lookup.
+- T3-R2-05: the README packed-size figures quoted an earlier tarball (221,709 B); they now match a fresh
+  `npm run pack:check` of this tree: 222,230 B in 37 files, 775,106 B unpacked, on macOS arm64.
 
 ### Security
 
