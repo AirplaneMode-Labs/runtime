@@ -9,7 +9,7 @@ import type { Event } from '../spec/event';
 import { EventBus, newEvent, sessionId } from '../src/events';
 import { exposeDevtoolsHook } from '../src/devtools-hook';
 import { SCHEMAS, validateSchema } from '../src/schema';
-import { repoDir } from './helpers';
+import { filesContaining, repoDir } from './helpers';
 
 const G = '__airplanemodeDevtools';
 const g = globalThis as Record<string, unknown>;
@@ -216,10 +216,8 @@ describe('opt-in only', () => {
       .join('\n');
 
   it('nothing under src/ calls exposeDevtoolsHook() other than its own definition', () => {
-    const hits = walk(resolve(repoDir, 'src'))
-      .map((f) => [f, code(readFileSync(f, 'utf8'))] as const)
-      .filter(([, text]) => /exposeDevtoolsHook\s*\(/.test(text))
-      .map(([f]) => f.slice(resolve(repoDir).length + 1));
+    // POSIX-form relative paths on every host: 'src\\devtools-hook.ts' failed on windows-latest (D1-01)
+    const hits = filesContaining(repoDir, walk(resolve(repoDir, 'src')), /exposeDevtoolsHook\s*\(/);
     expect(hits).toEqual(['src/devtools-hook.ts']);
     const def = code(readFileSync(resolve(repoDir, 'src/devtools-hook.ts'), 'utf8'));
     expect(def.match(/exposeDevtoolsHook\s*\(/g)!.length).toBe(1);

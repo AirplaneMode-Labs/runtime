@@ -3,7 +3,8 @@
 
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import * as nodePath from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Manifest, ManifestEntry, Signature } from '../spec/manifest';
 import { signedBytes } from '../src/canonical';
@@ -123,6 +124,44 @@ export function makeManifest(overrides: Partial<Manifest> = {}): Manifest {
     signatures: [],
     ...overrides,
   };
+}
+
+/**
+ * POSIX form of a path: splits on the host separator and also turns every backslash into '/', so a
+ * path.win32 result ('src\\devtools-hook.ts') compares equal to 'src/devtools-hook.ts' on any host.
+ * (D1-01: the Windows CI leg compared the two spellings.)
+ */
+export function toPosix(p: string): string {
+  return p.split(sep).join('/').replace(/\\/g, '/');
+}
+
+/** `impl.relative(from, to)` in POSIX form; `impl` defaults to the host's node:path (path.win32 in tests). */
+export function relPosix(
+  from: string,
+  to: string,
+  impl: Pick<typeof nodePath, 'relative'> = nodePath,
+): string {
+  return toPosix(impl.relative(from, to));
+}
+
+const withoutComments = (text: string): string =>
+  text
+    .split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+
+/**
+ * The files (POSIX-form paths relative to `root`) whose non-comment lines match `re`. `read` and `impl`
+ * are injectable so a test can feed backslash paths and path.win32 on any host.
+ */
+export function filesContaining(
+  root: string,
+  files: string[],
+  re: RegExp,
+  read: (file: string) => string = (f) => readFileSync(f, 'utf8'),
+  impl: Pick<typeof nodePath, 'relative'> = nodePath,
+): string[] {
+  return files.filter((f) => re.test(withoutComments(read(f)))).map((f) => relPosix(root, f, impl));
 }
 
 export function readJson<T = unknown>(path: string): T {

@@ -35,6 +35,7 @@ import {
   type CDPSession,
   type Page,
 } from 'playwright/test';
+import { mainEgressAttrs, workerEgressAttrs } from '../egress-expect';
 import { resultsDir } from './out-dir';
 
 const PROMPT = 'What is the capital of France? Answer in one word.';
@@ -234,12 +235,14 @@ async function assertGate(
   base: string,
   expected: { urls: string[] },
   label: string,
+  /** Worker targets the page may have started: 0 on the main-thread path, 1 engine worker on the worker path. */
+  expectedWorkers = 0,
 ): Promise<{ modelRequests: string[]; ortFiles: string[] }> {
   const origin = new URL(base).origin;
   expect(gate.aborted, `${label}: aborted non-origin requests`).toEqual([]);
   const csp = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);
   expect(csp, `${label}: CSP violations`).toEqual([]);
-  expect(gate.workers, `${label}: worker targets`).toBe(0);
+  expect(gate.workers, `${label}: worker targets`).toBe(expectedWorkers);
   const targets = (await page.context().browser()?.contexts()) ?? [];
   expect(targets.length).toBeGreaterThan(0);
   for (const r of gate.requests) {
@@ -402,14 +405,72 @@ test('an injected probe to https://huggingface.co/x is refused with egress_refus
     expect(report.egressRefused).toBe(1);
     const refused = report.events?.filter((e) => e.name === 'backend.egress.refused') ?? [];
     expect(refused).toHaveLength(1);
-    expect(refused[0]!.attrs).toEqual({
-      adapter: 'transformers-js',
-      origin: 'https://huggingface.co',
-    });
+    // Event 0.1.3 (S1-074): the page's own guard records reporter 'main' and the page-computed origin only.
+    // This line expected the 0.1.2 attrs {adapter, origin} until D1-02 (run 43667709960, ubuntu-latest).
+    expect(refused[0]!.attrs).toEqual(mainEgressAttrs('transformers-js', 'https://huggingface.co'));
     // refused inside the shim: the gate never saw it
     expect(gate.aborted).toEqual([]);
     await assertGate(gate, page, base, expected, 'probe');
     results['egressProbe'] = { probe: report.probe, events: refused.map((e) => e.attrs) };
+  } finally {
+    await context.close();
+  }
+});
+
+/** The events of the current session's bus, through the opt-in DevTools hook the demo page installs. */
+async function busEvents(page: Page): Promise<NonNullable<HookReport['events']>> {
+  const raw = await page.evaluate(() =>
+    (
+      window as unknown as { __airplanemodeDevtools?: { snapshot(): string } }
+    ).__airplanemodeDevtools?.snapshot(),
+  );
+  return raw ? (JSON.parse(raw) as { events: NonNullable<HookReport['events']> }).events : [];
+}
+
+test('a probe inside the engine worker is refused with egress_refused and one worker-reported event, and reaches no network', async ({
+  browser,
+  baseURL,
+}) => {
+  test.skip(!LEGS.includes('wasm'), 'the probe rides the wasm leg');
+  const base = baseURL!;
+  const expected = await expectedEntries(base);
+  const { context, page, gate } = await gated(browser, base);
+  try {
+    await page.goto(`${base}/models.html?models=test`);
+    const report = await runHook(page, {
+      prompt: PROMPT,
+      maxTokens: 16,
+      temperature: 0,
+      forceRung: 'wasm',
+      host: 'worker',
+    });
+    expect(report.ok, JSON.stringify(report)).toBe(true);
+    expect(report.rung).toBe('wasm');
+    expect(report.egressRefused, 'a clean load and answer refuse nothing').toBe(0);
+    // the probe runs INSIDE the worker (Playwright evaluates in the worker's own global scope)
+    const workers = page.workers();
+    expect(workers, 'one engine worker').toHaveLength(1);
+    const outcome = await workers[0]!.evaluate(async () => {
+      try {
+        await fetch('https://huggingface.co/x');
+        return 'served';
+      } catch (e) {
+        return (e as { code?: string }).code ?? (e as Error).name;
+      }
+    });
+    expect(outcome).toBe('egress_refused');
+    // the worker's report reaches the page host, which records the event itself (the worker's text is discarded)
+    await expect
+      .poll(async () => (await busEvents(page)).filter((e) => e.name === 'backend.egress.refused'))
+      .toHaveLength(1);
+    const refused = (await busEvents(page)).filter((e) => e.name === 'backend.egress.refused');
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.attrs).toEqual(workerEgressAttrs('transformers-js', 1));
+    expect(JSON.stringify(refused)).not.toContain('huggingface');
+    // refused inside the worker's guard: the gate never saw it
+    expect(gate.aborted).toEqual([]);
+    await assertGate(gate, page, base, expected, 'worker-probe', 1);
+    results['egressProbeWorker'] = { outcome, events: refused.map((e) => e.attrs) };
   } finally {
     await context.close();
   }

@@ -1,11 +1,9 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative as nativeRelative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { repoDir } from './helpers';
+import { relPosix as relative, repoDir } from './helpers';
 
-// Repo-relative paths with POSIX separators, so the checks below behave the same on Windows.
-const relative = (from: string, to: string): string =>
-  nativeRelative(from, to).split(sep).join('/');
+// Repo-relative paths with POSIX separators (helpers.relPosix), so the checks below behave the same on Windows.
 
 const srcDir = resolve(repoDir, 'src');
 const specDir = resolve(repoDir, 'spec');
@@ -27,6 +25,8 @@ const ALLOWED: Record<string, string[]> = {
   'src/asset-manager.ts': ['fetch('],
   // the worker egress guard names every API it refuses (R3w) and the one it replaces; it calls none
   'src/worker/egress-guard.ts': ['XMLHttpRequest', 'WebSocket', 'importScripts', 'EventSource'],
+  // the worker-support guard names the same APIs: it allow-lists their URLs and calls no network function itself
+  'src/worker-support.ts': ['XMLHttpRequest', 'WebSocket', 'importScripts', 'EventSource'],
 };
 
 function walk(dir: string): string[] {
