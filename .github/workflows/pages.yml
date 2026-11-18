@@ -1,11 +1,13 @@
 name: pages
 
 # Builds the demo and deploys it to GitHub Pages at https://airplanemode-labs.github.io/runtime/.
-# `DEMO_MODELS=1 npm run demo:build` generates the synthetic fixture, bundles the Apache-2.0 test model
-# SmolLM2-135M-Instruct (fetched from a pinned revision into the cached .cache/models, every file
-# re-hashed against test/tools/models.json: any mismatch fails the build), signs both manifests with a
-# key pair that exists only inside this job (the public half is embedded in the pages), then runs the
-# Vite build. Nothing built is committed.
+# `DEMO_MODELS=1 npm run demo:build` generates the synthetic fixture, bundles the 'runtime-demo' model set
+# (the Apache-2.0 test model SmolLM2-135M-Instruct and the MIT embedder multilingual-e5-small, each fetched
+# from a pinned revision into the cached .cache/models, every file re-hashed against test/tools/models.json:
+# any mismatch fails the build) with scripts/bundle-models.mjs, which signs the manifest
+# dev.airplanemode.runtime-demo-models with a key pair that exists only in memory inside this job (the public
+# half is embedded in the pages; the page pins the manifest id), then runs the Vite build. Nothing built is
+# committed. The built size is printed per model and the build is refused over 1 GiB.
 on:
   push:
     branches: [main]
@@ -36,7 +38,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Restore the model cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -44,7 +46,9 @@ jobs:
           key: models-${{ hashFiles('test/tools/models.json') }}
       - name: Fetch the test model (https only, no token; re-hashes every cached file, refuses any mismatch)
         run: node test/tools/fetch-model.mjs smollm2-135m-instruct
-      - name: Build the demo with the test model bundled
+      - name: Fetch the embedding model (same rules)
+        run: node test/tools/fetch-model.mjs multilingual-e5-small-wasm-q8
+      - name: Build the demo with the runtime-demo models bundled
         run: DEMO_MODELS=1 npm run demo:build
       - name: Record the size of the built demo (per model) and refuse a build over 1 GB
         run: |
