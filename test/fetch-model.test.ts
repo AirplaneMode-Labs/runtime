@@ -468,3 +468,91 @@ describe('models.json in the repository', () => {
     expect(readFileSync(resolve(repoDir, '.gitignore'), 'utf8').split('\n')).toContain('.cache/');
   });
 });
+
+describe('fetch-model: redirects (D1-07)', () => {
+  /** A hub that answers the model URLs with a 302 to `location`, which serves the bytes (or not). */
+  function redirectingHub(location: (path: string) => string, cdn: Record<string, Uint8Array>) {
+    const requests: Served[] = [];
+    const impl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const headers: Record<string, string> = {};
+      new Headers(init?.headers).forEach((v, k) => (headers[k] = v));
+      requests.push({ url: u, headers });
+      expect(init?.redirect, 'redirects are handled by the tool, not the platform').toBe('manual');
+      for (const path of ['config.json', 'onnx/model.onnx'])
+        if (u === url(path))
+          return new Response(null, { status: 302, headers: { location: location(path) } });
+      const body = cdn[u];
+      return body
+        ? new Response(body as BodyInit, { status: 200 })
+        : new Response('nope', { status: 404 });
+    }) as typeof fetch;
+    return { impl, requests };
+  }
+
+  it('follows a redirect to an https URL, never sends Authorization on any hop, and stores the verified bytes', async () => {
+    const dest = temp();
+    const cdn = {
+      'https://cdn.example/lfs/config.json': CONFIG,
+      'https://cdn.example/lfs/onnx/model.onnx': WEIGHTS,
+    };
+    const hub = redirectingHub((p) => `https://cdn.example/lfs/${p}`, cdn);
+    await fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: hub.impl });
+    expect(hub.requests.map((r) => r.url)).toEqual([
+      url('config.json'),
+      'https://cdn.example/lfs/config.json',
+      url('onnx/model.onnx'),
+      'https://cdn.example/lfs/onnx/model.onnx',
+    ]);
+    for (const r of hub.requests)
+      expect(JSON.stringify(r.headers).toLowerCase()).not.toContain('authorization');
+    expect(readFileSync(join(dest, 'tiny', 'config.json'))).toEqual(Buffer.from(CONFIG));
+  });
+
+  it('a redirect to http (or any other scheme) is refused: not_https, nothing stored, no .part left', async () => {
+    for (const target of [
+      'http://cdn.example/x',
+      'file:///etc/passwd',
+      'ftp://cdn.example/x',
+      'data:text/plain,hi',
+    ]) {
+      const dest = temp();
+      const hub = redirectingHub(() => target, {});
+      expect(
+        await code(fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: hub.impl })),
+        target,
+      ).toBe('not_https');
+      expect(hub.requests).toHaveLength(1); // the refused hop was never requested
+      expect(existsSync(join(dest, 'tiny', 'config.json'))).toBe(false);
+      expect(existsSync(join(dest, 'tiny', 'config.json.part'))).toBe(false);
+    }
+  });
+
+  it('a relative Location is resolved against the current URL and must still be https', async () => {
+    const dest = temp();
+    const cdn = {
+      [`https://huggingface.co/lfs/config.json`]: CONFIG,
+      [`https://huggingface.co/lfs/onnx/model.onnx`]: WEIGHTS,
+    };
+    const hub = redirectingHub((p) => `/lfs/${p}`, cdn);
+    await fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: hub.impl });
+    expect(hub.requests[1]!.url).toBe('https://huggingface.co/lfs/config.json');
+  });
+
+  it('a redirect loop or a chain longer than 5 hops is refused (too_many_redirects)', async () => {
+    const dest = temp();
+    const hub = redirectingHub((p) => url(p), {}); // redirects to itself forever
+    expect(
+      await code(fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: hub.impl })),
+    ).toBe('too_many_redirects');
+    expect(hub.requests.length).toBeLessThanOrEqual(7);
+  });
+
+  it('a redirect without a Location is an http_status refusal', async () => {
+    const dest = temp();
+    const impl = (async () => new Response(null, { status: 302 })) as typeof fetch;
+    expect(
+      await code(fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: impl })),
+    ).toBe('http_status');
+  });
+});

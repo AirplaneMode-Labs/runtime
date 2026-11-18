@@ -69,14 +69,14 @@ const RFC_SEEDS: Record<string, string> = {
 };
 
 describe('spec 0.4.0: release, versions, status, wire strings', () => {
-  it('SPEC_VERSIONS, SPEC_RELEASE, SPEC_STATUS and SPEC_WIRE carry the 0.4.0 values', () => {
-    expect(SPEC_RELEASE).toBe('0.4.0');
+  it('SPEC_VERSIONS, SPEC_RELEASE, SPEC_STATUS and SPEC_WIRE carry the current (0.5.0) values; the statuses and wire strings are those set in 0.4.0', () => {
+    expect(SPEC_RELEASE).toBe('0.5.0');
     expect(SPEC_VERSIONS).toEqual({
-      manifest: '0.1.1',
+      manifest: '0.1.2',
       capabilityProfile: '0.1.0',
-      event: '0.1.3',
-      storageApi: '0.2.0',
-      backendAdapter: '0.3.1',
+      event: '0.1.4',
+      storageApi: '0.3.0',
+      backendAdapter: '0.4.0',
       modelDescriptor: '0.2.1',
     });
     expect(SPEC_STATUS).toEqual({
@@ -98,9 +98,9 @@ describe('spec 0.4.0: release, versions, status, wire strings', () => {
   });
 
   it('every schema $id carries its own contract version', () => {
-    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.1');
+    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.2');
     expect(SCHEMAS.capabilityProfile.$id).toBe('urn:airplanemode:spec:capability-profile:0.1.0');
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.3');
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.4');
     expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.1');
   });
 
@@ -141,7 +141,7 @@ describe('spec 0.4.0: release, versions, status, wire strings', () => {
     let current0 = current;
     for (const [fresh, old] of td29) current0 = current0.split(fresh).join(old);
     const manifest = current0
-      .replace('urn:airplanemode:spec:manifest:0.1.1', 'urn:airplanemode:spec:manifest:0.1.0')
+      .replace('urn:airplanemode:spec:manifest:0.1.2', 'urn:airplanemode:spec:manifest:0.1.0')
       .replace(
         new RegExp(
           `"pattern": ${strict.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},\\n(\\s+)"description": "Strict SemVer 2.0 version of the manifest[^\\n]*"`,
@@ -156,26 +156,26 @@ describe('spec 0.4.0: release, versions, status, wire strings', () => {
       );
     expect(sha(manifest)).toBe('5e9707c92d9d1d73e11e5010ff28afb550ba40ffdd45f208ce3b8245a03608d2');
     const event = readText(resolve(specDir, 'event.schema.json')).replace(
-      'urn:airplanemode:spec:event:0.1.3',
+      'urn:airplanemode:spec:event:0.1.4',
       'urn:airplanemode:spec:event:0.1.2',
     );
     expect(sha(event)).toBe('f7dfb591970434a3ee32d17b1455bb56eee4bfc56d02200818732d512092988a');
   });
 
   it('the headers of the changed contract files carry their new versions', () => {
-    expect(flatTs(readText(resolve(specDir, 'manifest.ts')))).toContain('Manifest contract 0.1.1');
-    expect(flatTs(readText(resolve(specDir, 'event.ts')))).toContain('Event contract 0.1.3');
+    expect(flatTs(readText(resolve(specDir, 'manifest.ts')))).toContain('Manifest contract 0.1.2');
+    expect(flatTs(readText(resolve(specDir, 'event.ts')))).toContain('Event contract 0.1.4');
     expect(flatTs(readText(resolve(specDir, 'storage-api.ts')))).toContain(
-      'Storage API contract 0.2.0',
+      'Storage API contract 0.3.0',
     );
     expect(flatTs(readText(resolve(specDir, 'backend-adapter.ts')))).toContain(
-      'Backend adapter contract 0.3.1',
+      'Backend adapter contract 0.4.0',
     );
     expect(flatTs(readText(resolve(specDir, 'model-descriptor.ts')))).toContain(
       'Model descriptor contract 0.2.1',
     );
     expect(
-      readText(resolve(specDir, 'backend-adapter.md')).startsWith('# Backend adapter 0.3.1'),
+      readText(resolve(specDir, 'backend-adapter.md')).startsWith('# Backend adapter 0.4.0'),
     ).toBe(true);
   });
 });
@@ -196,16 +196,16 @@ describe('spec 0.4.0: README versioning and status vocabulary', () => {
     expect(f).toContain('the wire discriminator changes only on a contract major or minor');
   });
 
-  it('release table says manifest 0.1.1: published; other contracts: draft, with the push-wording rule', () => {
-    expect(f).toContain('Spec release **0.4.0**');
-    expect(f).toContain('manifest 0.1.1: published; other contracts: draft');
+  it('release table says manifest 0.1.2: published; other contracts: draft, with the push-wording rule', () => {
+    expect(f).toContain('Spec release **0.5.0**');
+    expect(f).toContain('manifest 0.1.2: published; other contracts: draft');
     expect(f).toContain("committed; public after the owner's push");
-    expect(f).toMatch(/\| Manifest\s+\|[^|]*\|\s*0\.1\.1\s*\|\s*published/);
-    expect(f).toMatch(/\| Event\s+\|[^|]*\|\s*0\.1\.3\s*\|\s*draft/);
-    expect(f).toMatch(/\| Storage API\s+\|[^|]*\|\s*0\.2\.0\s*\|\s*draft/);
-    expect(f).toMatch(/\| Backend adapter\s+\|[^|]*\|\s*0\.3\.1\s*\|\s*draft/);
+    expect(f).toMatch(/\| Manifest\s+\|[^|]*\|\s*0\.1\.2\s*\|\s*published/);
+    expect(f).toMatch(/\| Event\s+\|[^|]*\|\s*0\.1\.4\s*\|\s*draft/);
+    expect(f).toMatch(/\| Storage API\s+\|[^|]*\|\s*0\.3\.0\s*\|\s*draft/);
+    expect(f).toMatch(/\| Backend adapter\s+\|[^|]*\|\s*0\.4\.0\s*\|\s*draft/);
     expect(f).toMatch(/\| Model descriptor\s+\|[^|]*\|\s*0\.2\.1\s*\|\s*draft/);
-    expect(f).toContain('urn:airplanemode:spec:event:0.1.3');
+    expect(f).toContain('urn:airplanemode:spec:event:0.1.4');
     expect(f).toContain('manifest spec v0.1');
     expect(readme).toContain('MANIFEST.md');
   });
@@ -215,7 +215,7 @@ describe('spec 0.4.0: MANIFEST.md', () => {
   const md = readText(resolve(specDir, 'MANIFEST.md'));
   const f = flat(md);
 
-  it('has the thirteen sections in order', () => {
+  it('has the thirteen sections in order, then the two sections of manifest 0.1.2', () => {
     const headings = [
       'Scope',
       'Shape',
@@ -230,6 +230,8 @@ describe('spec 0.4.0: MANIFEST.md', () => {
       'Tamper vectors',
       'Security considerations',
       'Conformance',
+      'Manifest 0.1.2',
+      'Demo bundles',
     ];
     let last = -1;
     for (const h of headings) {
@@ -237,7 +239,7 @@ describe('spec 0.4.0: MANIFEST.md', () => {
       expect(at, h).toBeGreaterThan(last);
       last = at;
     }
-    expect(md.match(/^## /gm)).toHaveLength(13);
+    expect(md.match(/^## /gm)).toHaveLength(15);
     expect(md.startsWith('# Manifest spec v0.1')).toBe(true);
   });
 
@@ -285,7 +287,7 @@ describe('spec 0.4.0: MANIFEST.md', () => {
       'sha256 proves integrity against the signed manifest only',
       'the trust root is application configuration',
       'consumers MUST check that manifest.id equals the id they expect',
-      'expectId option is Sprint 5',
+      'pass the expectId option',
       'downgrade state is first-use and per-profile',
       'cleared site data, accepts any validly signed older version',
       'publishers SHOULD set expiresAt',
@@ -314,7 +316,7 @@ describe('spec 0.4.0: manifest.ts exports', () => {
     expect(RFC8032_TEST_KEY_ID).toBe(RFC8032_TEST_KEY_IDS[0]);
     expect(Object.isFrozen(RFC8032_TEST_PUBLIC_KEYS_HEX)).toBe(true);
     expect(Object.isFrozen(RFC8032_TEST_KEY_IDS)).toBe(true);
-    expect(MANIFEST_REJECT_PRECEDENCE).toHaveLength(9);
+    expect(MANIFEST_REJECT_PRECEDENCE).toHaveLength(10);
     expect(MANIFEST_REJECT_PRECEDENCE.map((g) => [...g])).toEqual([
       ['invalid_json', 'lone_surrogate', 'float', 'bigint', 'digit_key', 'invalid_key'],
       ['bad_spec'],
@@ -324,6 +326,7 @@ describe('spec 0.4.0: manifest.ts exports', () => {
       ['duplicate_entries'],
       ['expired'],
       ['no_valid_signature'],
+      ['unexpected_id'],
       ['downgrade', 'state'],
     ]);
   });
@@ -678,7 +681,7 @@ describe('spec 0.4.0: files that must not change are byte-identical to spec rele
         .filter((d) => d.isDirectory())
         .map((d) => d.name)
         .sort(),
-    ).toEqual(['descriptor', 'tamper', 'tamper-assets']);
+    ).toEqual(['descriptor', 'expect-id', 'state-ids', 'tamper', 'tamper-assets']);
   });
 });
 
@@ -735,7 +738,7 @@ describe('spec 0.4.0: storage API 0.2.0', () => {
 
   it('storage-api.md has validation steps 1 to 9, the reasons, the error-hygiene sentence and the reserved namespace rule', () => {
     const md = readText(resolve(specDir, 'storage-api.md'));
-    expect(md.startsWith('# Storage API 0.2.0')).toBe(true);
+    expect(md.startsWith('# Storage API 0.3.0')).toBe(true);
     const start = md.indexOf('## Query validation order');
     expect(start).toBeGreaterThan(-1);
     const section = md.slice(
@@ -764,8 +767,8 @@ describe('spec 0.4.0: storage API 0.2.0', () => {
       expect(f, w).toContain(w);
   });
 
-  it('STORAGE_EVENT_NAMES grows from 4 to 7 with the three vector events', () => {
-    expect([...STORAGE_EVENT_NAMES]).toEqual([
+  it('STORAGE_EVENT_NAMES grows from 4 to 7 with the three vector events (ten since 0.1.4)', () => {
+    expect([...STORAGE_EVENT_NAMES].slice(0, 7)).toEqual([
       'storage.set',
       'storage.get',
       'storage.delete',

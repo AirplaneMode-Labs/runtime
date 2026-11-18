@@ -58,14 +58,18 @@ describe('pages.yml', () => {
       expect(yml, pin).toContain(pin);
   });
 
-  it('fetches only the SmolLM2-135M test model, fails closed, builds with DEMO_MODELS=1 and records a bounded dist size', () => {
+  it('fetches only the two runtime-demo models (SmolLM2-135M and multilingual-e5-small), fails closed, builds with DEMO_MODELS=1 and records a bounded dist size', () => {
     expect(yml).toContain('node test/tools/fetch-model.mjs smollm2-135m-instruct');
+    expect(yml).toContain('node test/tools/fetch-model.mjs multilingual-e5-small-wasm-q8');
+    // no pilot model and no Qwen weights in the runtime demo: the 1.7B graph alone is over the 1 GB limit
+    expect(yml).not.toMatch(/qwen3-1\.7b|smollm2-360m|mlc/i);
     expect(yml).toContain('DEMO_MODELS=1 npm run demo:build');
-    // WebLLM did not land in Sprint 3 (LANDED.json webllm: not landed): no 360M MLC model is fetched
-    expect(yml).not.toMatch(/smollm2-360m|mlc/i);
+    // the per-model sizes are printed and the 1 GiB refusal stays (Pages limit)
+    expect(yml).toContain('du -sk demo/dist/models/*');
     expect(yml).toContain('dist-size.txt');
     expect(yml).toMatch(/1073741824|1 GB|1 GiB/);
     expect(yml).toContain('upload-pages-artifact');
+    expect(yml).toContain('dev.airplanemode.runtime-demo-models');
   });
 
   it('ci.yml keeps the model-wasm job WebAssembly-only and runs the worker, TT and DevTools proofs nowhere that needs a GPU', () => {

@@ -9,12 +9,19 @@
 // control-plane vendors these byte for byte (scripts/sync-fixtures.sh); the Rust cp-manifest and
 // the TypeScript runtime must produce identical canonical bytes and identical signatures.
 //
+// Sprint 5 (spec release 0.5.0, manifest 0.1.2) adds two directories, written and checked here:
+//   expect-id/   expect-id.json: eight rows for the expectId verifier option (file names relative to
+//                vectors/), over the tamper vectors
+//   state-ids/   three validly signed manifests with the ids 'constructor' and 'prototype' and
+//                state-ids.json (four rows): the downgrade state must key them without a collision
+//
 //   node test/tools/make-vectors.mjs [--check]
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RFC8032_SEED_HEX, canonicalize, PREFIX, signManifest } from './lib.mjs';
+import { format, resolveConfig } from 'prettier';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const vectors = resolve(here, '../../spec/vectors');
@@ -334,8 +341,91 @@ for (const [name, { reason, stage, text }] of Object.entries(negative)) {
 }
 files.set('negative.json', JSON.stringify(index, null, 2) + '\n');
 
+// ---- expect-id/ and state-ids/ (manifest 0.1.2) ------------------------------------------------------------
+
+// The same base the tamper vectors start from: the four entries of vector 05, signed with key 1.
+const NOW = '2026-11-14T00:00:00Z';
+const STATE_SIGNED_AT = '2026-11-01T00:00:00Z';
+const v05 = JSON.parse(readFileSync(resolve(vectors, '05-four-entries.json'), 'utf8'));
+const unsignedBase = {
+  spec: 'airplanemode.manifest/0.1',
+  id: 'tamper-base',
+  version: '1.1.0',
+  publisher: 'Airplane Mode Labs (vectors)',
+  createdAt: '2026-11-01T00:00:00Z',
+  expiresAt: '2027-11-01T00:00:00Z',
+  entries: v05.entries,
+  signatures: [],
+};
+const pretty = (v) => JSON.stringify(v, null, 2) + '\n';
+const withState = { version: '1.1.0', createdAt: '2026-11-01T00:00:00Z' };
+const eiRow = (file, expectId, expect, extra = {}) => ({
+  file,
+  trust: ['rfc8032-1'],
+  allowTestKeys: true,
+  now: NOW,
+  state: extra.state ?? null,
+  requiresState: extra.requiresState ?? false,
+  expectId,
+  expect,
+});
+const refusedAs = (reason) => ({ valid: false, stage: 'verify', reason });
+const badExpectId = { valid: false, throws: 'TypeError', message: 'invalid expectId' };
+const expectIdRows = [
+  eiRow('tamper/tamper-base.json', 'tamper-base', { valid: true }),
+  eiRow('tamper/tamper-base.json', 'other-product', refusedAs('unexpected_id')),
+  eiRow('tamper/tamper-03-sig-bitflip.json', 'other-product', refusedAs('no_valid_signature')),
+  eiRow('tamper/tamper-10-expired.json', 'other-product', refusedAs('expired')),
+  eiRow('tamper/tamper-08-rollback.json', 'other-product', refusedAs('unexpected_id'), {
+    state: withState,
+    requiresState: true,
+  }),
+  eiRow('tamper/tamper-08-rollback.json', 'tamper-base', refusedAs('downgrade'), {
+    state: withState,
+    requiresState: true,
+  }),
+  eiRow('tamper/tamper-base.json', 'BAD ID', badExpectId),
+  eiRow('tamper/tamper-base.json', '', badExpectId),
+];
+
+// ids that collide with an inherited member of a plain JS object
+const stateManifest = (id, version) => {
+  const m = { ...unsignedBase, id, version, createdAt: STATE_SIGNED_AT };
+  return { ...m, signatures: [signManifest(m, RFC8032_SEED_HEX, STATE_SIGNED_AT)] };
+};
+const stRow = (file, state, expect) => ({
+  file,
+  trust: ['rfc8032-1'],
+  allowTestKeys: true,
+  now: NOW,
+  state,
+  requiresState: true,
+  expect,
+});
+const stateIdRows = [
+  stRow('constructor-1.1.0.json', null, { valid: true }),
+  stRow('constructor-1.1.0.json', withState, { valid: true }),
+  stRow('constructor-1.0.0.json', withState, refusedAs('downgrade')),
+  stRow('prototype-1.1.0.json', null, { valid: true }),
+];
+
+const prettierOptions = {
+  ...((await resolveConfig(resolve(vectors, 'x.json'))) ?? {}),
+  parser: 'json',
+};
+const dirFiles = new Map([
+  ['expect-id/expect-id.json', await format(pretty(expectIdRows), prettierOptions)],
+  ['state-ids/constructor-1.1.0.json', pretty(stateManifest('constructor', '1.1.0'))],
+  ['state-ids/constructor-1.0.0.json', pretty(stateManifest('constructor', '1.0.0'))],
+  ['state-ids/prototype-1.1.0.json', pretty(stateManifest('prototype', '1.1.0'))],
+  ['state-ids/state-ids.json', await format(pretty(stateIdRows), prettierOptions)],
+]);
+for (const [name, content] of dirFiles) files.set(name, content);
+
 const check = process.argv.includes('--check');
 let dirty = 0;
+if (!check)
+  for (const d of ['expect-id', 'state-ids']) mkdirSync(resolve(vectors, d), { recursive: true });
 for (const [name, content] of files) {
   const path = resolve(vectors, name);
   if (check) {
@@ -354,10 +444,15 @@ for (const [name, content] of files) {
   }
 }
 if (check) {
-  // sub-directories (descriptor/, tamper/, tamper-assets/) have their own generators
+  // sub-directories (descriptor/, tamper/, tamper-assets/) have their own generators; expect-id/ and
+  // state-ids/ are written here
   const extra = readdirSync(vectors, { withFileTypes: true })
     .filter((d) => d.isFile() && !files.has(d.name) && d.name !== 'README.md')
     .map((d) => d.name);
+  for (const d of ['expect-id', 'state-ids'])
+    if (existsSync(resolve(vectors, d)))
+      for (const f of readdirSync(resolve(vectors, d)))
+        if (!files.has(`${d}/${f}`)) extra.push(`${d}/${f}`);
   if (extra.length) console.error(`unexpected files: ${extra.join(', ')}`);
   if (dirty || extra.length) process.exit(1);
   console.log(`${files.size} vector files up to date`);

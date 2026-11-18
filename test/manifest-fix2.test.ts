@@ -605,21 +605,25 @@ describe('fix round 2: everything the brief names stays byte-identical (the sha 
     expect(files).toHaveLength(33);
   });
 
-  it('no file under tamper/ or tamper-assets/ was added or removed', () => {
+  it('no file under tamper/ or tamper-assets/ was removed; release 0.5.0 added only tamper/tamper-base.json', () => {
     for (const d of ['tamper', 'tamper-assets']) {
       const onDisk = readdirSync(resolve(vectorsDir, d)).sort();
       const listed = fixture
         .map(([, f]) => f)
         .filter((f) => f.startsWith(`vectors/${d}/`))
         .map((f) => f.slice(`vectors/${d}/`.length))
+        // spec release 0.5.0 (manifest 0.1.2): the unmodified signed base, named by vectors/expect-id/
+        .concat(d === 'tamper' ? ['tamper-base.json'] : [])
         .sort();
       expect(onDisk).toEqual(listed);
     }
   });
 
-  it('every listed file hashes exactly as before the round', () => {
-    for (const [hash, file] of fixture)
+  it('every listed file hashes exactly as before the round (storage-api.ts and event.ts changed on purpose in spec release 0.5.0: test/spec-0.5.test.ts)', () => {
+    for (const [hash, file] of fixture) {
+      if (file === 'storage-api.ts' || file === 'event.ts') continue;
       expect(sha(readFileSync(resolve(specDir, file))), file).toBe(hash);
+    }
   });
 
   it('the 15 tamper rows keep their tabled result under the tightened patterns', async () => {
@@ -766,8 +770,9 @@ describe('fix round 2: the documents say it (TD-29)', () => {
   });
 
   it('the runtime README and CHANGELOG record the round, and the README carries the Sprint 4 process sentence', () => {
-    expect(readme).toContain(
-      "tests-first evidence Done (red/green logs); local macOS green; CI on three OSes configured, pending the owner's push",
+    // T3-S5-14: the Sprint 4 process sentence is replaced by the factual CI status of the pushed head
+    expect(readme.replace(/\s+/g, ' ')).toContain(
+      'pushed 15 Nov 2026 at 3bf53c6; CI at that head red: run 43667709960',
     );
     expect(runtimeChangelog).toContain('BUG-T2-S4-11');
     expect(runtimeChangelog).toContain('BUG-T2-S4-14');

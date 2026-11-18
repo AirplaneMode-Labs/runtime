@@ -25,7 +25,7 @@ export default defineConfig({
   use: { channel: 'chrome', trace: 'off' },
   webServer: {
     command:
-      'node test/tools/fetch-model.mjs smollm2-135m-instruct && DEMO_MODELS=1 npm run demo:build && ' +
+      'node test/tools/fetch-model.mjs smollm2-135m-instruct && node test/tools/fetch-model.mjs multilingual-e5-small-wasm-q8 && DEMO_MODELS=1 npm run demo:build && ' +
       `node test/browser/subpath-server.mjs --port ${PORT} --serve demo/dist --base /runtime/`,
     url: `http://127.0.0.1:${PORT}/runtime/models.html`,
     cwd: '../..',

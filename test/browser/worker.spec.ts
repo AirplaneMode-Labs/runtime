@@ -70,6 +70,28 @@ test('the engine answers from a worker on forced WebAssembly, observability come
     ).toBe(true);
     expect(gate.workers, 'one engine worker').toBe(1);
 
+    // R15 (S1-070): the verify phase is the worker's: host 'worker', bytes = everything the worker re-hashed
+    const verify = phases.find((e) => e.attrs['phase'] === 'verify')!;
+    expect(verify.attrs['host']).toBe('worker');
+    expect(verify.bytes ?? 0).toBeGreaterThan(0);
+    // model.memory (Event 0.1.4): the peak WebAssembly.Memory the worker could read, or 'unavailable'; never an estimate
+    const peaks = events.filter((e) => e.name === 'model.memory');
+    expect(peaks.map((e) => e.attrs['phase'])).toEqual(['load', 'generate']);
+    for (const e of peaks) {
+      expect(e.kind).toBe('memory');
+      expect(e.attrs['host']).toBe('worker');
+      if (e.attrs['measure'] === 'wasm-memory') expect(e.bytes ?? 0).toBeGreaterThan(1024 * 1024);
+      else {
+        expect(e.attrs['measure']).toBe('unavailable');
+        expect(e.bytes).toBeUndefined();
+      }
+    }
+    results['modelMemory'] = peaks.map((e) => ({
+      phase: e.attrs['phase'],
+      measure: e.attrs['measure'],
+      bytes: e.bytes ?? null,
+    }));
+
     // probes inside the worker
     const worker = page.workers()[0]!;
     expect(worker).toBeDefined();

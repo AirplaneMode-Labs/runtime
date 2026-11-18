@@ -1,4 +1,4 @@
-// D1-10: alpha packaging (0.2.0-alpha.0, now 0.2.0-alpha.1). Written before package.json, tsup.config.ts, README,
+// D1-10: alpha packaging (0.2.0-alpha.0, then 0.2.0-alpha.1); Sprint 5 (D1-09) makes it the beta 0.3.0-beta.0. Written before package.json, tsup.config.ts, README,
 // CHANGELOG and docs/release.md changed (red-D1-10.log). The offline fresh-directory install itself
 // is scripts/pack-check.mjs (npm run pack:check), run on CI and logged under the lane evidence.
 
@@ -23,8 +23,8 @@ const NOT_PUBLISHED =
   "Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.";
 
 describe('package.json', () => {
-  it('is version 0.2.0-alpha.1, public, ESM, node 22', () => {
-    expect(pkg.version).toBe('0.2.0-alpha.1');
+  it('is version 0.3.0-beta.0, public, ESM, node 22', () => {
+    expect(pkg.version).toBe('0.3.0-beta.0');
     expect(pkg['name']).toBe('@airplanemode/runtime');
     expect(pkg['private']).toBe(false);
     expect(pkg['type']).toBe('module');
@@ -43,6 +43,11 @@ describe('package.json', () => {
     expect(e['./worker']).toEqual({
       types: './dist/backends/index.d.ts',
       import: './dist/worker/engine-worker.js',
+    });
+    // Sprint 5: the helpers for an application's own workers (installEgressGuard, startModuleWorker)
+    expect(e['./worker-support']).toEqual({
+      types: './dist/worker-support.d.ts',
+      import: './dist/worker-support.js',
     });
     expect(e['./spec/*.json']).toBe('./spec/*.json');
     expect(e['./package.json']).toBe('./package.json');
@@ -125,10 +130,40 @@ describe('scripts/pack-check.mjs and its allow-list', () => {
 describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
   const readme = read('README.md');
 
-  it('README Status says alpha, not tagged, no API stability before the beta', () => {
+  it('README Status opens with the Sprint 5 line and says beta, not tag-ready (TD-30), with the promise limited to 0.3.x', () => {
     const status = flat(readme.slice(readme.indexOf('## Status'), readme.indexOf('## Install')));
-    expect(status).toContain('alpha, not tagged');
-    expect(status).toContain('no API stability promise before the beta (Sprint 5)');
+    expect(status.startsWith('## Status Sprint 5 (18 Nov 2026): Working:')).toBe(true);
+    expect(status).toContain('Not yet:');
+    expect(status).toContain('beta, not tagged');
+    expect(status).toContain('not tag-ready (TD-30)');
+    expect(status).toContain('no breaking change within 0.3.x');
+  });
+
+  it("README 'What beta means' names the draft contracts, the unmet definition-of-done rows and what is not included (TD-36)", () => {
+    const at = readme.indexOf('### What beta means');
+    expect(at, 'a What beta means section').toBeGreaterThan(0);
+    const section = flat(readme.slice(at, readme.indexOf('\n## ', at)));
+    for (const s of [
+      'no breaking change within 0.3.x',
+      'storage API 0.3.0',
+      'backend adapter 0.4.0',
+      'event 0.1.4',
+      'capability profile',
+      'manifest verify with expectId',
+      'worker host with generate (Stop, budget) and embed',
+      'in-worker integrity',
+      'worker-support exports',
+      'DevTools panel',
+      'three-OS CI read',
+      '8 GB benchmark',
+      'signed artifacts with a real key',
+      'publish',
+      'tag',
+      'not tag-ready (TD-30)',
+      'WebLLM (TD-08)',
+      'key revocation',
+    ])
+      expect(section, s).toContain(s);
   });
 
   it('README Install carries the exact honest sentence, the offline tarball commands and an After the owner publishes block', () => {
@@ -161,7 +196,7 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
       "Chrome's non-standard performance.memory",
       'absent in workers, so worker figures may all be null',
       'not on the Chrome Web Store',
-      'the main thread re-hashes during load',
+      'not measured on 8 GB',
       'Pages sends no headers',
       'Apple silicon only',
     ])
@@ -172,6 +207,71 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     expect(flat(readme)).toContain('8 GB Windows no-GPU laptop');
     expect(flat(readme)).toContain('not measured');
     expect(readme).not.toContain('/private/tmp');
+  });
+
+  it('T3-S5-14: the README states the pushed head and the red CI run, and claims no green three-OS run', () => {
+    const f = flat(readme);
+    expect(f).toContain(
+      'pushed 15 Nov 2026 at 3bf53c6; CI at that head red: run 43667709960 (check windows-latest, model-wasm ubuntu-latest); open until the owner pushes the Sprint 5 fixes and reads green runs',
+    );
+    expect(f).not.toMatch(/on 9 Nov 2026,? green/);
+  });
+
+  it('T3-S5-15: every cell of the 8 GB laptop column in the README Benchmarks tables reads exactly "not measured on 8 GB"', () => {
+    const start = readme.indexOf('\n## Benchmarks');
+    const end = readme.indexOf('\n## ', start + 5);
+    const section = readme.slice(start, end);
+    const rows = section.split('\n').filter((l) => l.startsWith('|'));
+    expect(rows.length).toBeGreaterThan(20);
+    let tables = 0;
+    let cells = 0;
+    for (const row of rows) {
+      const cols = row
+        .slice(1, row.lastIndexOf('|'))
+        .split('|')
+        .map((c) => c.trim());
+      const last = cols[cols.length - 1]!;
+      if (/^-+$/.test(last)) continue;
+      if (/Scenario/.test(cols[0]!)) {
+        tables++;
+        expect(last, row.slice(0, 60)).toBe('8 GB laptop');
+        continue;
+      }
+      cells++;
+      expect(last, row.slice(0, 60)).toBe('not measured on 8 GB');
+    }
+    expect(tables).toBe(2);
+    expect(cells).toBeGreaterThan(15);
+  });
+
+  it('CHANGELOG has an Unreleased section for Sprint 5 with Added, Changed, Fixed and Security, naming the fixes and the spec release', () => {
+    const log = read('CHANGELOG.md');
+    const start = log.indexOf('## [Unreleased]');
+    expect(start, '## [Unreleased]').toBeGreaterThan(0);
+    const section = log.slice(start, log.indexOf('\n## [', start + 5));
+    for (const h of ['### Added', '### Changed', '### Fixed', '### Security'])
+      expect(section, h).toContain(h);
+    for (const id of [
+      '0.3.0-beta.0',
+      'spec release 0.5.0',
+      'expectId',
+      'unexpected_id',
+      'S1-070',
+      'S1-097',
+      'S1-102',
+      'S1-039',
+      'R14',
+      'R15',
+      'worker-support',
+      'model.embed',
+      'model.memory',
+      'bundle-models',
+      'model.spec.ts',
+      'devtools-hook.test.ts',
+    ])
+      expect(section, id).toContain(id);
+    expect(section).toContain('no tag, no publish');
+    expect(log.indexOf('## [Unreleased]')).toBeLessThan(log.indexOf('## [0.2.0-alpha.1]'));
   });
 
   it('CHANGELOG has the 0.2.0-alpha.0 heading with ids on every Added, Changed, Fixed and Security line', () => {
@@ -222,6 +322,32 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     expect(md).toContain('cp-sign');
     expect(md).toContain('keygen');
     expect(md).toContain('release-manifest');
+  });
+
+  it('every npm job of ci.yml and pages.yml installs with npm ci --ignore-scripts (S1-079 hygiene)', () => {
+    for (const f of ['.github/workflows/ci.yml', '.github/workflows/pages.yml']) {
+      const text = read(f);
+      const installs = [...text.matchAll(/run:\s*(npm ci[^\n]*)/g)].map((m) => m[1]!);
+      expect(installs.length, f).toBeGreaterThan(0);
+      for (const i of installs) expect(i, f).toContain('--ignore-scripts');
+      expect(text, f).not.toMatch(/run:\s*npm (i|install)\b/);
+    }
+  });
+
+  it('pack-check proves the beta: the worker-support entry, no test hook in the build, spec release 0.5.0 and expectId from the tarball', () => {
+    const src = read('scripts/pack-check.mjs');
+    for (const needle of [
+      'dist/worker-support.js',
+      'RUNTIME_TEST_HOOKS',
+      'test-probe',
+      'expectId',
+      'unexpected_id',
+      "'0.5.0'",
+      "'0.1.2'",
+      "'0.4.0'",
+      'beta, not tagged',
+    ])
+      expect(src, needle).toContain(needle);
   });
 
   it('ci.yml runs pack:check in the check job, with every pin unchanged', () => {

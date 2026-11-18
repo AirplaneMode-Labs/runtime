@@ -8,6 +8,7 @@ import type { WorkerAdapterHandle } from '../src/backends/worker-adapter';
 import { EventBus } from '../src/events';
 import { EGRESS_GUARD_SENTINEL } from '../src/worker/egress-guard';
 import { TjsEngine } from '../src/worker/tjs-engine';
+import type { WasmMemoryProbe } from '../src/worker/wasm-memory';
 import {
   ORT_FACTORY_URL,
   PAGE_ORIGIN,
@@ -24,6 +25,8 @@ import {
 export const WORKER_URL = 'https://app.test/app/worker/engine-worker.js';
 
 export interface FakeWorkerLike {
+  /** Every message the page posted (the loopback and silent workers record them). */
+  received?: { type?: string; [k: string]: unknown }[];
   onmessage: ((e: { data: unknown }) => void) | null;
   onerror: ((e: unknown) => void) | null;
   onmessageerror: ((e: unknown) => void) | null;
@@ -43,17 +46,33 @@ export class LoopbackWorker implements FakeWorkerLike {
     readonly url: string,
     readonly name: string,
     engineOptions: MockEngineOptions,
-    opts: { guard?: boolean; selfOrigin?: string } = {},
+    opts: { guard?: boolean; selfOrigin?: string; wasmPeakBytes?: number } = {},
   ) {
     const mock = mockEngine(engineOptions);
     this.mock = mock;
     const scope: Record<symbol, boolean> = {};
     if (opts.guard !== false) scope[EGRESS_GUARD_SENTINEL] = true;
+    // a stub probe stands in for the engine's WebAssembly.Memory when a test wants a real figure
+    const peak = opts.wasmPeakBytes;
+    const wasmProbe: WasmMemoryProbe | undefined =
+      peak === undefined
+        ? undefined
+        : {
+            memories: 1,
+            samples: 0,
+            sample: () => peak,
+            tick: () => undefined,
+            measure: async (_phase, fn) => ({
+              result: await fn(),
+              peak: { measure: 'wasm-memory', bytes: peak },
+            }),
+          };
     this.engine = new TjsEngine({
       post: (m) => this.fromWorker(m),
       loadEngine: async () => mock.module as never,
       selfOrigin: opts.selfOrigin ?? PAGE_ORIGIN,
       scope,
+      ...(wasmProbe ? { wasmProbe } : {}),
     });
   }
   readonly mock: ReturnType<typeof mockEngine>;
@@ -133,6 +152,8 @@ export async function workerRig(
     world?: WorldOptions;
     engine?: MockEngineOptions;
     guard?: boolean;
+    /** A stub wasm memory probe reading this many bytes (model.memory); absent: no probe, 'unavailable'. */
+    wasmPeakBytes?: number;
     spawn?: (url: string, name: string) => FakeWorkerLike;
     workerUrl?: string;
     verifiedPrefix?: string;
@@ -154,7 +175,10 @@ export async function workerRig(
     spawnWorker: (url, name) => {
       const worker =
         o.spawn?.(url, name) ??
-        new LoopbackWorker(url, name, o.engine ?? {}, o.guard === false ? { guard: false } : {});
+        new LoopbackWorker(url, name, o.engine ?? {}, {
+          ...(o.guard === false ? { guard: false } : {}),
+          ...(o.wasmPeakBytes !== undefined ? { wasmPeakBytes: o.wasmPeakBytes } : {}),
+        });
       workers.push(worker);
       allWorkers.push(worker);
       return worker;

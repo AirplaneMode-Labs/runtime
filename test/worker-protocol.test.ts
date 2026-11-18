@@ -235,3 +235,91 @@ describe('validateWorkerMessage: everything else is a crash', () => {
     expect(ok({ v: 2, type: 'egress', origin: 'https://a.test' })).toEqual({ ok: false });
   });
 });
+
+describe('protocol additions of backend adapter 0.4.0 (embed, budget, peak, verify, context_overflow)', () => {
+  it('phase verify is a known phase the worker may report', () => {
+    expect(ok({ ...base, type: 'phase', phase: 'verify', durationMs: 20, bytes: 4096 })).toEqual({
+      ok: true,
+      message: { type: 'phase', phase: 'verify', durationMs: 20, bytes: 4096 },
+    });
+  });
+
+  it('done carries an optional integer budget; a non-integer budget is a bad shape', () => {
+    const result = {
+      text: 'Paris',
+      finishReason: 'length',
+      usage: { promptTokens: 5, completionTokens: 4 },
+      timings: { prefillMs: 1, decodeMs: 2, tokensPerSecond: 3 },
+    };
+    expect(ok({ ...base, type: 'done', id: 1, result: { ...result, budget: 4 } })).toMatchObject({
+      ok: true,
+      message: { type: 'done', result: { budget: 4 } },
+    });
+    expect(ok({ ...base, type: 'done', id: 1, result })).toMatchObject({ ok: true });
+    for (const budget of [1.5, -1, '4', null, NaN])
+      expect(ok({ ...base, type: 'done', id: 1, result: { ...result, budget } })).toEqual({
+        ok: false,
+      });
+  });
+
+  it("error accepts the code 'context_overflow'", () => {
+    expect(ok({ ...base, type: 'error', code: 'context_overflow' })).toEqual({
+      ok: true,
+      message: { type: 'error', code: 'context_overflow' },
+    });
+  });
+
+  it('peak: a phase, a measure, and bytes only when the measure is wasm-memory', () => {
+    expect(
+      ok({ ...base, type: 'peak', phase: 'load', measure: 'wasm-memory', bytes: 65536 }),
+    ).toEqual({
+      ok: true,
+      message: { type: 'peak', phase: 'load', measure: 'wasm-memory', bytes: 65536 },
+    });
+    expect(ok({ ...base, type: 'peak', phase: 'embed', measure: 'unavailable' })).toEqual({
+      ok: true,
+      message: { type: 'peak', phase: 'embed', measure: 'unavailable' },
+    });
+    for (const bad of [
+      { phase: 'load', measure: 'wasm-memory' }, // a figure is required
+      { phase: 'load', measure: 'unavailable', bytes: 5 }, // nothing is estimated
+      { phase: 'load', measure: 'wasm-memory', bytes: -1 },
+      { phase: 'load', measure: 'wasm-memory', bytes: 1.5 },
+      { phase: 'boot', measure: 'wasm-memory', bytes: 1 },
+      { phase: 'load', measure: 'rss', bytes: 1 },
+      { phase: 'load', measure: 'wasm-memory', bytes: 1, extra: 1 },
+    ])
+      expect(ok({ ...base, type: 'peak', ...bad })).toEqual({ ok: false });
+  });
+
+  it('embedded: ids, dims, a vectors array, counts and a total time; the vectors themselves are checked by the host', () => {
+    const m = {
+      ...base,
+      type: 'embedded',
+      id: 3,
+      dims: 3,
+      vectors: [new Float32Array([0.6, 0.8, 0])],
+      normalized: true,
+      truncated: 0,
+      totalMs: 4.5,
+    };
+    expect(ok(m)).toMatchObject({ ok: true, message: { type: 'embedded', id: 3, dims: 3 } });
+    // a wrong count, wrong length or wrong element type is a CONTENT fault, judged by the host (R14), not here
+    expect(ok({ ...m, vectors: [] })).toMatchObject({ ok: true });
+    expect(ok({ ...m, vectors: [[0.6, 0.8, 0]] })).toMatchObject({ ok: true });
+    // a bad SHAPE is a crash
+    for (const bad of [
+      { dims: '3' },
+      { dims: 0 },
+      { dims: 1.5 },
+      { id: -1 },
+      { vectors: 'x' },
+      { vectors: new Array(65).fill(new Float32Array(3)) },
+      { normalized: 'yes' },
+      { truncated: -1 },
+      { totalMs: Infinity },
+      { extra: true },
+    ])
+      expect(ok({ ...m, ...bad }), JSON.stringify(Object.keys(bad))).toEqual({ ok: false });
+  });
+});

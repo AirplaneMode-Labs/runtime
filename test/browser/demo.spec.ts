@@ -16,6 +16,10 @@ import { resultsDir } from './out-dir';
 const BASE = 'http://127.0.0.1:8791/runtime/';
 const OUT_DIR = resultsDir('RUNTIME_DEMO_OUT');
 test.skip(process.env['RUNTIME_MODEL'] !== '1', 'set RUNTIME_MODEL=1 to run the demo proof');
+// the convention form (D1-FIX1-02)
+const BUILD_LABEL =
+  /^(Built from main at [0-9a-f]{12}|Local build [0-9a-f]{12}(-dirty)?|Local build local \(no \.git checkout\))$/;
+
 test.describe.configure({ mode: 'serial' });
 
 const results: Record<string, unknown> = { generatedAt: new Date().toISOString(), base: BASE };
@@ -41,7 +45,7 @@ for (const choice of ['auto', 'webgpu', 'wasm'] as const) {
       await page.goto(`${BASE}models.html`);
       await page.waitForFunction(() => document.getElementById('plan-list')?.children.length === 3);
       // the page state before the click
-      expect(await page.locator('#build-id').textContent()).toMatch(/^([0-9a-f]{12}|local)$/);
+      expect(await page.locator('#build-id').textContent()).toMatch(BUILD_LABEL);
       const csp = await page
         .locator('meta[http-equiv="Content-Security-Policy"]')
         .getAttribute('content');
@@ -128,3 +132,62 @@ for (const choice of ['auto', 'webgpu', 'wasm'] as const) {
     }
   });
 }
+
+test('the Embed card embeds two sentences through the worker host with multilingual-e5-small: 384 dimensions, unit norm, same origin only, 0 console errors', async () => {
+  test.setTimeout(10 * 60_000);
+  const browser = await chromium.launch({ channel: 'chrome' });
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    const requests: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    page.on('pageerror', (e) => errors.push(String(e)));
+    context.on('request', (r) => requests.push(r.url()));
+    await page.goto(`${BASE}models.html`);
+    // the page: the Sprint 5 line (same text as the root page) and the Embed card, nothing fetched yet
+    await expect(page.locator('#sprint-status')).toContainText('Sprint 5 (18 Nov 2026)');
+    await expect(page.locator('#sprint-status')).toContainText('not measured on 8 GB');
+    expect(
+      requests.filter((u) => new URL(u).pathname.startsWith('/runtime/models/')),
+      'no models/ request before the click',
+    ).toEqual([]);
+    await expect(page.locator('#btn-embed')).toBeEnabled();
+    await page.locator('#btn-embed').click();
+    await expect(page.locator('#embed-result:not(.hidden)')).toBeVisible({ timeout: 8 * 60_000 });
+    expect(await page.locator('#embed-error').isVisible()).toBe(false);
+    await expect(page.locator('#e-dims')).toHaveText('384');
+    const norm = (await page.locator('#e-norm').textContent()) ?? '';
+    expect(norm).toMatch(/^yes \(vector lengths 1\.0000, 1\.0000\)$/);
+    const sim = Number((await page.locator('#e-sim').textContent()) ?? 'NaN');
+    expect(sim).toBeGreaterThan(0.5);
+    expect(sim).toBeLessThanOrEqual(1);
+    await expect(page.locator('#e-time')).toHaveText(/^\d+ ms$/);
+    // the DevTools read-out saw the embedding model's load under the worker host
+    await expect(page.locator('#readout-body [data-cell="pipelineName"]')).toHaveCount(0);
+    expect(errors, 'console and page errors').toEqual([]);
+    const origin = new URL(BASE).origin;
+    for (const u of requests) {
+      const parsed = new URL(u);
+      if (parsed.protocol === 'blob:' || parsed.protocol === 'data:') continue;
+      expect(parsed.origin, u).toBe(origin);
+      expect(parsed.pathname.startsWith('/runtime/'), u).toBe(true);
+    }
+    expect(
+      requests.filter((u) => new URL(u).pathname.includes('/models/multilingual-e5-small/')).length,
+      'the embedding model files were requested after the click',
+    ).toBeGreaterThan(0);
+    results['embed'] = {
+      dims: await page.locator('#e-dims').textContent(),
+      norm,
+      similarity: sim,
+      embedTime: await page.locator('#e-time').textContent(),
+      loadTime: await page.locator('#e-load').textContent(),
+      requests: requests.length,
+    };
+  } finally {
+    await browser.close();
+  }
+});

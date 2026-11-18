@@ -101,6 +101,86 @@ export function buildHindiSmokeFixture({ cacheDir = resolve(repoRoot, '.cache/mo
   });
 }
 
+export const QWEN06_MANIFEST_ID = 'dev.airplanemode.qwen06-smoke';
+export const QWEN06_DESCRIPTOR_ENTRY = 'qwen3-0.6b.descriptor';
+export const E5_MANIFEST_ID = 'dev.airplanemode.e5-smoke';
+export const E5_DESCRIPTOR_ENTRY = 'multilingual-e5-small.descriptor';
+
+/**
+ * The local-only demo-model fixtures (D1-07): Qwen3-0.6B q8 and multilingual-e5-small q8 on single-threaded
+ * WebAssembly through the worker host, signed with the RFC 8032 test key for the loopback hook only
+ * (qwen06.spec.ts). Never CI, never Pages: the weights are fetched into the gitignored cache by
+ * `node test/tools/fetch-model.mjs qwen3-0.6b-wasm-q8` and `multilingual-e5-small-wasm-q8`.
+ */
+export function buildQwen06Fixture({ cacheDir = resolve(repoRoot, '.cache/models') } = {}) {
+  const signedAt = '2026-11-09T00:00:00Z';
+  return buildModelManifest({
+    cacheDir,
+    modelKey: 'qwen3-0.6b-wasm-q8',
+    manifestId: QWEN06_MANIFEST_ID,
+    manifestVersion: '0.1.0',
+    publisher: 'Airplane Mode Labs (Qwen3-0.6B smoke run, RFC 8032 test key)',
+    outDir: resolve(cacheDir, 'qwen06'),
+    descriptorEntryId: QWEN06_DESCRIPTOR_ENTRY,
+    descriptorFile: 'qwen3-0.6b.descriptor.json',
+    descriptor: {
+      id: 'qwen3-0.6b',
+      engine: 'transformers-js',
+      task: 'text-generation',
+      devices: ['wasm'],
+      dtype: 'q8',
+      contextLength: 2048,
+      generation: { maxNewTokens: 256, chatTemplateKwargs: { enable_thinking: false } },
+    },
+    minProfile: { backendTier: 'wasm-simd', ramGb: 4, storageFreeGb: 2 },
+    entryIds: {
+      'chat_template.jinja': 'qwen3-0.6b.chat-template',
+      'config.json': 'qwen3-0.6b.config',
+      'generation_config.json': 'qwen3-0.6b.generation-config',
+      'onnx/model_quantized.onnx': 'qwen3-0.6b.onnx',
+      'special_tokens_map.json': 'qwen3-0.6b.special-tokens',
+      'tokenizer.json': 'qwen3-0.6b.tokenizer',
+      'tokenizer_config.json': 'qwen3-0.6b.tokenizer-config',
+    },
+    ortEntryId: 'ort.wasm',
+    createdAt: signedAt,
+    sign: (body) => signManifest(body, RFC8032_SEED_HEX, signedAt),
+  });
+}
+
+export function buildE5Fixture({ cacheDir = resolve(repoRoot, '.cache/models') } = {}) {
+  const signedAt = '2026-11-09T00:00:00Z';
+  return buildModelManifest({
+    cacheDir,
+    modelKey: 'multilingual-e5-small-wasm-q8',
+    manifestId: E5_MANIFEST_ID,
+    manifestVersion: '0.1.0',
+    publisher: 'Airplane Mode Labs (multilingual-e5-small smoke run, RFC 8032 test key)',
+    outDir: resolve(cacheDir, 'e5'),
+    descriptorEntryId: E5_DESCRIPTOR_ENTRY,
+    descriptorFile: 'multilingual-e5-small.descriptor.json',
+    descriptor: {
+      id: 'multilingual-e5-small',
+      engine: 'transformers-js',
+      task: 'feature-extraction',
+      devices: ['wasm'],
+      dtype: 'q8',
+      contextLength: 512,
+    },
+    minProfile: { backendTier: 'wasm-simd' },
+    entryIds: {
+      'config.json': 'multilingual-e5-small.config',
+      'onnx/model_quantized.onnx': 'multilingual-e5-small.onnx',
+      'special_tokens_map.json': 'multilingual-e5-small.special-tokens',
+      'tokenizer.json': 'multilingual-e5-small.tokenizer',
+      'tokenizer_config.json': 'multilingual-e5-small.tokenizer-config',
+    },
+    ortEntryId: 'ort.wasm',
+    createdAt: signedAt,
+    sign: (body) => signManifest(body, RFC8032_SEED_HEX, signedAt),
+  });
+}
+
 export const ISOLATION_MANIFEST_ID = 'dev.airplanemode.isolation';
 export const ISOLATION_BAD_DESCRIPTOR_ENTRY = 'smollm2-135m-instruct.bad-webgpu.descriptor';
 export const ISOLATION_WASM_DESCRIPTOR_ENTRY = 'smollm2-135m-instruct.wasm.descriptor';
@@ -195,6 +275,12 @@ if (isMain) {
     if (process.argv.includes('--isolation')) {
       const iso = buildIsolationFixture({ cacheDir });
       console.log(`signed ${iso.entries.length} isolation entries -> ${iso.manifestPath}`);
+    }
+    if (process.argv.includes('--qwen06')) {
+      for (const built of [buildQwen06Fixture({ cacheDir }), buildE5Fixture({ cacheDir })])
+        console.log(
+          `signed ${built.entries.length} entries (${built.totalBytes} bytes) -> ${built.manifestPath}`,
+        );
     }
     const r = process.argv.includes('--hindi')
       ? buildHindiSmokeFixture({ cacheDir })

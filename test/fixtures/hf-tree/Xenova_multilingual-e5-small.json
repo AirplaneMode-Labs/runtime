@@ -1,0 +1,105 @@
+{
+  "repo": "Xenova/multilingual-e5-small",
+  "revision": "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+  "fetchedAt": "2026-11-18",
+  "source": "https://huggingface.co/api/models/Xenova/multilingual-e5-small/tree/761b726dd34fb83930e26aab4e9ac3899aa1fa78?recursive=1",
+  "base": {
+    "repo": "intfloat/multilingual-e5-small",
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "licence": "MIT",
+    "licenceFile": "https://huggingface.co/intfloat/multilingual-e5-small/blob/614241f622f53c4eeff9890bdc4f31cfecc418b3/LICENSE"
+  },
+  "note": "The Xenova repo is a quantised ONNX export of intfloat/multilingual-e5-small (base_model in its card); the intfloat card declares license:mit. No copyright line is invented here.",
+  "tree": [
+    {
+      "path": ".gitattributes",
+      "size": 1570,
+      "oid": "52373fe24473b1aa44333d318f578ae6bf04b49b"
+    },
+    {
+      "path": "README.md",
+      "size": 1077,
+      "oid": "53e76ac0e07cb45ebbf3870244998e0f08632d4f"
+    },
+    {
+      "path": "config.json",
+      "size": 658,
+      "oid": "4104f38273cc595fd9500fd243124e9f6cf383dc"
+    },
+    {
+      "path": "onnx/model.onnx",
+      "size": 470268533,
+      "oid": "8683a318639173170c8b1f744e4fdf980ea860e0",
+      "lfsOid": "4aa845c27760e06e9a686b9d8b5d440eae4b6612cd09e5b522b716d3941f77ff"
+    },
+    {
+      "path": "onnx/model_bnb4.onnx",
+      "size": 397322585,
+      "oid": "b6be5163f91ab390365a25e69cb1d5782b0b2114",
+      "lfsOid": "fdb98424bf7e59d7fbd010ea41ba24d343875600ac849d6be22c7cc043101117"
+    },
+    {
+      "path": "onnx/model_fp16.onnx",
+      "size": 235336732,
+      "oid": "a8f7d83a6724daaee03ef1bd14f0ee2769e11e84",
+      "lfsOid": "0e0fe349c99ea21c6f3aa273af21f7fb753c1e1174ef1647032029c2be3251c3"
+    },
+    {
+      "path": "onnx/model_int8.onnx",
+      "size": 118054593,
+      "oid": "55752c03727b5cb58e84a50240e6ecac779f79b4",
+      "lfsOid": "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c"
+    },
+    {
+      "path": "onnx/model_q4.onnx",
+      "size": 398649233,
+      "oid": "681ce0ffc14e4703c6c15c3bccdf22bc15c54b6d",
+      "lfsOid": "c5cee25d555ba3ff45b47d50cffd6d9d7842e3b1d21a91f417bc677845469969"
+    },
+    {
+      "path": "onnx/model_q4f16.onnx",
+      "size": 204777691,
+      "oid": "2a5b38f71aed8327ad6fcc21e004f8695c02615d",
+      "lfsOid": "cafab9d10773b6d976e102923b1d98385ac9c7959879d5cff032de3d8adb3b86"
+    },
+    {
+      "path": "onnx/model_quantized.onnx",
+      "size": 118308185,
+      "oid": "313b94a513ded056e6b6f13f156cbbe1b1205391",
+      "lfsOid": "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193"
+    },
+    {
+      "path": "onnx/model_uint8.onnx",
+      "size": 118054630,
+      "oid": "65deee570fcb458970bff1cca2100cfb774cad53",
+      "lfsOid": "ee13574a23e4384619a172d4c0c8c6b825528fde30258c56130d5e3efcc9c8f1"
+    },
+    {
+      "path": "quant_config.json",
+      "size": 674,
+      "oid": "b6b0aac404ca79583bf09b91acfd362144f38b89"
+    },
+    {
+      "path": "sentencepiece.bpe.model",
+      "size": 5069051,
+      "oid": "7a3f40a75f870bc1f21700cd414dc2acc431583c",
+      "lfsOid": "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size": 167,
+      "oid": "e0b1d18ecd0ae4ff1d47bd297d910c0cf83e504b"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 17082730,
+      "oid": "c9b2fea3119ca8886380e5f47bffc5ea7a6e0ffa",
+      "lfsOid": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 443,
+      "oid": "059214673d9d6d2ee319411e2ffec8c024b816d5"
+    }
+  ]
+}

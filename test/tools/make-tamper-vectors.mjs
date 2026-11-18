@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Generates the tamper vectors of manifest spec v0.1 (manifest 0.1.1, spec release 0.4.0):
+// Generates the tamper vectors of manifest spec v0.1 (manifest 0.1.1, spec release 0.4.0; 0.1.2 adds only
+// tamper-base.json, the unmodified signed base):
 //
 //   spec/vectors/tamper/          tamper-01..15 plus tamper.json (the table every implementation runs)
 //   spec/vectors/tamper-assets/   three signed manifests, three .bin files and expect.json (runtime-
@@ -78,6 +79,10 @@ const refused = (signatures) => ({
   signatures,
 });
 const STATE = { version: '1.1.0', createdAt: '2026-11-01T00:00:00Z' };
+
+// tamper-base.json: the signed base itself, unmodified (Sprint 5, spec release 0.5.0). It is not a row of
+// tamper.json; vectors/expect-id/ names it ('tamper/tamper-base.json') as the manifest that verifies.
+files.set('tamper/tamper-base.json', pretty(base));
 
 // 01 one hex character of entries[1].sha256 changed after signing
 {

@@ -62,7 +62,7 @@ describe('identity', () => {
 });
 
 describe('load: R1 and R2 on the main thread, the engine in a worker', () => {
-  it('loads in one fresh worker named airplanemode-engine-transformers-js-wasm, through a bootstrap blob, and posts the Blobs the asset manager re-hashed', async () => {
+  it('loads in one fresh worker named airplanemode-engine-transformers-js-wasm, through a bootstrap blob, and posts the Blobs the asset manager stored (the worker re-hashes them, R15)', async () => {
     const r = await workerRig();
     const getBlob = vi.spyOn(r.w.mgr, 'getBlob');
     await r.load();
@@ -84,11 +84,12 @@ describe('load: R1 and R2 on the main thread, the engine in a worker', () => {
     const returned = await Promise.all(getBlob.mock.results.map((x) => x.value as Promise<Blob>));
     for (const f of init.files) {
       expect(f.blob).toBeInstanceOf(Blob);
-      expect(returned).toContain(f.blob); // the very Blob that getBlob(id, {rehash:true}) returned
+      expect(returned).toContain(f.blob); // the very Blob that getBlob(id) returned
       expect(f.blob.size).toBe(f.size);
       expect(f.blob.size).toBe(r.w.entries[f.entryId]!.size);
     }
-    for (const c of getBlob.mock.calls) expect(c[1]).toEqual({ rehash: true });
+    // R15: the page never asks for a re-hash on the load path (the worker hashes every file)
+    for (const c of getBlob.mock.calls) expect(c[1]).toBeUndefined();
     // every file of the descriptor is held until unload
     expect((await refcounts(r)).every((n) => n === 1)).toBe(true);
     expect(verifiedRegistrySize()).toBeGreaterThan(0); // the loopback engine registered them
@@ -353,15 +354,14 @@ describe('abort and crash (R8)', () => {
     return { r, worker: r.workers[0] as SilentWorker };
   }
 
-  it('an abort the worker does not answer within 250 ms terminates it: generate resolves abort, the adapter is not loaded, holds are released', async () => {
+  it("an abort the worker does not answer within 250 ms terminates it: before any token generate rejects 'aborted' (R4b), the adapter is not loaded, holds are released", async () => {
     const { r, worker } = await loadedSilent();
     const ctl = new AbortController();
     const t0 = performance.now();
     const p = r.adapter.generate(PROMPT, { maxTokens: 8, signal: ctl.signal });
     setTimeout(() => ctl.abort(), 20);
-    const res = await p;
+    await expect(p).rejects.toMatchObject({ code: 'aborted' });
     const took = performance.now() - t0;
-    expect(res.finishReason).toBe('abort');
     expect(took).toBeLessThan(500);
     expect(worker.received.map((m) => m.type)).toContain('abort');
     expect(worker.terminated).toBe(true);
@@ -403,12 +403,13 @@ describe('abort and crash (R8)', () => {
     expect((r.workers[0] as SilentWorker).terminated).toBe(false);
   });
 
-  it('an already aborted signal resolves abort at once without posting generate', async () => {
+  it("an already aborted signal rejects 'aborted' at once without posting generate (R4b)", async () => {
     const { r, worker } = await loadedSilent();
     const ctl = new AbortController();
     ctl.abort();
-    const res = await r.adapter.generate(PROMPT, { signal: ctl.signal });
-    expect(res.finishReason).toBe('abort');
+    await expect(r.adapter.generate(PROMPT, { signal: ctl.signal })).rejects.toMatchObject({
+      code: 'aborted',
+    });
     expect(worker.received.map((m) => m.type)).not.toContain('generate');
   });
 

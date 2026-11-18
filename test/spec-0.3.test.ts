@@ -39,13 +39,13 @@ const flatTs = (s: string) => flat(s.replace(/\n\s*\*/g, ' '));
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 
 describe('spec 0.3.0: versions and wire strings', () => {
-  it('SPEC_VERSIONS and SPEC_WIRE carry the current (0.4.0) release values; the wire strings did not move', () => {
+  it('SPEC_VERSIONS and SPEC_WIRE carry the current (0.5.0) release values; the wire strings did not move', () => {
     expect(SPEC_VERSIONS).toEqual({
-      manifest: '0.1.1',
+      manifest: '0.1.2',
       capabilityProfile: '0.1.0',
-      event: '0.1.3',
-      storageApi: '0.2.0',
-      backendAdapter: '0.3.1',
+      event: '0.1.4',
+      storageApi: '0.3.0',
+      backendAdapter: '0.4.0',
       modelDescriptor: '0.2.1',
     });
     expect(SPEC_WIRE).toEqual({
@@ -63,9 +63,9 @@ describe('spec 0.3.0: versions and wire strings', () => {
 
   it('the event schema keeps its body and changes only its $id; the descriptor schema is 0.2.1', () => {
     const raw = readText(resolve(specDir, 'event.schema.json'));
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.3');
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.4');
     const asBefore = raw.replace(
-      'urn:airplanemode:spec:event:0.1.3',
+      'urn:airplanemode:spec:event:0.1.4',
       'urn:airplanemode:spec:event:0.1.1',
     );
     // sha256 of the Sprint 2 file (spec release 0.2.0)
@@ -111,7 +111,8 @@ describe('spec 0.3.0: event 0.1.2 (now 0.1.3)', () => {
       'storage.delete',
       'storage.quota',
     ]);
-    expect(STORAGE_EVENT_NAMES).toHaveLength(7);
+    // ten since Event 0.1.4: the first seven are unchanged (storage.doc.* are asserted in spec-0.5.test.ts)
+    expect(STORAGE_EVENT_NAMES.slice(0, 7)).toHaveLength(7);
     expect([...MODEL_LOAD_PHASES]).toEqual([
       'acquire',
       'verify',
@@ -387,8 +388,8 @@ describe('spec 0.3.0: event 0.1.2 (now 0.1.3)', () => {
       expect(eventTs, word).toContain(word);
   });
 
-  it('event.ts header carries the 0.1.3 version and the namespace-and-model privacy note', () => {
-    expect(flatTs(eventTs)).toContain('Event contract 0.1.3');
+  it('event.ts header carries the 0.1.4 version and the namespace-and-model privacy note', () => {
+    expect(flatTs(eventTs)).toContain('Event contract 0.1.4');
     expect(flatTs(eventTs).toLowerCase()).toContain(
       "the namespace (attr 'ns') and the descriptor entry id (attr 'model') do appear in events and in the devtools snapshot",
     );
@@ -424,7 +425,7 @@ describe('spec 0.3.0: backend adapter 0.3.0 (type level)', () => {
 
   it('backend-adapter.ts documents the additions in its source', () => {
     const ts = readText(resolve(specDir, 'backend-adapter.ts'));
-    expect(ts).toContain('Backend adapter contract 0.3.1');
+    expect(ts).toContain('Backend adapter contract 0.4.0');
     expect(ts).toMatch(/cacheOnly\?: boolean/);
     expect(ts).toContain("| 'integrity'");
     expect(ts).toContain("| 'not_cached'");
@@ -450,7 +451,7 @@ describe('spec 0.3.0: backend-adapter.md rules', () => {
       '## R13',
     ])
       expect(md, h).toContain(h);
-    expect(md.startsWith('# Backend adapter 0.3.1')).toBe(true);
+    expect(md.startsWith('# Backend adapter 0.4.0')).toBe(true);
   });
 
   it('states cacheOnly at acquire, the .part rule, the error mapping and the integrity reason', () => {
@@ -515,14 +516,14 @@ describe('spec 0.3.0: backend-adapter.md rules', () => {
 });
 
 describe('spec 0.3.0: README and CHANGELOG', () => {
-  it('spec/README.md table lists the current versions (release 0.4.0)', () => {
+  it('spec/README.md table lists the current versions (release 0.5.0)', () => {
     const readme = readText(resolve(specDir, 'README.md'));
-    expect(readme).toContain('Spec release **0.4.0**');
-    expect(flat(readme)).toMatch(/\| Event\s+\| `event.schema.json`, `event.ts`\s+\| 0\.1\.3/);
-    expect(flat(readme)).toMatch(/\| Backend adapter\s+\|[^|]*\|\s*0\.3\.1/);
+    expect(readme).toContain('Spec release **0.5.0**');
+    expect(flat(readme)).toMatch(/\| Event\s+\| `event.schema.json`, `event.ts`\s+\| 0\.1\.4/);
+    expect(flat(readme)).toMatch(/\| Backend adapter\s+\|[^|]*\|\s*0\.4\.0/);
     expect(flat(readme)).toMatch(/\| Model descriptor\s+\|[^|]*\|\s*0\.2\.1/);
     expect(readme).toContain('airplanemode.model/0.2');
-    expect(readme).toContain('urn:airplanemode:spec:event:0.1.3');
+    expect(readme).toContain('urn:airplanemode:spec:event:0.1.4');
   });
 
   it('spec/CHANGELOG.md has a 0.3.0 draft section citing every finding id', () => {

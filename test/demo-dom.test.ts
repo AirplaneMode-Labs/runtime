@@ -22,9 +22,11 @@ const read = (rel: string) => readFileSync(resolve(repoDir, rel), 'utf8');
 const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
 const demoFiles = (ext: RegExp) => readdirSync(resolve(repoDir, 'demo')).filter((f) => ext.test(f));
 
-/** The Content-Security-Policy of demo/index.html as shipped in Sprint 1 (must not change). */
+/** The Content-Security-Policy of demo/index.html as shipped in Sprint 1. */
 const SPRINT1_INDEX_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+/** Sprint 5 (TD-47, S1-039 re-opened and closed): the only change is connect-src 'self' without https:. */
+const INDEX_CSP = SPRINT1_INDEX_CSP.replace("connect-src 'self' https:", "connect-src 'self'");
 const MODELS_CSP =
   // Sprint 3: the engine runs in a module worker started from a blob: bootstrap (worker-src gains blob:),
   // and Trusted Types are required for scripts with exactly one policy, airplanemode-worker (D1-09)
@@ -47,15 +49,17 @@ describe('the demo pages: markup and policy', () => {
       );
   });
 
-  it('index.html keeps its Sprint 1 CSP byte for byte', () => {
-    expect(cspOf(read('demo/index.html'))).toBe(SPRINT1_INDEX_CSP);
+  it("index.html carries the Sprint 1 CSP with one change: connect-src 'self', no https: (TD-47)", () => {
+    expect(cspOf(read('demo/index.html'))).toBe(INDEX_CSP);
+    expect(INDEX_CSP).toContain("connect-src 'self';");
+    expect(INDEX_CSP).not.toContain('https:');
     // and, as a second guard, the committed Sprint 1 file's CSP when the history is available
     try {
       const prior = execFileSync('git', ['-C', repoDir, 'show', 'c2b6166:demo/index.html'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       });
-      expect(cspOf(read('demo/index.html'))).toBe(cspOf(prior));
+      expect(cspOf(prior)).toBe(SPRINT1_INDEX_CSP);
     } catch {
       // not a git checkout, or the Sprint 1 commit is not there: the constant above is the check
     }
@@ -130,7 +134,8 @@ describe('the demo pages: markup and policy', () => {
     expect(html).toContain('What this demo does not do yet');
     for (const item of [
       'Test model only',
-      'the Hindi production model is not hosted or bundled here',
+      'neither the pilot model (Qwen3-1.7B, whose graph alone is over the 1 GB Pages limit) nor any Hindi model is hosted here',
+      'Not measured on 8 GB',
       'WebGPU is verified only on an Apple-silicon Mac',
       // Sprint 3: D1-05 (WebLLM) did not land, so the box says so instead of claiming it
       'WebLLM rung: not yet',
@@ -185,6 +190,20 @@ describe('the demo pages: markup and policy', () => {
     expect(html).toContain('backend demo');
   });
 
+  it('D1-FIX1-02: both pages take the whole build label (convention form) from the build, not a hard-coded "main"', () => {
+    for (const page of ['demo/index.html', 'demo/models.html']) {
+      const html = read(page);
+      expect(html, page).toMatch(/<code id="build-id">\?<\/code>/);
+      expect(html, page).not.toMatch(/Built from\s*<code>main<\/code>/);
+    }
+    for (const ts of ['demo/main.ts', 'demo/backend-panel.ts']) {
+      expect(read(ts), ts).toContain("$('build-id').textContent = __DEMO_BUILD__");
+    }
+    const cfg = read('demo/vite.config.ts');
+    expect(cfg).toMatch(/__DEMO_BUILD__: JSON\.stringify\(build\)/);
+    expect(cfg).toMatch(/buildLabel\(/);
+  });
+
   it('the build config has two pages and drops the stray ORT wasm Vite would emit', () => {
     const cfg = read('demo/vite.config.ts');
     expect(cfg).toContain("models: resolve(root, 'models.html')");
@@ -213,6 +232,7 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     'asset-flip',
     'asset-truncated',
     'valid',
+    'other-product',
   ];
 
   it('index.html has the lab section with one run button per case, in order, and the demo-only label', () => {
@@ -265,17 +285,20 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     expect(main).not.toMatch(/allowTestKeys:\s*true/);
   });
 
-  it('the not-yet box says WebLLM was cut from Sprint 4 and names the other open items (D1-05)', () => {
+  it('the not-yet box says WebLLM was cut and names the other open items, without the items Sprint 5 landed', () => {
     const idx = flat(read('demo/index.html').replace(/<[^>]+>/g, ' '));
     const box = idx.slice(idx.indexOf('What this demo does not do yet'));
     for (const item of [
-      'WebLLM (cut from Sprint 4; revisit after the Sprint 5 measurement)',
-      'Windows and 8 GB no-GPU measurements',
-      'embeddings through the worker host',
+      'WebLLM (cut; revisit after the 8 GB measurement)',
+      'Windows and 8 GB no-GPU measurements (not measured on 8 GB)',
       'revocation of a signing key',
-      'an expected-id check',
+      'a real signing key',
+      "connect-src 'self'",
     ])
       expect(box, item).toContain(item);
+    // landed in Sprint 5: embeddings through the worker host and the expected-id check
+    expect(box).not.toContain('embeddings through the worker host');
+    expect(box).not.toContain('an expected-id check');
     const models = flat(read('demo/models.html').replace(/<[^>]+>/g, ' '));
     expect(models).toContain('WebLLM rung: not yet (cut from Sprint 4');
   });
@@ -285,18 +308,17 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     const m = /<p id="status-line"[^>]*>([\s\S]*?)<\/p>/.exec(html);
     expect(m, 'a status line').not.toBeNull();
     const line = flat(m![1]!.replace(/<[^>]+>/g, ' '));
-    expect(line.startsWith('Sprint 4 (14 Nov 2026):')).toBe(true);
-    expect(line).toContain(
-      "manifest spec v0.1 published in runtime/spec (committed; public after the owner's push)",
-    );
+    expect(line.startsWith('Sprint 5 (18 Nov 2026):')).toBe(true);
+    expect(line).toContain('runtime beta 0.3.0-beta.0');
+    expect(line).toContain('not measured on 8 GB');
     expect(line).toContain('Not yet:');
     const demos = resolve(repoDir, '../site/data/demos.json');
     if (!existsSync(demos)) return; // a standalone clone has no site folder
     const entry = (
       JSON.parse(readFileSync(demos, 'utf8')) as { repo: string; status: string }[]
     ).find((d) => d.repo === 'runtime');
-    // until the product owner writes the Sprint 4 line the file still carries Sprint 3's
-    if (entry?.status.startsWith('Sprint 4')) expect(line).toBe(flat(entry.status));
+    // until D5 copies this lane's status-line.txt into site/data/demos.json the file carries the Sprint 4 line
+    if (entry?.status.startsWith('Sprint 5')) expect(line).toBe(flat(entry.status));
   });
 });
 
@@ -505,5 +527,22 @@ describe('the workflows', () => {
     expect(text.indexOf('run: node test/tools/fetch-model.mjs')).toBeLessThan(
       text.indexOf('run: DEMO_MODELS=1 npm run demo:build'),
     );
+  });
+});
+
+describe('the status line of both runtime demo pages (D1-10)', () => {
+  const lineOf = (file: string, id: string): string => {
+    const m = new RegExp(`<p id="${id}"[^>]*>([\\s\\S]*?)</p>`).exec(read(file));
+    expect(m, `${file} #${id}`).not.toBeNull();
+    return flat(m![1]!.replace(/<[^>]+>/g, ' '));
+  };
+  it('index.html #status-line and models.html #sprint-status carry the same Sprint 5 line, rendered as text', () => {
+    const a = lineOf('demo/index.html', 'status-line');
+    const b = lineOf('demo/models.html', 'sprint-status');
+    expect(a).toBe(b);
+    expect(a).toContain('Working:');
+    expect(a).toContain('Not yet:');
+    expect(a).toContain('not measured on 8 GB');
+    expect(read('demo/models.html')).toMatch(/id="sprint-status"/);
   });
 });

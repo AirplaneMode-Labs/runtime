@@ -1,0 +1,221 @@
+{
+  "repo": "onnx-community/Qwen3-0.6B-ONNX",
+  "revision": "79346d370dfae34801d26993fda9ae2372900fd0",
+  "fetchedAt": "2026-11-18",
+  "source": "https://huggingface.co/api/models/onnx-community/Qwen3-0.6B-ONNX/tree/79346d370dfae34801d26993fda9ae2372900fd0?recursive=1",
+  "base": {
+    "repo": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "licence": "Apache-2.0",
+    "licenceFile": "https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/LICENSE"
+  },
+  "note": "The onnx-community repo carries no licence metadata of its own; its model card names Qwen/Qwen3-0.6B as base_model, which is Apache-2.0 (license:apache-2.0 in the base card at the revision above).",
+  "tree": [
+    {
+      "path": ".gitattributes",
+      "size": 1675,
+      "oid": "e5c741e3ae761fde9f85ef7fc695549575c21be9"
+    },
+    {
+      "path": "README.md",
+      "size": 1587,
+      "oid": "6aadb2a1324052452ff7c2c7e227af291e88a7d6"
+    },
+    {
+      "path": "added_tokens.json",
+      "size": 707,
+      "oid": "b54f9135e44c1e81047e8d05cb027af8bc039eed"
+    },
+    {
+      "path": "chat_template.jinja",
+      "size": 4116,
+      "oid": "699ff8df401fe4788525e9c1f9b86a99eadd6230"
+    },
+    {
+      "path": "config.json",
+      "size": 912,
+      "oid": "5618bd85d36283349a0cb4a99ab15454691f355b"
+    },
+    {
+      "path": "generation_config.json",
+      "size": 219,
+      "oid": "f0e014517edce509b5d5f07cfa4855d79fad3bcf"
+    },
+    {
+      "path": "merges.txt",
+      "size": 1671853,
+      "oid": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7"
+    },
+    {
+      "path": "onnx/model.onnx",
+      "size": 315088888,
+      "oid": "95e3235a6e7145f2c8b0a591579fe1e8d70808ae",
+      "lfsOid": "0a8f1cfe531fc7b15d26db55090f0667863f0c62c952dff128cf23cd421e3fbc"
+    },
+    {
+      "path": "onnx/model.onnx_data",
+      "size": 2090336256,
+      "oid": "b7e6e850b0b4ff4144881cf8cfdffe229504caf1",
+      "lfsOid": "e0927a7de2fe7c2a9b50a121905cf2edda78fb2900c85c1790db98188bbfe4be"
+    },
+    {
+      "path": "onnx/model_bnb4.onnx",
+      "size": 891573033,
+      "oid": "c8d50b061c52a219aab0926fba11102d0f8d7e00",
+      "lfsOid": "915bc733e2d88634b34000b73cb7efd97f3d6abfe8565e4dd14f746c675a8115"
+    },
+    {
+      "path": "onnx/model_fp16.onnx",
+      "size": 1202829402,
+      "oid": "4fe327b3f5b8baafd335152cfa56bc8bb531d389",
+      "lfsOid": "0f22b563c630f056c69a244a3850870f942f11547fa71661c12b1525557053bb"
+    },
+    {
+      "path": "onnx/model_int8.onnx",
+      "size": 617687478,
+      "oid": "2807c0cedf554771c2ed98619e9edd685ab69c20",
+      "lfsOid": "d93222c672992a398eeea3a4a1ca025738efd9a18ba5f1691419ff8ae23a8e75"
+    },
+    {
+      "path": "onnx/model_q4.onnx",
+      "size": 919096585,
+      "oid": "e833f84fb7ca1b23ef180f7d493cd30f280accdd",
+      "lfsOid": "d43d836fc5e240df9013733ccd214972c5d21bd9ec47e574e4f1e359cf90aed0"
+    },
+    {
+      "path": "onnx/model_q4f16.onnx",
+      "size": 569789750,
+      "oid": "efdc85637ad6f81f7e0be18f20b94cb8b036fef2",
+      "lfsOid": "9e33a5911974174761d0dfdcc0bec975d9c45af0eae5e9eb647b8ba9442a8f91"
+    },
+    {
+      "path": "onnx/model_quantized.onnx",
+      "size": 617687575,
+      "oid": "0802a42ccafa3f8f605bc11cbfa9584a54a6194f",
+      "lfsOid": "ccf8734e59fdf7475b2dc0c117005e267a3a08342c1d951e0a79f0bce57bf62a"
+    },
+    {
+      "path": "onnx/model_uint8.onnx",
+      "size": 617687575,
+      "oid": "0802a42ccafa3f8f605bc11cbfa9584a54a6194f",
+      "lfsOid": "ccf8734e59fdf7475b2dc0c117005e267a3a08342c1d951e0a79f0bce57bf62a"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/chat_template.jinja",
+      "size": 4168,
+      "oid": "01be9b307daa2d425f7c168c9fb145a286e0afb4"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/config.json",
+      "size": 8957,
+      "oid": "5ce6a48070938679a140360cd6e1f6f211460077"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/genai_config.json",
+      "size": 1520,
+      "oid": "b8d270f5c99efc2536bc8292be160c9df8be56ae"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/model.onnx",
+      "size": 524589133,
+      "oid": "caebbdd596ad553b14b6029929aee9357e01d749",
+      "lfsOid": "35fe34321ea9b1eaa43dfa648dd199903d01d93f97dc2b24fe1d16079ebea957"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/tokenizer.json",
+      "size": 11422648,
+      "oid": "939a6799f0af4756b416ce8e90d880bd8fe2b6d9",
+      "lfsOid": "979d160e081df25a1bf7f4e2e8f4c441b5dfdc9a8e84aec9f32e80445e1b59b8"
+    },
+    {
+      "path": "onnxruntime/cpu_and_mobile/cpu-int4-kld-block-128/tokenizer_config.json",
+      "size": 663,
+      "oid": "eeb7009b684350496c7020a205e8ee025d9ee159"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/chat_template.jinja",
+      "size": 4168,
+      "oid": "01be9b307daa2d425f7c168c9fb145a286e0afb4"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/config.json",
+      "size": 8957,
+      "oid": "5ce6a48070938679a140360cd6e1f6f211460077"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/genai_config.json",
+      "size": 1765,
+      "oid": "c6c4604bdbd0f14b762b3513f7780cd628bf8aa8"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/model.onnx",
+      "size": 504660045,
+      "oid": "94ce96ade46c773aa554782488fb1c20413628be",
+      "lfsOid": "40d04ddc791196a0be2a8a17a88e7a9cdc3fde42ff6c6412b9170bd11208e03a"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/tokenizer.json",
+      "size": 11422648,
+      "oid": "939a6799f0af4756b416ce8e90d880bd8fe2b6d9",
+      "lfsOid": "979d160e081df25a1bf7f4e2e8f4c441b5dfdc9a8e84aec9f32e80445e1b59b8"
+    },
+    {
+      "path": "onnxruntime/cuda/cuda-int4-kld-block-128/tokenizer_config.json",
+      "size": 663,
+      "oid": "eeb7009b684350496c7020a205e8ee025d9ee159"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/chat_template.jinja",
+      "size": 4168,
+      "oid": "01be9b307daa2d425f7c168c9fb145a286e0afb4"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/config.json",
+      "size": 9033,
+      "oid": "d0a1f0936e40260ebc455b29c1f8e02364852e4e"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/genai_config.json",
+      "size": 1752,
+      "oid": "51c41d433774036fecd682183abe686f19f9441e"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/model.onnx",
+      "size": 543321042,
+      "oid": "42a4ca9dd404a8b7f801fcbc5dcb18f7c60221ad",
+      "lfsOid": "5e9fb386cb1a14009b02b43b0e0f0043e248ad5a6d3c3521c9a516062509909a"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/tokenizer.json",
+      "size": 11422648,
+      "oid": "939a6799f0af4756b416ce8e90d880bd8fe2b6d9",
+      "lfsOid": "979d160e081df25a1bf7f4e2e8f4c441b5dfdc9a8e84aec9f32e80445e1b59b8"
+    },
+    {
+      "path": "onnxruntime/webgpu/webgpu-int4-kld-block-32/tokenizer_config.json",
+      "size": 663,
+      "oid": "eeb7009b684350496c7020a205e8ee025d9ee159"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size": 613,
+      "oid": "ac23c0aaa2434523c494330aeb79c58395378103"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 9117040,
+      "oid": "e1f381f89a54683a17ce2248fd19bd09767c3adf",
+      "lfsOid": "e7a95fce95bf5b0946d0ddb3f9d7caa030b7e850bbe92b0edb26bcf563e9f3d5"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 10369,
+      "oid": "f658735e1ad9b8feb5a3c5140e659e854889af61"
+    },
+    {
+      "path": "vocab.json",
+      "size": 2776833,
+      "oid": "4783fe10ac3adce15ac8f358ef5462739852c569"
+    }
+  ]
+}

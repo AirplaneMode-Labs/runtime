@@ -19,10 +19,16 @@ import { DEFAULT_RESULTS_DIR } from './out-dir';
 const PORT = 8790;
 // Local only, never CI, Pages or a demo: the Qwen3-1.7B Hindi smoke run (RUNTIME_HINDI_SMOKE=1).
 const HINDI = process.env['RUNTIME_HINDI_SMOKE'] === '1';
+// Local only too: the Qwen3-0.6B and multilingual-e5-small run of Sprint 5 (RUNTIME_MODEL_QWEN06=1).
+const QWEN06 = process.env['RUNTIME_MODEL_QWEN06'] === '1';
 
 export default defineConfig({
   testDir: '.',
-  testMatch: HINDI ? ['model.spec.ts', 'hindi-smoke.spec.ts'] : ['model.spec.ts'],
+  testMatch: QWEN06
+    ? ['qwen06.spec.ts']
+    : HINDI
+      ? ['model.spec.ts', 'hindi-smoke.spec.ts']
+      : ['model.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -41,6 +47,7 @@ export default defineConfig({
     command:
       'npm run demo:build && node test/browser/model-fixture.mjs && ' +
       (HINDI ? 'node test/browser/model-fixture.mjs --hindi && ' : '') +
+      (QWEN06 ? 'node test/browser/model-fixture.mjs --qwen06 && ' : '') +
       `node test/browser/range-server.mjs --port ${PORT} --serve demo/dist --test-endpoints --asset hello-data=1048576`,
     url: `http://127.0.0.1:${PORT}/models.html`,
     cwd: '../..',

@@ -669,6 +669,7 @@ describe('TransformersAdapter: generate (R4)', () => {
     expect(Object.keys(g!.attrs).sort()).toEqual(
       [
         'adapter',
+        'budget', // Event 0.1.4: the token budget of R4b
         'decodeMs',
         'device',
         'finishReason',
@@ -732,8 +733,10 @@ describe('TransformersAdapter: generate (R4)', () => {
     expect(stopper.interrupted).toBe(true);
     const pre = new AbortController();
     pre.abort();
-    const res2 = await r.adapter.generate('hi', { signal: pre.signal });
-    expect(res2.finishReason).toBe('abort');
+    // R4b: a signal that is already aborted, like an abort before the first token, rejects 'aborted'
+    await expect(r.adapter.generate('hi', { signal: pre.signal })).rejects.toMatchObject({
+      code: 'aborted',
+    });
     expect(r.engine.generateCalls).toHaveLength(1); // not even started
   });
 

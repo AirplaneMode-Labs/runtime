@@ -116,7 +116,7 @@ test('a bundler-free page imports the installed tarball: capabilities, verifyMan
   expect(result['error']).toBeUndefined();
   expect(result['verified']).toBe(true);
   expect(result['tamper01']).toBe('no_valid_signature');
-  expect(result['spec']).toBe('0.3.1');
+  expect(result['spec']).toBe('0.4.0'); // SPEC_VERSIONS.backendAdapter of spec release 0.5.0
   expect(['webgpu-f16', 'webgpu-f32', 'wasm-simd', 'wasm', 'none']).toContain(result['tier']);
   expect(result['finish']).toBeDefined();
   expect(errors).toEqual([]);

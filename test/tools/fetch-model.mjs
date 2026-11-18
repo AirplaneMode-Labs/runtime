@@ -9,7 +9,7 @@
 // src/backends/ort-pins.ts once that file exists).
 //
 // Rules (security review S1):
-//  - https only, no Authorization header, HF_TOKEN is never read;
+//  - https only (and redirects only to https, at most 5 hops), no Authorization header, HF_TOKEN is never read;
 //  - default and CI mode refuse any file without a pinned sha256 before fetching anything; --pin is
 //    the only mode that rewrites models.json, and it only fills in a missing sha256 for a file that
 //    has a git blob id to check (non-LFS files); an LFS file's sha256 must come from the HF API;
@@ -146,12 +146,50 @@ function entryOf(models, name) {
   return m;
 }
 
+const MAX_REDIRECTS = 5;
+
+/** GET `url` and follow redirects manually: every hop must be https. Never adds a header. */
+async function getFollowingHttps(fetchImpl, first) {
+  let current = first;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!current.startsWith('https://'))
+      throw new FetchModelError('not_https', `refusing non-https URL ${current}`);
+    const res = await fetchImpl(current, {
+      method: 'GET',
+      redirect: 'manual',
+      credentials: 'omit',
+    });
+    if (![301, 302, 303, 307, 308].includes(res.status)) return res;
+    await res.body?.cancel().catch(() => undefined);
+    const location = res.headers.get('location');
+    if (!location)
+      throw new FetchModelError(
+        'http_status',
+        `${current} answered ${res.status} without a Location`,
+      );
+    let next;
+    try {
+      next = new URL(location, current).href;
+    } catch {
+      throw new FetchModelError(
+        'not_https',
+        `refusing an unusable redirect target from ${current}`,
+      );
+    }
+    current = next;
+  }
+  throw new FetchModelError(
+    'too_many_redirects',
+    `more than ${MAX_REDIRECTS} redirects for ${first}`,
+  );
+}
+
 /** Streams `url` to `part`, enforcing the declared size while it streams. Returns the digests. */
 async function download(fetchImpl, url, part, f) {
-  if (!url.startsWith('https://'))
-    throw new FetchModelError('not_https', `refusing non-https URL ${url}`);
-  // No credentials of any kind: no Authorization header, no cookies, HF_TOKEN is never read.
-  const res = await fetchImpl(url, { method: 'GET', redirect: 'follow', credentials: 'omit' });
+  // No credentials of any kind: no Authorization header, no cookies, HF_TOKEN is never read. Redirects are
+  // followed by this function, one hop at a time, and only to https URLs (at most MAX_REDIRECTS hops): a
+  // redirect to http, file, ftp or data is refused before it is requested.
+  const res = await getFollowingHttps(fetchImpl, url);
   if (res.status !== 200 || !res.body) {
     await res.body?.cancel().catch(() => undefined);
     throw new FetchModelError('http_status', `${url} answered ${res.status}`);

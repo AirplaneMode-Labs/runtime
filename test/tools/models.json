@@ -80,6 +80,92 @@
           "sha256": "4ec77d44f62efeb38d7e044a1db318f6a939438425312dfa333b8382dbad98df"
         }
       ]
+    },
+    "qwen3-0.6b-wasm-q8": {
+      "repo": "onnx-community/Qwen3-0.6B-ONNX",
+      "revision": "79346d370dfae34801d26993fda9ae2372900fd0",
+      "licence": "Apache-2.0",
+      "licenceNote": "The onnx-community repo carries no licence metadata of its own; the base model Qwen/Qwen3-0.6B (revision c1899de289a04d12100db370d81485cdf75e47ca) is Apache-2.0: https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/LICENSE",
+      "role": "the dockit demo answer model (TD-33): q8 on single-threaded WASM, hosted same-origin, signed per build",
+      "files": [
+        {
+          "path": "chat_template.jinja",
+          "size": 4116,
+          "gitBlobSha1": "699ff8df401fe4788525e9c1f9b86a99eadd6230",
+          "sha256": "87a2728cb8dc9fe424d624542f6060ec05a1d285ebbec578bb078900e33396b5"
+        },
+        {
+          "path": "config.json",
+          "size": 912,
+          "gitBlobSha1": "5618bd85d36283349a0cb4a99ab15454691f355b",
+          "sha256": "8a04114ba59cc42b47d804d35d1d5c61d746ae4634f41f796768c6e302d39b9e"
+        },
+        {
+          "path": "generation_config.json",
+          "size": 219,
+          "gitBlobSha1": "f0e014517edce509b5d5f07cfa4855d79fad3bcf",
+          "sha256": "9e9e031ae8bca36eefcdcdd0b35d83c61baa01e31d68d5f5a961c9ca1a4b95bf"
+        },
+        {
+          "path": "onnx/model_quantized.onnx",
+          "size": 617687575,
+          "sha256": "ccf8734e59fdf7475b2dc0c117005e267a3a08342c1d951e0a79f0bce57bf62a"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 613,
+          "gitBlobSha1": "ac23c0aaa2434523c494330aeb79c58395378103",
+          "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 9117040,
+          "sha256": "e7a95fce95bf5b0946d0ddb3f9d7caa030b7e850bbe92b0edb26bcf563e9f3d5"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 10369,
+          "gitBlobSha1": "f658735e1ad9b8feb5a3c5140e659e854889af61",
+          "sha256": "7c5194eecfd95a4dcbd6b4b502af785d2541fd65a388d1cae7ad43693c67b802"
+        }
+      ]
+    },
+    "multilingual-e5-small-wasm-q8": {
+      "repo": "Xenova/multilingual-e5-small",
+      "revision": "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+      "licence": "MIT",
+      "licenceNote": "Quantised ONNX export of intfloat/multilingual-e5-small, whose card declares license:mit (revision 614241f622f53c4eeff9890bdc4f31cfecc418b3). No copyright line is invented here.",
+      "role": "the dockit demo embedding model (TD-34): 384 dims, mean pooling, normalised, 'query: ' and 'passage: ' prefixes",
+      "files": [
+        {
+          "path": "config.json",
+          "size": 658,
+          "gitBlobSha1": "4104f38273cc595fd9500fd243124e9f6cf383dc",
+          "sha256": "cb99455288675345e1a4f411438d5d0adbba5fbd3a67ea4fb03c015433b996c1"
+        },
+        {
+          "path": "onnx/model_quantized.onnx",
+          "size": 118308185,
+          "sha256": "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 167,
+          "gitBlobSha1": "e0b1d18ecd0ae4ff1d47bd297d910c0cf83e504b",
+          "sha256": "d05497f1da52c5e09554c0cd874037a083e1dc1b9cfd48034d1c717f1afc07a7"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 17082730,
+          "sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 443,
+          "gitBlobSha1": "059214673d9d6d2ee319411e2ffec8c024b816d5",
+          "sha256": "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b"
+        }
+      ]
     }
   },
   "reference": {

@@ -30,7 +30,7 @@ describe('the demo tamper fixture (demo/public/tamper)', () => {
 
   it('lists the 15 tamper vectors, tamper.json, the three asset manifests, the three .bin files and expect.json', () => {
     const names = TAMPER_FIXTURE_FILES.map((f) => f.to).sort();
-    expect(names).toHaveLength(23);
+    expect(names).toHaveLength(24); // + vectors/expect-id.json (manifest 0.1.2)
     expect(names.filter((n) => n.startsWith('vectors/tamper-'))).toHaveLength(15);
     expect(names).toContain('vectors/tamper.json');
     expect(names).toContain('assets/expect.json');

@@ -52,8 +52,9 @@ describe('ort-pins.ts matches the installed onnxruntime-web (re-hashes the files
     expect(common.version).toBe(ORT_WEB_VERSION);
   });
 
-  it('the demo fixture writes an ort block into PROVENANCE.json with the pins and the cross-check', () => {
-    const src = readFileSync(resolve(repoDir, 'demo/tools/make-fixture.mjs'), 'utf8');
+  it('the demo model bundle writes an ort block into PROVENANCE.json with the pins and the cross-check', () => {
+    // since Sprint 5 the demo models come from scripts/bundle-models.mjs, which writes the ort block
+    const src = readFileSync(resolve(repoDir, 'scripts/bundle-models.mjs'), 'utf8');
     for (const key of [
       'ort:',
       'version',

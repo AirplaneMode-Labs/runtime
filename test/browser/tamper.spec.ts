@@ -33,7 +33,7 @@ const assetExpect = readJson<
 >(resolve(SPEC, 'tamper-assets/expect.json'));
 const rowOf = (prefix: string): Row => rows.find((r) => r.file.startsWith(prefix))!;
 
-/** The thirteen lab cases: id, the vector behind it and what the lab must show. */
+/** The manifest and asset lab cases: id, the vector behind it and what the lab must show (the 14th, other-product, is checked separately). */
 const MANIFEST_CASES = [
   ['tamper-01', 'tamper-01'],
   ['tamper-02', 'tamper-02'],
@@ -110,20 +110,23 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
     context.on('request', (r) => requests.push({ url: r.url(), at: Date.now() }));
 
     await page.goto(BASE);
-    // the refreshed root page: a Sprint 4 build id, its status line, the not-yet box, the strict CSP meta
-    await expect(page.locator('#build-id')).toHaveText(/^([0-9a-f]{12}|local)$/);
-    await expect(page.locator('#status-line')).toContainText('Sprint 4 (14 Nov 2026)');
-    await expect(page.locator('#status-line')).toContainText(
-      "manifest spec v0.1 published in runtime/spec (committed; public after the owner's push)",
+    // the refreshed root page: a Sprint 5 build id, its status line, the not-yet box, the strict CSP meta
+    await expect(page.locator('#build-id')).toHaveText(
+      /^(Built from main at [0-9a-f]{12}|Local build [0-9a-f]{12}(-dirty)?|Local build local \(no \.git checkout\))$/,
+    );
+    await expect(page.locator('#status-line')).toContainText('Sprint 5 (18 Nov 2026)');
+    await expect(page.locator('#status-line')).toContainText('runtime beta 0.3.0-beta.0');
+    await expect(page.locator('#status-line')).toContainText('not measured on 8 GB');
+    await expect(page.locator('#not-yet')).toContainText(
+      'WebLLM (cut; revisit after the 8 GB measurement)',
     );
     await expect(page.locator('#not-yet')).toContainText(
-      'WebLLM (cut from Sprint 4; revisit after the Sprint 5 measurement)',
+      'Windows and 8 GB no-GPU measurements (not measured on 8 GB)',
     );
-    await expect(page.locator('#not-yet')).toContainText('Windows and 8 GB no-GPU measurements');
     expect(
       await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'),
     ).toBe(
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
     );
     await expect(page.locator('#tamper-lab')).toBeVisible();
     await expect(page.locator('#tamper-lab')).toContainText(
@@ -136,6 +139,7 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
       ...MANIFEST_CASES.map(([id]) => id),
       ...ASSET_CASES.map(([id]) => id),
       'valid',
+      'other-product',
     ]);
 
     const cell = (id: string, name: string) =>
@@ -208,6 +212,21 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
     await expect(cell('valid', 'verdict')).toHaveText('Accepted');
     await expect(cell('valid', 'signatures')).toHaveText('valid');
     results['valid'] = await cell('valid', 'verdict').textContent();
+
+    // manifest 0.1.2: the 14th case. A validly signed manifest of another product is refused as unexpected_id
+    // at stage verify, the lab's downgrade state is neither read nor written, and nothing is requested.
+    await run('other-product');
+    await expect(cell('other-product', 'verdict')).toHaveText('Refused');
+    await expect(cell('other-product', 'reason')).toHaveText('unexpected_id');
+    await expect(cell('other-product', 'stage')).toHaveText('verify');
+    await expect(cell('other-product', 'signatures')).toHaveText('valid');
+    await expect(cell('other-product', 'match')).toContainText('matches the vector table');
+    await expect(cell('other-product', 'match')).toContainText('read or written 0 times');
+    await expect(cell('other-product', 'after')).toHaveText('Requests after refusal: 0');
+    results['otherProduct'] = {
+      reason: await cell('other-product', 'reason').textContent(),
+      match: await cell('other-product', 'match').textContent(),
+    };
 
     // isolation: the persistent runtime stores hold nothing of the lab
     const assetSha = createHash('sha256')
@@ -289,6 +308,55 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
 
     mkdirSync(OUT_DIR, { recursive: true });
     await page.locator('#tamper-lab').screenshot({ path: resolve(OUT_DIR, 'tamper-lab.png') });
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a manifest URL pasted on index.html from another origin is refused in plain words with 0 requests (connect-src self, TD-47)', async () => {
+  test.setTimeout(60_000);
+  const browser = await chromium.launch({ channel: 'chrome' });
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    const requests: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    page.on('pageerror', (e) => errors.push(String(e)));
+    context.on('request', (r) => requests.push(r.url()));
+    await page.goto(BASE);
+    const csp = await page
+      .locator('meta[http-equiv="Content-Security-Policy"]')
+      .getAttribute('content');
+    expect(csp).toContain("connect-src 'self';");
+    expect(csp).not.toContain('https:');
+    const before = requests.length;
+    await page.locator('#in-paste').fill('https://evil.example/manifest.json');
+    // adding the foreign origin to the allow-list does not help: only the page's own origin is accepted
+    await page.locator('#ta-origins').fill('https://evil.example');
+    await expect(page.locator('#origins-feedback')).toContainText(
+      'this page can only reach its own origin',
+    );
+    await expect(page.locator('#origins-feedback')).toContainText('rejected origin');
+    await page.locator('#btn-paste-load').click();
+    await expect(page.locator('#out-paste')).toContainText(
+      'This page can only load a manifest from its own origin',
+      { timeout: 10_000 },
+    );
+    await expect(page.locator('#out-paste')).toContainText('Nothing was requested');
+    expect(
+      requests.slice(before).filter((u) => new URL(u).origin !== new URL(BASE).origin),
+      '0 cross-origin requests',
+    ).toEqual([]);
+    expect(requests.slice(before)).toEqual([]);
+    expect(errors, 'console and page errors').toEqual([]);
+    results['crossOriginPaste'] = {
+      refused: true,
+      requestsAfter: requests.length - before,
+      message: (await page.locator('#out-paste').textContent())?.slice(0, 200),
+    };
   } finally {
     await browser.close();
   }

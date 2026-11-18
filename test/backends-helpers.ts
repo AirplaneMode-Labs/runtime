@@ -237,6 +237,14 @@ export interface MockEngineOptions {
   /** Number of generated tokens the fake streamer reports. */
   tokens?: number;
   promptTokens?: number;
+  /** Milliseconds a feature-extraction call takes (to abort it mid-flight). */
+  embedDelayMs?: number;
+  /** Vector length a feature-extraction call returns. Default 3. */
+  embedDims?: number;
+  /** Token count the fake tokenizer reports for a text (embedding truncation); default promptTokens. */
+  tokenCount?: (text: string) => number;
+  /** Milliseconds each fake generated token takes (to abort or stop mid-flight). */
+  tokenDelayMs?: number;
 }
 
 export interface MockEnv {
@@ -313,17 +321,34 @@ export function mockEngine(o: MockEngineOptions = {}) {
         status: res.status,
       });
     }
-    const tokenizer = {
-      apply_chat_template: (_m: unknown, _opts: Record<string, unknown>) =>
-        Array.from({ length: o.promptTokens ?? 5 }, (_, i) => i),
-    };
+    const tokenizer = Object.assign(
+      (text: string, _opts?: Record<string, unknown>) => ({
+        input_ids: { dims: [1, o.tokenCount ? o.tokenCount(text) : (o.promptTokens ?? 5)] },
+      }),
+      {
+        // tokenize false renders the prompt (a string), anything else gives ids
+        apply_chat_template: (m: unknown, opts: Record<string, unknown>) =>
+          opts?.['tokenize'] === false
+            ? `<chat ${JSON.stringify(m).length}>`
+            : Array.from({ length: o.promptTokens ?? 5 }, (_, i) => i),
+      },
+    );
     const generator = async (input: unknown, genOptions: Record<string, unknown>) => {
       if (task === 'feature-extraction') {
         const texts = input as string[];
         generateCalls.push({ input, options: genOptions });
+        if (o.embedDelayMs) await new Promise((r) => setTimeout(r, o.embedDelayMs));
+        const dims = o.embedDims ?? 3;
+        // a unit vector per text, different per text index and identical for identical input
         return {
-          dims: [texts.length, 3],
-          data: Float32Array.from(texts.flatMap((_, i) => [0.6, 0.8, 0 * i])),
+          dims: [texts.length, dims],
+          data: Float32Array.from(
+            texts.flatMap((t) => {
+              const v = Array.from({ length: dims }, (_, k) => ((t.length + k) % 7) + 1);
+              const norm = Math.sqrt(v.reduce((a, x) => a + x * x, 0));
+              return v.map((x) => x / norm);
+            }),
+          ),
         };
       }
       generateCalls.push({ input, options: genOptions });
@@ -333,7 +358,12 @@ export function mockEngine(o: MockEngineOptions = {}) {
       const messages = input as { role: string; content: string }[];
       const text = typeof o.reply === 'function' ? o.reply(messages) : (o.reply ?? 'Paris');
       streamer?.put([Array.from({ length: o.promptTokens ?? 5 }, (_, i) => BigInt(i))]);
-      for (let i = 0; i < (o.tokens ?? 2); i++) streamer?.put([[BigInt(100 + i)]]);
+      for (let i = 0; i < (o.tokens ?? 2); i++) {
+        if (o.tokenDelayMs) await new Promise((r) => setTimeout(r, o.tokenDelayMs));
+        const stopper = genOptions['stopping_criteria'] as { interrupted?: boolean } | undefined;
+        if (stopper?.interrupted) break;
+        streamer?.put([[BigInt(100 + i)]]);
+      }
       streamer?.end();
       return [{ generated_text: [...messages, { role: 'assistant', content: text }] }];
     };

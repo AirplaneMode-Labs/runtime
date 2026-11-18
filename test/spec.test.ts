@@ -45,9 +45,9 @@ async function verifyEd25519(message: Uint8Array, sig: Uint8Array, pub: Uint8Arr
 describe('spec: schemas', () => {
   it('every schema is JSON Schema 2020-12 with the urn $id of its own contract version', () => {
     const ids: Record<string, string> = {
-      manifest: 'urn:airplanemode:spec:manifest:0.1.1',
+      manifest: 'urn:airplanemode:spec:manifest:0.1.2',
       capabilityProfile: 'urn:airplanemode:spec:capability-profile:0.1.0',
-      event: 'urn:airplanemode:spec:event:0.1.3',
+      event: 'urn:airplanemode:spec:event:0.1.4',
       modelDescriptor: 'urn:airplanemode:spec:model-descriptor:0.2.1',
     };
     expect(Object.keys(SCHEMAS).sort()).toEqual(Object.keys(ids).sort());
@@ -57,13 +57,13 @@ describe('spec: schemas', () => {
     }
   });
 
-  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.4.0 release values', () => {
+  it('SPEC_VERSIONS and SPEC_WIRE carry the 0.5.0 release values', () => {
     expect(SPEC_VERSIONS).toEqual({
-      manifest: '0.1.1',
+      manifest: '0.1.2',
       capabilityProfile: '0.1.0',
-      event: '0.1.3',
-      storageApi: '0.2.0',
-      backendAdapter: '0.3.1',
+      event: '0.1.4',
+      storageApi: '0.3.0',
+      backendAdapter: '0.4.0',
       modelDescriptor: '0.2.1',
     });
     expect(SPEC_WIRE).toEqual({
@@ -573,8 +573,8 @@ describe('spec: event 0.1.1 names (still reserved in 0.1.3)', () => {
     expect(text).toContain('verified');
   });
 
-  it('the event schema carries the 0.1.3 $id and an unchanged body (wire string stays 0.1)', () => {
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.3');
+  it('the event schema carries the 0.1.4 $id and an unchanged body (wire string stays 0.1)', () => {
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.4');
     expect(
       (SCHEMAS.event as { properties: { spec: { const: string } } }).properties.spec.const,
     ).toBe('airplanemode.event/0.1');

@@ -56,14 +56,22 @@ describe('documentation hygiene', () => {
     }
   });
 
+  it('prose describing the 8 GB column quotes the full cell text (T3-R1-02)', () => {
+    for (const f of ['README.md', 'docs/release.md']) {
+      const text = read(f).replace(/\s+/g, ' ');
+      const bad = text.match(/(?:reads?|read)\s+"not measured"/g);
+      expect(bad, `${f} quotes the 8 GB column as "not measured"`).toBeNull();
+    }
+  });
+
   it('README.md: the IndexedDB quota Benchmarks row records the measured 6252 ms (T1R2-02)', () => {
     const row = read('README.md')
       .split('\n')
       .find((l) => l.includes('Quota eviction') && l.includes('IndexedDB'));
     expect(row).toBeDefined();
     expect(row).toContain('6252 ms');
-    expect(row).toMatch(/\| not measured\s*\|\s*$/); // the 8 GB column only
-    expect(row!.replace(/\| not measured\s*\|\s*$/, '')).not.toContain('not measured');
+    expect(row).toMatch(/\| not measured on 8 GB\s*\|\s*$/); // the 8 GB column only (T3-S5-15)
+    expect(row!.replace(/\| not measured on 8 GB\s*\|\s*$/, '')).not.toContain('not measured');
     expect(row).toContain('placeholder');
   });
 
@@ -240,7 +248,7 @@ describe('fix round 1: honest wording', () => {
       'evidence/sprint-2/T1/legs/rep1-wasm.json',
     ])
       expect(d, s).toContain(s);
-    expect(d).toMatch(/\| Scenario[^\n]*\| 8 GB Windows no-GPU laptop \|/);
+    expect(d).toMatch(/\| Scenario[^\n]*\| 8 GB laptop \|/);
     expect(d).not.toContain('8 GB Windows no-GPU laptop (any of the above)');
   });
 

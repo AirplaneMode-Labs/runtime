@@ -378,3 +378,232 @@ describe('buildPanelView: what the user reads', () => {
     for (const c of calls) expect(c).toMatch(/^(create:[a-z0-9]+|attr:[a-z-]+|text)$/);
   });
 });
+
+// ---- D1-08: Storage and Pipeline sections (Event 0.1.4) -------------------------------------------------
+
+function appEvent(
+  source: 'localdata' | 'dockit',
+  name: string,
+  attrs: Record<string, string | number | boolean | null>,
+  durationMs?: number,
+  extra: { kind?: Event['kind']; bytes?: number } = {},
+): Event {
+  return newEvent({
+    source,
+    kind: extra.kind ?? 'timing',
+    name,
+    level: 'info',
+    attrs,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(extra.bytes !== undefined ? { bytes: extra.bytes } : {}),
+  });
+}
+
+describe('the Storage section (source localdata, the ten STORAGE_EVENT_NAMES)', () => {
+  const put = (outcome: string, ms: number, ns = 'dockit.d*') =>
+    appEvent(
+      'localdata',
+      'storage.doc.put',
+      { ns, driver: 'opfs', outcome, chunks: 12, replaced: false, rows: 12 },
+      ms,
+    );
+  const query = (ms: number) =>
+    appEvent(
+      'localdata',
+      'storage.doc.query',
+      {
+        ns: 'dockit.d*',
+        driver: 'opfs',
+        outcome: 'ok',
+        k: 4,
+        candidates: 12,
+        metric: 'cosine',
+        kernel: 'simd',
+      },
+      ms,
+    );
+
+  it('groups the events of source localdata by name: a count, the last duration and the outcomes', () => {
+    const m = buildPanelModel(
+      snap([put('ok', 10), put('ok', 12.5), put('quota_exceeded', 3), query(1.25), query(2)]),
+    );
+    expect(m.storage.map((g) => g.name)).toEqual(['storage.doc.put', 'storage.doc.query']);
+    const p = m.storage.find((g) => g.name === 'storage.doc.put')!;
+    expect(p.count).toBe(3);
+    expect(p.lastDurationMs).toBe(3);
+    expect(p.outcomes).toEqual({ ok: 2, quota_exceeded: 1 });
+    expect(p.drivers).toEqual(['opfs']);
+    expect(p.namespaces).toEqual(['dockit.d*']);
+    const q = m.storage.find((g) => g.name === 'storage.doc.query')!;
+    expect([q.count, q.lastDurationMs, q.outcomes]).toEqual([2, 2, { ok: 2 }]);
+  });
+
+  it('knows all ten names, in the order of the contract, and ignores a name it does not know', () => {
+    const names = [
+      'storage.set',
+      'storage.get',
+      'storage.delete',
+      'storage.quota',
+      'storage.query',
+      'storage.index.open',
+      'storage.index.write',
+      'storage.doc.put',
+      'storage.doc.delete',
+      'storage.doc.query',
+    ];
+    const events = [...names]
+      .reverse()
+      .map((name) => appEvent('localdata', name, { ns: 'x', driver: 'memory', outcome: 'ok' }, 1));
+    events.push(appEvent('localdata', 'storage.secret.dump', { ns: 'x' }, 1));
+    const m = buildPanelModel(snap(events));
+    expect(m.storage.map((g) => g.name)).toEqual(names);
+  });
+
+  it('an event with the name of another source is not grouped here (a dockit event named storage.set)', () => {
+    const m = buildPanelModel(snap([appEvent('dockit', 'storage.set', { outcome: 'ok' }, 1)]));
+    expect(m.storage).toEqual([]);
+  });
+
+  it('renders counts, durations and outcomes as text nodes; an undocumented attr never appears', () => {
+    const e = put('ok', 7);
+    (e.attrs as Record<string, unknown>)['docId'] = 'LEAK-DOC-ID';
+    (e.attrs as Record<string, unknown>)['title'] = 'LEAK-TITLE';
+    const m = buildPanelModel(snap([e]));
+    const v = buildPanelView(m);
+    expect(textOf(v)).toContain('Storage');
+    expect(cell(v, 'storageName')).toEqual(['storage.doc.put']);
+    expect(cell(v, 'storageCount')).toEqual(['1']);
+    expect(cell(v, 'storageLast')).toEqual(['7 ms']);
+    expect(cell(v, 'storageOutcomes')).toEqual(['ok 1']);
+    expect(JSON.stringify(m)).not.toContain('LEAK');
+    expect(textOf(v)).not.toContain('LEAK');
+  });
+
+  it('has no Storage section content when there is no localdata event', () => {
+    const v = buildPanelView(buildPanelModel(snap(loadEvents(LOAD_A))));
+    expect(textOf(v)).toContain('Storage');
+    expect(textOf(v)).toContain('No storage event has been recorded yet.');
+  });
+});
+
+describe('the Pipeline section (source dockit, DOCKIT_EVENT_NAMES)', () => {
+  const stage = (stageName: string, outcome: string, ms: number, reason = '') =>
+    appEvent(
+      'dockit',
+      'pipeline.stage',
+      { stage: stageName, outcome, reason, pages: 3, chunks: 12, held: 1 },
+      ms,
+      { bytes: 1000 },
+    );
+  const answer = (outcome: string, ms: number, first: number | null) =>
+    appEvent(
+      'dockit',
+      'pipeline.answer',
+      {
+        outcome,
+        reason: '',
+        k: 4,
+        sources: 3,
+        budget: 256,
+        firstTokenMs: first,
+        unknownCitations: 0,
+      },
+      ms,
+    );
+  const memory = (bytes: number) =>
+    appEvent(
+      'dockit',
+      'pipeline.memory',
+      { worker: 'analysis', stage: 'gate', measure: 'wasm-memory' },
+      undefined,
+      { kind: 'memory', bytes },
+    );
+
+  it('shows each stage in pipeline order with its count, last duration and outcomes (and the refusal reasons)', () => {
+    const m = buildPanelModel(
+      snap([
+        stage('gate', 'ok', 20),
+        stage('read', 'ok', 5),
+        stage('extract', 'refused', 2, 'no_text_layer'),
+        stage('read', 'ok', 6),
+      ]),
+    );
+    expect(m.pipeline.map((g) => g.name)).toEqual([
+      'pipeline.stage: read',
+      'pipeline.stage: extract',
+      'pipeline.stage: gate',
+    ]);
+    const read = m.pipeline[0]!;
+    expect([read.count, read.lastDurationMs, read.outcomes]).toEqual([2, 6, { ok: 2 }]);
+    expect(m.pipeline[1]!.outcomes).toEqual({ refused: 1 });
+    expect(m.pipeline[1]!.reasons).toEqual(['no_text_layer']);
+  });
+
+  it('shows pipeline.answer outcomes and pipeline.memory as a wasm-memory figure under its own name', () => {
+    const m = buildPanelModel(snap([answer('ok', 4200, 900), memory(123_456_789)]));
+    const a = m.pipeline.find((g) => g.name === 'pipeline.answer')!;
+    expect([a.count, a.lastDurationMs, a.outcomes]).toEqual([1, 4200, { ok: 1 }]);
+    const mem = m.pipeline.find((g) => g.name === 'pipeline.memory')!;
+    expect(mem.lastBytes).toBe(123_456_789);
+    const v = buildPanelView(m);
+    expect(cell(v, 'pipelineName')).toContain('pipeline.memory');
+    expect(textOf(v)).toContain('123,456,789 B');
+    expect(textOf(v)).toContain('wasm memory');
+  });
+
+  it('a reason that is not a PIPELINE_REASONS value and a stage that is not a PIPELINE_STAGES value are not shown', () => {
+    const m = buildPanelModel(
+      snap([stage('read', 'refused', 1, 'HOSTILE <b>reason</b>'), stage('exfiltrate', 'ok', 1)]),
+    );
+    expect(m.pipeline.map((g) => g.name)).toEqual(['pipeline.stage: read']);
+    expect(m.pipeline[0]!.reasons).toEqual([]);
+    // the section rows never carry them (the Recent events list shows its own fixed keys as printable text)
+    expect(JSON.stringify(m.pipeline)).not.toContain('HOSTILE');
+    expect(JSON.stringify(m.pipeline)).not.toContain('exfiltrate');
+  });
+
+  it('never carries a question, an answer, a file name or a document id even if an event does', () => {
+    const e = answer('ok', 5, 1);
+    (e.attrs as Record<string, unknown>)['question'] = 'LEAK-QUESTION';
+    (e.attrs as Record<string, unknown>)['fileName'] = 'LEAK-FILE.pdf';
+    const m = buildPanelModel(snap([e]));
+    expect(JSON.stringify(m)).not.toMatch(/LEAK/);
+    expect(textOf(buildPanelView(m))).not.toMatch(/LEAK/);
+  });
+
+  it('says so when there is no dockit event', () => {
+    const v = buildPanelView(buildPanelModel(snap(loadEvents(LOAD_A))));
+    expect(textOf(v)).toContain('Pipeline');
+    expect(textOf(v)).toContain('No pipeline event has been recorded yet.');
+  });
+
+  it('the two sections use the same whitelisted view nodes: no new tag, text only', () => {
+    const v = buildPanelView(buildPanelModel(snap([stage('read', 'ok', 5), put('ok', 1)])));
+    const tags = new Set(find(v, () => true).map((x) => x.tag));
+    for (const t of tags)
+      expect([
+        'main',
+        'section',
+        'h2',
+        'p',
+        'table',
+        'thead',
+        'tbody',
+        'tr',
+        'th',
+        'td',
+        'div',
+        'span',
+        'code',
+      ]).toContain(t);
+  });
+});
+
+function put(outcome: string, ms: number): Event {
+  return appEvent(
+    'localdata',
+    'storage.doc.put',
+    { ns: 'dockit.d*', driver: 'opfs', outcome, chunks: 1, replaced: false, rows: 1 },
+    ms,
+  );
+}
