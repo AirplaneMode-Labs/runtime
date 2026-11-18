@@ -1,4 +1,4 @@
-// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.4.0): thirteen buttons, each one
+// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.5.0): fourteen buttons, each one
 // runs the real verifier or the real asset manager over bytes copied verbatim from spec/vectors/tamper
 // and spec/vectors/tamper-assets (demo/tools/tamper-fixture.mjs fails the build if a copy differs), and
 // shows the verdict, the reason code, the per-signature reasons and the stage exactly as the library
@@ -29,7 +29,7 @@ import {
 } from '../src/index.ts';
 import type { Manifest, SignatureCheck } from '../src/index.ts';
 
-type Kind = 'manifest' | 'asset' | 'valid';
+type Kind = 'manifest' | 'asset' | 'valid' | 'expect-id';
 
 interface LabCase {
   id: string;
@@ -61,6 +61,8 @@ const CASES: readonly LabCase[] = [
   // tamper-14 is the unmodified, validly signed base manifest ("tamper-base"): the refusal in the
   // vector table comes from allowTestKeys false, which the lab sets true on purpose.
   { id: 'valid', kind: 'valid', file: 'tamper-14-test-key-refused.json' },
+  // manifest 0.1.2: the validly signed base manifest (id 'tamper-base') meets a page that expects another id
+  { id: 'other-product', kind: 'expect-id', file: 'tamper-14-test-key-refused.json' },
 ];
 
 const BASE_FILE = 'tamper-14-test-key-refused.json';
@@ -275,6 +277,66 @@ async function runValidCase(c: LabCase): Promise<Outcome> {
   };
 }
 
+interface ExpectIdRow {
+  file: string;
+  expectId: string;
+  expect: { valid: boolean; stage?: string; reason?: string };
+}
+
+/**
+ * Case 'other-product' (manifest 0.1.2): the unmodified, validly signed base manifest is verified by a page that
+ * expects the id 'other-product' (row 02 of vectors/expect-id/expect-id.json). The verdict must be
+ * unexpected_id at stage verify, and the lab's state store must be neither read nor written for it.
+ */
+async function runExpectIdCase(c: LabCase): Promise<Outcome> {
+  const rows = JSON.parse(await fetchText('vectors/expect-id.json')) as ExpectIdRow[];
+  const row = rows.find(
+    (r) => r.file === 'tamper/tamper-base.json' && r.expectId === 'other-product',
+  );
+  if (!row) throw new Error('no other-product row in expect-id.json');
+  const text = await fetchText(`vectors/${c.file}`);
+  let touched = 0;
+  const inner = new InMemoryManifestState();
+  const state = {
+    get: async (id: string) => {
+      touched++;
+      return inner.get(id);
+    },
+    set: async (id: string, s: { version: string; createdAt: string }) => {
+      touched++;
+      return inner.set(id, s);
+    },
+  };
+  const r = await verifyManifest(text, labTrust(['rfc8032-1']), {
+    allowTestKeys: true,
+    now: VECTOR_NOW,
+    state,
+    expectId: row.expectId,
+  });
+  const at = performance.now();
+  const sigs = perSignature(r.signatures);
+  if (r.ok)
+    return {
+      verdict: 'Accepted',
+      reason: 'none',
+      signatures: sigs,
+      stage: 'accepted',
+      at,
+      match: 'DIFFERS from the vector table (the manifest of another product was accepted)',
+    };
+  const same = !row.expect.valid && row.expect.reason === r.reason && touched === 0;
+  return {
+    verdict: 'Refused',
+    reason: r.reason,
+    signatures: sigs,
+    stage: stageOf(r.reason),
+    at,
+    match: same
+      ? `matches the vector table (expectId ${row.expectId}; the downgrade state was read or written ${touched} times)`
+      : `DIFFERS from the vector table (${row.expect.reason ?? 'accepted'}; state accesses ${touched})`,
+  };
+}
+
 async function runAssetCase(c: LabCase): Promise<Outcome> {
   const { assets } = await loadTables();
   const informative = assets[c.file]?.informative;
@@ -362,7 +424,9 @@ async function runCase(c: LabCase): Promise<void> {
       ? runManifestCase(c)
       : c.kind === 'asset'
         ? runAssetCase(c)
-        : runValidCase(c));
+        : c.kind === 'expect-id'
+          ? runExpectIdCase(c)
+          : runValidCase(c));
   } catch (e) {
     const message = e instanceof ManifestError ? `${e.reason}: ${e.message}` : String(e);
     setCell(c.id, 'verdict', 'Error');

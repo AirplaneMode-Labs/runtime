@@ -24,8 +24,18 @@
         <code>models/</code> folder until you click the download button.
       </p>
       <p class="muted build-line">
-        Built from <code>main</code> at <code id="build-id">?</code> by
-        <code>.github/workflows/pages.yml</code>. <a href="./index.html">Asset manager demo</a>.
+        <code id="build-id">?</code>. The Pages build is <code>.github/workflows/pages.yml</code>.
+        <a href="./index.html">Asset manager demo</a>.
+      </p>
+      <p id="sprint-status" class="status-line">
+        Sprint 5 (18 Nov 2026): Working: runtime beta 0.3.0-beta.0 on spec release 0.5.0: capability
+        profile, signed-manifest verification (now with an expected-id check that refuses a validly
+        signed manifest of another product), download, hash check and quota eviction of synthetic
+        assets, resume, and a Tamper lab of fourteen cases that shows the exact refusal reason, with
+        0 requests after a manifest refusal. The test-model page adds embeddings through the worker
+        host, in-worker hashing of every model file, a token budget and Stop. This page's policy is
+        now connect-src 'self': it can only reach its own origin. Not yet: WebLLM (cut), Windows and
+        8 GB measurements (not measured on 8 GB), key revocation, a real signing key.
       </p>
     </header>
 
@@ -55,8 +65,17 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
           <h2>What this demo does not do yet</h2>
           <ul>
             <li>
-              Test model only (SmolLM2-135M-Instruct q4, English): the Hindi production model is not
-              hosted or bundled here (Sprint 5).
+              Test model only (SmolLM2-135M-Instruct q4, English): neither the pilot model
+              (Qwen3-1.7B, whose graph alone is over the 1 GB Pages limit) nor any Hindi model is
+              hosted here. The dockit demo hosts Qwen3-0.6B instead.
+            </li>
+            <li>
+              Not measured on 8 GB: every figure on this page comes from an Apple M5 Pro with 48 GB.
+              Windows is not measured either.
+            </li>
+            <li>
+              The embedding model (multilingual-e5-small) is an English-and-multilingual
+              general-purpose model; this page makes no claim about its quality on Indic text.
             </li>
             <li>
               WebGPU is verified only on an Apple-silicon Mac; Windows and the 8 GB no-GPU laptop
@@ -90,8 +109,11 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
             </li>
             <li>No service worker: offline after the first load is best effort, not guaranteed.</li>
             <li>
-              The model manifest is signed by a key generated for this build only (never written to
-              disk), so it proves the verification path, not a publisher identity.
+              The model manifest is signed by a key generated for this build only (it lived in
+              memory and was never written to disk), so it proves that the manifest and the files
+              came from the same build, not who published them. This page pins the manifest id
+              (<code>dev.airplanemode.runtime-demo-models</code>) and has no expiry, so it keeps
+              working offline.
             </li>
           </ul>
         </section>
@@ -145,6 +167,35 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
           <dt>Downloaded</dt>
           <dd id="r-bytes">?</dd>
         </dl>
+      </section>
+
+      <section id="embed-section">
+        <h2>Embed</h2>
+        <p class="small">
+          Runs multilingual-e5-small (q8, MIT) through the worker host: two short sentences become
+          two 384-number vectors, and the page shows their length, norm and similarity. The text
+          stays in this tab. The model is a second download (<span id="embed-size"
+            >about 119 MiB</span
+          >
+          from this site) and every file is hashed in the worker before it is used.
+        </p>
+        <div class="row">
+          <button id="btn-embed" type="button" disabled>Download embedding model and embed</button>
+          <span id="embed-note" class="muted small"></span>
+        </div>
+        <dl id="embed-result" class="result hidden">
+          <dt>Dimensions</dt>
+          <dd id="e-dims">?</dd>
+          <dt>Normalised</dt>
+          <dd id="e-norm">?</dd>
+          <dt>Cosine similarity of the two sentences</dt>
+          <dd id="e-sim">?</dd>
+          <dt>Embed time</dt>
+          <dd id="e-time">?</dd>
+          <dt>Load time</dt>
+          <dd id="e-load">?</dd>
+        </dl>
+        <p id="embed-error" class="note hidden" role="alert"></p>
       </section>
 
       <section id="prompt-section">

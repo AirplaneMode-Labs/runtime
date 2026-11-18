@@ -1,5 +1,5 @@
 // The Tamper lab fixture of the runtime demo: a VERBATIM copy of spec/vectors/tamper (fifteen tamper
-// vectors and tamper.json) and spec/vectors/tamper-assets (three signed manifests, three .bin files and
+// vectors and tamper.json), spec/vectors/expect-id/expect-id.json and spec/vectors/tamper-assets (three signed manifests, three .bin files and
 // expect.json) into demo/public/tamper/, which Vite copies to demo/dist/tamper/.
 //
 //   demo/public/tamper/vectors/   <- spec/vectors/tamper/*   (README.md is documentation, not copied)
@@ -61,6 +61,8 @@ const TAMPER_ASSETS = [
 /** Every copied file: `from` is relative to spec/vectors, `to` relative to the fixture directory. */
 export const TAMPER_FIXTURE_FILES = Object.freeze([
   ...TAMPER_VECTORS.map((f) => ({ from: `tamper/${f}`, to: `vectors/${f}` })),
+  // manifest 0.1.2: the expect-id table (the lab's case 'other-product' runs its row 02)
+  { from: 'expect-id/expect-id.json', to: 'vectors/expect-id.json' },
   ...TAMPER_ASSETS.map((f) => ({ from: `tamper-assets/${f}`, to: `assets/${f}` })),
 ]);
 

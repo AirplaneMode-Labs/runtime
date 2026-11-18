@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta
       name="description"
@@ -23,22 +23,20 @@
         page's own files and for a manifest URL you paste yourself.
       </p>
       <p class="muted build-line">
-        Built from <code>main</code> at <code id="build-id">?</code> by
-        <code>.github/workflows/pages.yml</code>. See also the
-        <a href="./models.html">backend demo</a>. Store: <code id="store-label">?</code>. Manifest
-        source: <code id="source-label">?</code>. Quota source: <code id="quota-source">?</code>.
+        <code id="build-id">?</code>. The Pages build is <code>.github/workflows/pages.yml</code>.
+        See also the <a href="./models.html">backend demo</a>. Store:
+        <code id="store-label">?</code>. Manifest source: <code id="source-label">?</code>. Quota
+        source: <code id="quota-source">?</code>.
       </p>
       <p id="status-line" class="status-line">
-        Sprint 4 (14 Nov 2026): Working: capability profile, signed-manifest verification, download,
-        hash check and quota eviction of synthetic assets, resume, and a Tamper lab of thirteen
-        cases (a changed entry byte, size or signature, a swapped key, a public-key mismatch, an
-        untrusted key, a truncated file, a rollback, an expired manifest, a non-canonical signature,
-        an asset byte flip, a truncated asset, and the valid manifest) that shows the exact refusal
-        reason, with 0 requests after a manifest refusal; manifest spec v0.1 published in
-        runtime/spec (committed; public after the owner's push). The test-model page, the engine
-        picker and the worker host are as in Sprint 3, plus a Stop button on the test-model page.
-        Not yet: WebLLM (cut from Sprint 4), Windows and 8 GB no-GPU measurements, embeddings
-        through the worker host, key revocation, an expected-id check.
+        Sprint 5 (18 Nov 2026): Working: runtime beta 0.3.0-beta.0 on spec release 0.5.0: capability
+        profile, signed-manifest verification (now with an expected-id check that refuses a validly
+        signed manifest of another product), download, hash check and quota eviction of synthetic
+        assets, resume, and a Tamper lab of fourteen cases that shows the exact refusal reason, with
+        0 requests after a manifest refusal. The test-model page adds embeddings through the worker
+        host, in-worker hashing of every model file, a token budget and Stop. This page's policy is
+        now connect-src 'self': it can only reach its own origin. Not yet: WebLLM (cut), Windows and
+        8 GB measurements (not measured on 8 GB), key revocation, a real signing key.
       </p>
       <p id="range-note" class="note hidden">
         The <code>?manifest=range</code> parameter is honoured only on 127.0.0.1 or localhost (it
@@ -102,9 +100,14 @@
             </li>
             <li>No key revocation, transparency log or Sigstore (security finding S1-001).</li>
             <li>
-              Not yet: WebLLM (cut from Sprint 4; revisit after the Sprint 5 measurement), Windows
-              and 8 GB no-GPU measurements, embeddings through the worker host, revocation of a
-              signing key, an expected-id check.
+              Not yet: WebLLM (cut; revisit after the 8 GB measurement), Windows and 8 GB no-GPU
+              measurements (not measured on 8 GB), revocation of a signing key, a real signing key.
+            </li>
+            <li>
+              This page can reach only its own origin (Content-Security-Policy
+              <code>connect-src 'self'</code>, a Sprint 5 change): a manifest URL on another origin
+              is refused in plain words before any request, because this origin also hosts the
+              dockit demo's models.
             </li>
             <li>
               The Tamper lab runs the vectors of manifest spec v0.1 against a trust set of two RFC
@@ -196,7 +199,7 @@
           RFC 8032 public test keys: demo only; allowTestKeys is false by default in the library
         </p>
         <div class="row">
-          <button id="lab-run-all" type="button">Run all thirteen cases</button>
+          <button id="lab-run-all" type="button">Run all fourteen cases</button>
         </div>
         <table class="lab">
           <thead>
@@ -459,6 +462,26 @@
                 <div data-cell="match" class="muted"></div>
               </td>
             </tr>
+            <tr data-case="other-product">
+              <th scope="row">
+                Manifest for another product<br /><span class="small muted"
+                  >a validly signed manifest whose id is not the one this page expects: refused
+                  before the downgrade state is read</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -548,17 +571,17 @@
       <section>
         <h2>Paste your own manifest URL</h2>
         <p class="small">
-          The page checks the URL's origin against the list below before any request is made; a URL
-          from another origin is refused with <code>AssetError</code> code <code>policy</code> and
-          nothing is fetched. Only https origins can be added (http is accepted for 127.0.0.1 and
-          localhost while running locally). The manifest must verify against one of the trust roots.
+          This page can only reach its own origin: its Content-Security-Policy is
+          <code>connect-src 'self'</code>. A URL from another origin is refused in plain words, with
+          <code>AssetError</code> code <code>policy</code>, before any request is made, so nothing
+          is fetched. The manifest must verify against one of the trust roots.
         </p>
         <label>
           Manifest URL
           <input id="in-paste" type="text" size="60" />
         </label>
         <label>
-          Allowed origins (one per line, https only)
+          Allowed origins (one per line; only this page's own origin can be accepted)
           <textarea id="ta-origins" rows="3" cols="60"></textarea>
         </label>
         <ul id="origins-feedback" class="feedback"></ul>

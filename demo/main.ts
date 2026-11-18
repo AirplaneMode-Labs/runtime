@@ -197,36 +197,20 @@ type Parsed<T> = { accepted: T[]; rejected: { line: string; message: string }[] 
  * line is reported, never silently dropped.
  */
 function parseAllowedOrigins(text: string): Parsed<string> {
+  // TD-47 (S1-039 re-opened and closed): the page's policy is connect-src 'self'. The only origin it can
+  // reach is its own, so that is the only one that is accepted; every other line is reported in words.
   const out: Parsed<string> = { accepted: [], rejected: [] };
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (line === '') continue;
-    if (isLocal && line === location.origin) {
-      out.accepted.push(line);
+    if (line === location.origin) {
+      if (!out.accepted.includes(line)) out.accepted.push(line);
       continue;
     }
-    let u: URL;
-    try {
-      u = new URL(line);
-    } catch {
-      out.rejected.push({ line, message: 'not an absolute URL; expected https://host[:port]' });
-      continue;
-    }
-    if (u.protocol !== 'https:') {
-      out.rejected.push({
-        line,
-        message: 'only https origins are allowed (http only for 127.0.0.1 / localhost locally)',
-      });
-      continue;
-    }
-    if (u.origin !== line) {
-      out.rejected.push({
-        line,
-        message: `an origin has no path, query or trailing slash; did you mean ${u.origin}?`,
-      });
-      continue;
-    }
-    if (!out.accepted.includes(line)) out.accepted.push(line);
+    out.rejected.push({
+      line,
+      message: `this page can only reach its own origin (${location.origin}): its Content-Security-Policy is connect-src 'self', so no other origin can be added`,
+    });
   }
   return out;
 }
@@ -983,6 +967,11 @@ async function loadPasted(): Promise<Manifest> {
     throw new AssetError('policy', `manifest URL is not absolute: ${pasted}`);
   }
   const o = u.origin;
+  if (o !== location.origin)
+    throw new AssetError(
+      'policy',
+      `This page can only load a manifest from its own origin (${location.origin}); ${o} was not contacted. Nothing was requested.`,
+    );
   if (!origins.accepted.includes(o))
     throw new AssetError('policy', `manifest origin ${o} is not in the allowed origins list`);
   // Only now is anything built or fetched.

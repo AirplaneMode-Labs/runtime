@@ -28,6 +28,7 @@ import {
 import {
   BackendRefusedError,
   createDefaultAdapters,
+  createWorkerAdapter,
   loadWithFallback,
   type Attempt,
   type EngineStateProbe,
@@ -51,6 +52,11 @@ const isLocal = location.hostname === '127.0.0.1' || location.hostname === 'loca
 
 interface ModelsMeta {
   bundled: boolean;
+  /** The manifest id this build pins (expectManifestId). */
+  manifestId?: string;
+  embedDescriptorEntryId?: string;
+  embedBytes?: number;
+  embedModelName?: string;
   keyId?: string;
   publicKeyHex?: string;
   manifestPath?: string;
@@ -314,6 +320,8 @@ async function onDownloadClick(): Promise<void> {
     store: 'auto',
     allowedOrigins: [location.origin],
     allowTestKeys: false,
+    // the manifest of this product and no other (manifest 0.1.2): a validly signed manifest of another id is refused
+    ...(meta.manifestId ? { expectManifestId: meta.manifestId } : {}),
     events,
   });
   // The picker: auto starts at WebGPU and falls back to WebAssembly; 'webgpu' offers only the WebGPU
@@ -432,12 +440,93 @@ async function onRunClick(): Promise<void> {
       $('out-answer').textContent = res.text;
       const t = res.timings;
       $('out-timing').textContent =
-        `Finish: ${res.finishReason}. Prompt tokens ${res.usage.promptTokens ?? '?'}, generated ${res.usage.completionTokens ?? '?'}. ` +
+        `Finish: ${res.finishReason}. Budget ${res.budget ?? '?'} tokens. Prompt tokens ${res.usage.promptTokens ?? '?'}, generated ${res.usage.completionTokens ?? '?'}. ` +
         `Prefill ${Math.round(t.prefillMs ?? 0)} ms, decode ${Math.round(t.decodeMs ?? 0)} ms` +
         (t.tokensPerSecond ? `, ${t.tokensPerSecond.toFixed(1)} tokens per second.` : '.');
       renderReadout();
     },
   );
+}
+
+// --- the Embed card (R14: embeddings through the worker host) --------------------------------------------
+
+const btnEmbed = $<HTMLButtonElement>('btn-embed');
+const EMBED_TEXTS = [
+  'query: What is the grace period?',
+  'passage: The grace period is 45 days after the due date.',
+];
+
+function cosine(a: Float32Array, b: Float32Array): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    na += a[i]! * a[i]!;
+    nb += b[i]! * b[i]!;
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+async function onEmbedClick(): Promise<void> {
+  const source = bundledSource();
+  const entryId = meta.embedDescriptorEntryId;
+  if (!source || !entryId) return;
+  btnEmbed.disabled = true;
+  $('embed-error').classList.add('hidden');
+  $('embed-result').classList.add('hidden');
+  $('embed-note').textContent = 'Loading the signed manifest…';
+  const events = new EventBus(5000);
+  publishToDevtools(events);
+  const mgr = new AssetManager({
+    store: 'auto',
+    allowedOrigins: [location.origin],
+    allowTestKeys: false,
+    ...(meta.manifestId ? { expectManifestId: meta.manifestId } : {}),
+    events,
+  });
+  const adapter = createWorkerAdapter({
+    device: 'wasm',
+    ortFactoryUrl,
+    workerUrl: engineWorkerUrl,
+  });
+  try {
+    await mgr.loadManifest(source.manifestUrl, source.trust);
+    const p = (profile ??= await detectCapabilities());
+    const t0 = performance.now();
+    $('embed-note').textContent =
+      `Downloading the embedding model (${fmtBytes(meta.embedBytes ?? 0)}) from this site…`;
+    await adapter.load(mgr.getEntry(entryId), {
+      assets: mgr,
+      profile: p,
+      events,
+      onProgress: (pr) => {
+        $('embed-note').textContent =
+          `Downloading ${pr.entryId}: ${fmtBytes(pr.received)} of ${fmtBytes(pr.total)}`;
+      },
+    });
+    const loadMs = performance.now() - t0;
+    $('embed-note').textContent =
+      'Embedding model loaded and verified (every file hashed in the worker).';
+    const r = await adapter.embed(EMBED_TEXTS);
+    $('e-dims').textContent = String(r.dims);
+    $('e-norm').textContent = r.normalized
+      ? `yes (vector lengths ${r.vectors.map((v) => Math.hypot(...v).toFixed(4)).join(', ')})`
+      : 'no';
+    $('e-sim').textContent = cosine(r.vectors[0]!, r.vectors[1]!).toFixed(4);
+    $('e-time').textContent = `${Math.round(r.timings?.totalMs ?? 0)} ms`;
+    $('e-load').textContent = `${Math.round(loadMs)} ms`;
+    $('embed-result').classList.remove('hidden');
+    renderReadout();
+  } catch (e) {
+    $('embed-note').textContent = '';
+    const err = $('embed-error');
+    err.textContent = describeFailure(e);
+    err.classList.remove('hidden');
+  } finally {
+    await adapter.unload().catch(() => undefined);
+    btnEmbed.disabled = false;
+  }
 }
 
 function initModelSection(): void {
@@ -450,10 +539,17 @@ function initModelSection(): void {
       `about ${fmtBytes(meta.totalBytes)} from this site, stored in your browser`;
     btnDownload.disabled = false;
     btnDownload.addEventListener('click', () => void onDownloadClick());
+    if (meta.embedDescriptorEntryId) {
+      btnEmbed.disabled = false;
+      $('embed-size').textContent = `about ${fmtBytes(meta.embedBytes ?? 0)}`;
+      $('embed-note').textContent = 'Nothing is downloaded until you click.';
+      btnEmbed.addEventListener('click', () => void onEmbedClick());
+    } else $('embed-note').textContent = 'The embedding model is not bundled in this build.';
     btnRun.addEventListener('click', () => void onRunClick());
     btnStop.addEventListener('click', () => runControl.stop());
   } else {
     $('model-status').textContent = 'test model not bundled in this build';
+    $('embed-note').textContent = 'The embedding model is not bundled in this build.';
     btnDownload.disabled = true;
     btnDownload.addEventListener('click', () => undefined);
   }
@@ -509,6 +605,22 @@ interface RunOptions {
   abortAfterMs?: number;
   /** Where the engine runs for this run: 'main' (default, the Sprint 1 and 2 specs) or 'worker'. */
   host?: EngineHost;
+  /**
+   * An embedding model (?models=e5): instead of generating, embeds these texts twice and reports the
+   * dimensions, the norms, whether the two runs are bit-identical and the time (R14). No text is returned.
+   */
+  embed?: string[];
+}
+
+interface EmbedReport {
+  dims: number;
+  count: number;
+  normalized: boolean;
+  norms: number[];
+  /** Two runs over the same texts gave bit-identical vectors. */
+  identical: boolean;
+  truncated: boolean;
+  totalMs: number[];
 }
 
 interface Generation {
@@ -534,6 +646,7 @@ type HookReport =
       usage: { promptTokens?: number; completionTokens?: number };
       timings: { prefillMs?: number; decodeMs?: number; tokensPerSecond?: number };
       generations: Generation[];
+      embed?: EmbedReport;
       abortCheck?: {
         first: Generation & { tokensSeen: number };
         second: Generation;
@@ -568,20 +681,33 @@ if (isLocal) {
       ? '/models/hindi-smoke/manifest.json'
       : which === 'isolation'
         ? '/models/isolation/manifest.json'
-        : '/models/test-models/manifest.json';
+        : which === 'qwen06'
+          ? '/models/qwen06/manifest.json'
+          : which === 'e5'
+            ? '/models/e5/manifest.json'
+            : '/models/test-models/manifest.json';
   const descriptorEntryIds =
     which === 'hindi'
       ? ['qwen3-1.7b.tjs-webgpu-q4f16']
-      : which === 'isolation'
-        ? // the first descriptor's WebGPU weights are garbage: the rung fails after its worker started
-          ['smollm2-135m-instruct.bad-webgpu.descriptor', 'smollm2-135m-instruct.wasm.descriptor']
-        : ['smollm2-135m-instruct.descriptor'];
+      : which === 'qwen06'
+        ? ['qwen3-0.6b.descriptor']
+        : which === 'e5'
+          ? ['multilingual-e5-small.descriptor']
+          : which === 'isolation'
+            ? // the first descriptor's WebGPU weights are garbage: the rung fails after its worker started
+              [
+                'smollm2-135m-instruct.bad-webgpu.descriptor',
+                'smollm2-135m-instruct.wasm.descriptor',
+              ]
+            : ['smollm2-135m-instruct.descriptor'];
 
   // Qwen3-1.7B q4f16 (one 1.43 GB file) runs out of the 4 GB WebAssembly heap while ONNX Runtime
   // optimises the graph (std::bad_alloc) unless the optimisation level is 'disabled'; the small test
   // model needs no option. Descriptor 0.1.0 has no field for it, so the local hook passes it.
   const hookSessionOptions =
-    which === 'hindi' ? { sessionOptions: { graphOptimizationLevel: 'disabled' as const } } : {};
+    which === 'hindi' || params.get('opt') === 'disabled'
+      ? { sessionOptions: { graphOptimizationLevel: 'disabled' as const } }
+      : {};
 
   const hook = {
     version: 1,
@@ -634,7 +760,25 @@ if (isLocal) {
         }
         const generations: Generation[] = [];
         const longTasks = observeLongTasks();
-        for (const prompt of options.prompts ?? [options.prompt]) {
+        let embedReport: EmbedReport | undefined;
+        if (options.embed) {
+          const a = await report.result.adapter.embed(options.embed);
+          const b = await report.result.adapter.embed(options.embed);
+          const identical = a.vectors.every(
+            (v, i) =>
+              b.vectors[i] !== undefined && v.every((x, k) => Object.is(x, b.vectors[i]![k])),
+          );
+          embedReport = {
+            dims: a.dims,
+            count: a.vectors.length,
+            normalized: a.normalized,
+            norms: a.vectors.map((v) => Math.hypot(...v)),
+            identical,
+            truncated: a.truncated === true,
+            totalMs: [a.timings?.totalMs ?? 0, b.timings?.totalMs ?? 0],
+          };
+        }
+        for (const prompt of options.embed ? [] : (options.prompts ?? [options.prompt])) {
           const g = await report.result.adapter.generate(prompt, {
             maxTokens: options.maxTokens ?? 16,
             temperature: options.temperature ?? 0,
@@ -706,7 +850,12 @@ if (isLocal) {
             },
           };
         }
-        const gen = generations[0]!;
+        const gen: Generation = generations[0] ?? {
+          text: '',
+          finishReason: 'stop',
+          usage: {},
+          timings: {},
+        };
         const all = events.snapshot();
         return {
           ok: true,
@@ -723,6 +872,7 @@ if (isLocal) {
           usage: gen.usage,
           timings: gen.timings,
           generations,
+          ...(embedReport ? { embed: embedReport } : {}),
           ...(abortCheck ? { abortCheck } : {}),
           longTasksMs,
           ...(timerAbort ? { timerAbort } : {}),

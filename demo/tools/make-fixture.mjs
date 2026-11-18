@@ -63,11 +63,8 @@ import { fileURLToPath } from 'node:url';
 import { AssetStream } from '../../test/tools/xorshift.mjs';
 import { DEFAULT_TAMPER_OUT, SPEC_VECTORS_DIR, buildTamperFixture } from './tamper-fixture.mjs';
 import { ephemeralSigner, verifySig } from '../../test/tools/lib.mjs';
-import {
-  buildModelManifest,
-  readModelsJson,
-  readOrtPins,
-} from '../../test/tools/model-manifest.mjs';
+import { readOrtPins } from '../../test/tools/model-manifest.mjs';
+import { bundleModels } from '../../scripts/bundle-models.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -123,56 +120,7 @@ function writeStream(file, name, size) {
   return hash.digest('hex');
 }
 
-const MIT_ORT = `MIT License
-
-Copyright (c) Microsoft Corporation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-`;
-
 const sha256File = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
-
-/**
- * The ort block of PROVENANCE.json: version, the sha512 integrity of the npm tarball from the lockfile,
- * whether npm shows a provenance attestation, the wasm and factory sha256 of the pin, and how the build
- * was cross-checked. It throws when the lockfile does not hold exactly the pinned stable release, so a
- * provenance file never describes a package that is not the one installed.
- */
-function ortProvenance(pins) {
-  const lock = JSON.parse(readFileSync(path.resolve(here, '../../package-lock.json'), 'utf8'));
-  const e = lock.packages?.['node_modules/onnxruntime-web'];
-  if (!e || e.version !== pins.version)
-    throw new Error(`package-lock.json does not hold onnxruntime-web ${pins.version}`);
-  if (typeof e.integrity !== 'string' || !e.integrity.startsWith('sha512-'))
-    throw new Error('onnxruntime-web has no sha512 integrity in package-lock.json');
-  return {
-    version: pins.version,
-    npmIntegrity: e.integrity,
-    resolved: e.resolved,
-    attestations: 'absent',
-    attestationsChecked: '2026-11-14',
-    wasmSha256: pins.wasmSha256,
-    factorySha256: pins.factorySha256,
-    crossCheck:
-      'stable release published to npm on 2026-10-26, forced in with package.json overrides; the wasm and the factory re-hash to the pins in src/backends/ort-pins.ts (test/ort-pins.test.ts); the browser model proof (npm run test:model) passes on WebGPU and on forced WebAssembly with these pins',
-  };
-}
 
 /** Copies the pinned ONNX Runtime Web factory to public/app/ort/ after checking it against the pin. */
 function copyOrtFactory() {
@@ -204,122 +152,58 @@ function removeBundledModels() {
   rmSync(dir, { recursive: true, force: true });
 }
 
-/** DEMO_MODELS=1: builds demo/public/models/ signed with the per-build key. */
-function bundleModels(signer) {
-  const modelKey = 'smollm2-135m-instruct';
-  const cache = path.resolve(repo, '.cache', 'models');
-  const models = readModelsJson();
-  const m = models.models[modelKey];
-  const pins = readOrtPins();
+/**
+ * DEMO_MODELS=1: builds demo/public/models/ with scripts/bundle-models.mjs, the 'runtime-demo' set
+ * (SmolLM2-135M q4 and multilingual-e5-small q8; manifest 'dev.airplanemode.runtime-demo-models', no expiresAt,
+ * every engine-readable file an entry, relative urls, one signature from a key generated in memory by that
+ * script and never exported). The page pins the manifest id with expectManifestId. The demo's own per-build
+ * signer is not used for the models: bundle-models owns its key.
+ */
+async function bundleDemoModels() {
   const out = path.resolve(publicDir, 'models');
   removeBundledModels();
-  mkdirSync(path.join(out, 'ort'), { recursive: true });
-  for (const f of m.files) {
-    const from = path.join(cache, modelKey, ...f.path.split('/'));
-    if (!existsSync(from))
-      throw new Error(`${from} is missing: run node test/tools/fetch-model.mjs ${modelKey}`);
-    const to = path.join(out, modelKey, ...f.path.split('/'));
-    mkdirSync(path.dirname(to), { recursive: true });
-    copyFileSync(from, to);
-  }
-  const ortFrom = path.join(cache, 'ort', pins.wasmFile);
-  if (!existsSync(ortFrom))
-    throw new Error(`${ortFrom} is missing: run node test/tools/fetch-model.mjs ${modelKey}`);
-  copyFileSync(ortFrom, path.join(out, 'ort', pins.wasmFile));
-
-  const createdAt = rfc3339Now();
-  // buildModelManifest recomputes every size and sha256 from the copied files and compares them with
-  // models.json and ort-pins.ts before signing; a mismatch throws and fails the build.
-  const built = buildModelManifest({
-    cacheDir: out,
-    modelKey,
-    manifestId: 'dev.airplanemode.demo-models',
-    manifestVersion: '0.1.0',
-    publisher: 'Airplane Mode Labs (demo test model, per-build key)',
-    outDir: out,
-    descriptorEntryId: 'smollm2-135m-instruct.descriptor',
-    descriptorFile: 'smollm2-135m-instruct.descriptor.json',
-    descriptor: {
-      id: 'smollm2-135m-instruct',
-      engine: 'transformers-js',
-      task: 'text-generation',
-      devices: ['wasm', 'webgpu'],
-      dtype: 'q4',
-      contextLength: 8192,
-    },
-    entryIds: {
-      'config.json': 'smollm2-135m-instruct.config',
-      'generation_config.json': 'smollm2-135m-instruct.generation-config',
-      'onnx/model_q4.onnx': 'smollm2-135m-instruct.onnx-q4',
-      'tokenizer.json': 'smollm2-135m-instruct.tokenizer',
-      'tokenizer_config.json': 'smollm2-135m-instruct.tokenizer-config',
-    },
-    ortEntryId: 'ort.wasm',
-    createdAt,
-    sign: (body) => signer.sign(body, createdAt),
+  const built = await bundleModels({
+    set: 'runtime-demo',
+    out,
+    root: publicDir,
+    manifestId: 'dev.airplanemode.runtime-demo-models',
+    ortDir: path.resolve(repo, '.cache', 'models', 'ort'),
+    trustRootOut: path.resolve(repo, 'demo', '.generated', 'trust-root.ts'),
+    packagePath: path.resolve(repo, 'package.json'),
   });
-  if (!verifySig(built.manifest, built.manifest.signatures[0].sig, signer.publicKeyHex))
-    throw new Error('models manifest signature self-check failed');
-
-  const apache = readFileSync(path.resolve(repo, 'LICENSE'), 'utf8');
-  writeFileSync(
-    path.join(out, 'LICENSE-SmolLM2-135M-Instruct.txt'),
-    `${apache.trimEnd()}\n\n${m.repo}@${m.revision}\n`,
-  );
-  writeFileSync(path.join(out, 'LICENSE-onnxruntime-web.txt'), MIT_ORT);
-  const provenance = {
-    note: 'Files of the test model bundled in this build. The model is a third-party model (Apache-2.0); nothing here was modified. Sizes and sha256 equal test/tools/models.json at build time.',
-    model: {
-      repo: m.repo,
-      revision: m.revision,
-      licence: m.licence,
-      files: m.files.map((f) => ({
-        path: `${modelKey}/${f.path}`,
-        size: f.size,
-        sha256: f.sha256,
-      })),
-    },
-    // S1-055: the runtime is the stable onnxruntime-web release that package.json overrides in. The
-    // tarball integrity is read from package-lock.json (offline); the registry showed no provenance
-    // attestation for the package on 14 Nov 2026 (`npm view onnxruntime-web@1.31.1 dist.attestations`).
-    ort: ortProvenance(pins),
-    runtime: {
-      package: 'onnxruntime-web',
-      version: pins.version,
-      licence: 'MIT',
-      wasm: {
-        path: `ort/${pins.wasmFile}`,
-        size: built.entries.find((e) => e.id === 'ort.wasm').size,
-        sha256: pins.wasmSha256,
-      },
-      factory: { path: `app/ort/${pins.factoryFile}`, sha256: pins.factorySha256 },
-    },
-    manifest: { id: built.manifest.id, version: built.manifest.version, createdAt },
-  };
-  writeFileSync(path.join(out, 'PROVENANCE.json'), JSON.stringify(provenance, null, 2) + '\n');
+  const sig = built.manifest.signatures[0];
+  const publicKeyHex = Buffer.from(sig.publicKey, 'base64').toString('hex');
+  const descriptorSize = (id) => built.manifest.entries.find((e) => e.id === id).size;
+  const entryBytes = (prefix) =>
+    built.manifest.entries.filter((e) => e.id.startsWith(prefix)).reduce((n, e) => n + e.size, 0);
   writeFileSync(
     path.join(out, 'trust-root.json'),
     JSON.stringify(
       {
         bundled: true,
-        keyId: signer.keyId,
-        publicKeyHex: signer.publicKeyHex,
+        manifestId: built.manifest.id,
+        keyId: sig.keyId,
+        publicKeyHex,
         manifestPath: 'models/manifest.json',
         descriptorEntryId: 'smollm2-135m-instruct.descriptor',
-        totalBytes: built.totalBytes,
+        embedDescriptorEntryId: 'multilingual-e5-small.descriptor',
+        totalBytes: entryBytes('smollm2-135m-instruct.') + entryBytes('ort.'),
+        embedBytes: entryBytes('multilingual-e5-small.') + descriptorSize('ort.wasm'),
+        bundleBytes: built.totalBytes,
         modelName: 'SmolLM2-135M-Instruct (q4, English, Apache-2.0)',
-        note: 'public key of the per-build signing key; the private half was never written to disk',
+        embedModelName: 'multilingual-e5-small (q8, 384 dimensions, MIT)',
+        note: 'public key of the per-build signing key; the private half lived only in memory inside bundle-models.mjs',
       },
       null,
       2,
     ) + '\n',
   );
   console.log(
-    `models/  ${built.entries.length} signed entries, ${built.totalBytes} B, manifest dev.airplanemode.demo-models`,
+    `models/  ${built.manifest.entries.length} signed entries, ${built.totalBytes} B, manifest ${built.manifest.id}`,
   );
 }
 
-function main() {
+async function main() {
   const { out } = parseArgs(process.argv.slice(2));
   if (!path.resolve(out).startsWith(publicDir + path.sep)) {
     console.error(`refusing to write outside ${publicDir}: ${out}`);
@@ -387,7 +271,7 @@ function main() {
 
   copyOrtFactory();
   copyNotices();
-  if (process.env['DEMO_MODELS'] === '1') bundleModels(signer);
+  if (process.env['DEMO_MODELS'] === '1') await bundleDemoModels();
   else removeBundledModels();
 
   for (const e of entries) console.log(`${e.id}  ${e.size} B  sha256 ${e.sha256}`);
@@ -395,4 +279,7 @@ function main() {
   console.log(`wrote ${out}`);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

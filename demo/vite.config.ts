@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
-import { buildId } from './build-id';
+import { buildLabel, readGitInfo } from './build-id';
 import { neutraliseEngineDefaults } from './engine-defaults';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -36,8 +36,13 @@ const modelsMetaPath = resolve(root, 'public', 'models', 'trust-root.json');
 const modelsMeta = existsSync(modelsMetaPath)
   ? readFileSync(modelsMetaPath, 'utf8')
   : JSON.stringify({ bundled: false });
-// first 12 characters of GITHUB_SHA when it is 40 lowercase hex, else 'local' (S1-052)
-const build = buildId(process.env['GITHUB_SHA']);
+// 'Built from main at <sha12>' (CI), else 'Local build <sha12>[-dirty]' from git HEAD, else 'local' with the
+// reason (S1-052, D1-FIX1-02)
+const build = buildLabel({
+  githubSha: process.env['GITHUB_SHA'],
+  githubRef: process.env['GITHUB_REF'],
+  git: readGitInfo(fileURLToPath(new URL('..', import.meta.url))),
+});
 
 // onnxruntime-web's JS references its own wasm with `new URL('...wasm', import.meta.url)`, which Vite
 // would copy into the output (a second 26 MB copy of the binary that is never fetched: the adapter
