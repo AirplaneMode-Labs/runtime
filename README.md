@@ -10,25 +10,31 @@ reserved; nothing is published yet.
 
 ## Status
 
-Sprint 5 (18 Nov 2026): Working: runtime beta 0.3.0-beta.0 on spec release 0.5.0: capability profile, signed-manifest verification (now with an expected-id check that refuses a validly signed manifest of another product), download, hash check and quota eviction of synthetic assets, resume, and a Tamper lab of fourteen cases that shows the exact refusal reason, with 0 requests after a manifest refusal. The test-model page adds embeddings through the worker host, in-worker hashing of every model file, a token budget and Stop. This page's policy is now connect-src 'self': it can only reach its own origin. Not yet: WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB), key revocation, a real signing key.
+Sprint 6 (19 Nov 2026): Working: runtime beta 0.3.0-beta.1 on spec release 0.6.0: a trust set that holds a weak Ed25519 public key is refused before anything is parsed, and the Tamper lab now has fifteen cases (case 15 shows the exact reason, weak_key_refused, with 0 requests after the refusal); the engine can be unloaded and its WebAssembly memory is returned by ending the worker (an Unload button shows the model.unload event and the engine worker count before and after; in installed Chrome on an Apple M5 Pro 48 GB the process tree shrank by more than the load peak, not measured on 8 GB); an out-of-memory failure in the engine is a plain refusal of its own; a Stop after the first token is logged as an aborted generation. Not yet: WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB), key revocation, a real signing key, a transparency log.
 
-**Runtime `0.3.0-beta.0`: beta, not tagged, not tag-ready (TD-30): no breaking change within 0.3.x.** It
-is the first beta. Sprint 5 adds spec release 0.5.0 (manifest 0.1.2, an additive patch of the published
-0.1.1: the verifier option `expectId` and the new refusal reason `unexpected_id`; event 0.1.4; storage API 0.3.0, the documents API; backend adapter 0.4.0), embeddings through the worker
-host (R14), hashing of every file the engine can read inside the worker (R15, S1-070), a token budget with
-`context_overflow` and a Stop that keeps the partial answer (R4b), per-phase wasm memory peaks (`model.memory`), the
-`@airplanemode/runtime/worker-support` helpers, Storage and Pipeline sections in the DevTools panel, and
-the demo-model bundles (`scripts/bundle-models.mjs`, a per-build key that lives only in memory). Nothing
-is published, tagged or reserved. Not measured on 8 GB: every figure in this README comes from an Apple M5
-Pro with 48 GB.
+Done-when (TD-51): build done on Apple M5 Pro 48 GB; 8 GB Windows done-when NOT met (owner runbook step 5).
+
+**Runtime `0.3.0-beta.1`: beta, not tagged, not tag-ready (TD-30): no breaking change within 0.3.x.** It
+is the second beta (TD-69). Sprint 6 adds spec release 0.6.0 (manifest 0.1.3, an additive patch of the published
+0.1.2: a trust set that holds a weak Ed25519 public key is refused with `weak_key_refused` before anything is
+parsed; capability profile 0.1.1; event 0.1.5; storage API 0.4.0, the HNSW index kind; backend adapter 0.5.0, R16 to
+R20), `unload()` that resolves only after the worker is terminated and emits `model.unload`, an `out_of_memory`
+failure code classified inside the worker, `ramGb` clamped to at most 8, a `model.generate` event for a Stop after
+the first token, and the weak-key vectors. Sprint 5 had added embeddings through the worker host (R14), hashing of
+every file the engine can read inside the worker (R15, S1-070), a token budget with `context_overflow` and a Stop that
+keeps the partial answer (R4b), per-phase wasm memory peaks (`model.memory`), the `@airplanemode/runtime/worker-support`
+helpers, Storage and Pipeline sections in the DevTools panel, and the demo-model bundles (`scripts/bundle-models.mjs`,
+a per-build key that lives only in memory). Nothing is published, tagged or reserved; the package names are not
+reserved. Not measured on 8 GB: every figure in this README comes from an Apple M5 Pro with 48 GB.
 
 ### What beta means
 
 - **The promise** is limited to this: no breaking change within 0.3.x of the exports of
   `@airplanemode/runtime`, `/backends`, `/worker`, `/worker-support` and `/spec`. Draft contracts may still
   change in a minor release of their own.
-- **Still draft contracts:** storage API 0.3.0, backend adapter 0.4.0 and event 0.1.4 (capability profile
-  0.1.0 and model descriptor 0.2.1 are drafts too). Manifest 0.1.2 is published: its wire format is frozen.
+- **Still draft contracts:** storage API 0.4.0, backend adapter 0.5.0 and event 0.1.5 (capability profile
+  0.1.1 and model descriptor 0.2.1 are drafts too). Manifest 0.1.3 is published: its wire format is frozen, and a
+  0.1.2 manifest stays valid.
 - **Feature-complete for the dockit path:** capability profile, manifest verify with expectId, the asset
   manager, the worker host with generate (Stop, budget) and embed, in-worker integrity, the worker-support
   exports, events and the DevTools panel.
@@ -56,8 +62,8 @@ and reports one defined reason when a document has several faults. The manifest 
 before the first push (team decisions TD-26 and TD-29); it stays manifest 0.1.1 on the same wire string. TD-29 (fix round 2) closes the last
 gaps before the contract is frozen: a member that no schema declares is `schema` under any name (`__proto__`, `constructor`,
 `toString`; BUG-T2-S4-11), `sig` and `publicKey` have exactly one accepted base64 spelling each (BUG-T2-S4-14) and the forbidden url
-characters are one explicit list (BUG-T2-S4-15). The demo's **Tamper lab** runs fourteen
-of those cases (the 14th, Sprint 5: a validly signed manifest of another product) in the browser and shows the exact refusal reason; the backend page has a **Stop** button;
+characters are one explicit list (BUG-T2-S4-15). The demo's **Tamper lab** runs fifteen
+of those cases (the 14th, Sprint 5: a validly signed manifest of another product; the 15th, Sprint 6: a trust set that holds a weak key) in the browser and shows the exact refusal reason; the backend page has a **Stop** button;
 no worker-supplied text reaches any event (S1-074). WebLLM: not yet (cut from Sprint 4); nothing is
 published, tagged or reserved.
 
@@ -73,12 +79,12 @@ installs it into a fresh empty directory and calls it:
 ```sh
 npm run pack:check                       # builds, packs, installs offline, calls verifyManifest()
 # or by hand, from this clone:
-npm pack                                 # airplanemode-runtime-0.3.0-beta.0.tgz
+npm pack                                 # airplanemode-runtime-0.3.0-beta.1.tgz
 mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
-npm i /path/to/airplanemode-runtime-0.3.0-beta.0.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
+npm i /path/to/airplanemode-runtime-0.3.0-beta.1.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
 ```
 
-Packed size 222,230 B in 37 files on macOS arm64 (`npm run pack:check` re-run at the Sprint 5 wrap-up, not measured on 8 GB); `node_modules` then holds exactly
+Packed size about 240 KiB in 37 files (845,851 B unpacked) on macOS arm64 (pinned to a fresh `npm pack --dry-run` by `test/pack-figure.test.ts`, which `npm run ci` runs after the build; the file count and the unpacked bytes are exact, the packed size is within 1 KiB; not measured on 8 GB); `node_modules` then holds exactly
 `@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
 
 **After the owner publishes** (not possible today; the scope is not reserved):
@@ -274,9 +280,9 @@ Chrome's `performance.memory`, read and never estimated; a dash means the browse
 
 ## Contracts
 
-This package is the home of the contracts, released together as spec release 0.4.0 (2026-11-14,
-untagged): Manifest 0.1.1 (**published**: "manifest spec v0.1", [`spec/MANIFEST.md`](spec/MANIFEST.md)),
-Capability profile 0.1.0, Event 0.1.3, Storage API 0.2.0, Backend adapter 0.3.1 and the Model descriptor
+This package is the home of the contracts, released together as spec release 0.6.0 (2026-11-19,
+untagged): Manifest 0.1.3 (**published**: "manifest spec v0.1", [`spec/MANIFEST.md`](spec/MANIFEST.md)),
+Capability profile 0.1.1, Event 0.1.5, Storage API 0.4.0, Backend adapter 0.5.0 and the Model descriptor
 0.2.1 that belongs to it (every contract except the manifest is a draft), all under
 [`spec/`](spec/README.md) and exported from `@airplanemode/runtime/spec`. Manifest spec v0.1 published in
 runtime/spec (committed; public after the owner's push). Other repos vendor the contracts and never edit
@@ -290,6 +296,11 @@ Live demo: <https://airplanemode-labs.github.io/runtime/> (the backend page is
 "What this demo does not do yet". They run entirely in the browser: no upload, no analytics, no
 third-party scripts or fonts, and a strict meta CSP with no inline script or style. The live demo still shows Sprint 2 until the owner pushes: the Sprint 3 and Sprint 4 pages were proven on local builds, built as `pages.yml` builds them and served under `/runtime/`.
 
+- Sprint 6 refresh: both pages show the Sprint 6 line above, the Tamper lab has a 15th case ("Weak trust key": a
+  trust set that holds the identity point, refused with `weak_key_refused` before the manifest is parsed, 0 requests
+  after it), and `models.html` has an **Unload model** button that shows the `model.unload` event and the engine worker
+  count before and after, and no operating-system memory figure (a page cannot read one). No CSP change and no new Trusted
+  Types policy. Proven on a local build served under `/runtime/`; the live pages change only after the owner's push.
 - Sprint 5 refresh: both pages show the Sprint 5 line above, `index.html` is now `connect-src 'self'` (it can
   only reach its own origin, so a pasted manifest URL on another origin is refused in plain words before
   any request: TD-47, S1-039 re-opened and closed), the Tamper lab has a 14th case ("Manifest for another
@@ -416,7 +427,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 | Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured on 8 GB |
 | Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured on 8 GB |
 | A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured on 8 GB |
-| Packed tarball `airplanemode-runtime-0.3.0-beta.0.tgz` (pack-check.json)                                                            | 222,230 B in 37 files (775,106 B unpacked), installed offline into a fresh empty directory                                                                   | not measured on 8 GB |
+| Packed tarball `airplanemode-runtime-0.3.0-beta.1.tgz` (pack-check.json)                                                            | about 240 KiB in 37 files (845,851 B unpacked), installed offline into a fresh empty directory                                                               | not measured on 8 GB |
 | `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured on 8 GB |
 
 ## Limitations
@@ -530,6 +541,22 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 - **The worker host has no embeddings yet** (embeddings through the worker host are a Sprint 5 item): `embed()` rejects `unsupported_operation`; use the main-thread adapter for feature extraction.
 - **An abort terminates the worker** when the engine does not answer within 250 ms, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded). The demo's Stop button uses that abort: after a Stop the page says the engine was stopped and asks you to click "Download test model and load" again (the files are already stored).
 - **Per-rung isolation is per adapter instance**: each load() starts a new worker, but two loads on one adapter are serialised, and an abort that the engine does not answer within 250 ms terminates the worker, so the model must be loaded again.
+- **Out of memory is a plain refusal, not a retry.** An allocation failure inside the engine is reported as
+  `out_of_memory`: the worker is ended, the holds are released and nothing is retried by the library. Whether a
+  given 8 GB laptop reaches that point is not measured on 8 GB; the application decides what to tell the user.
+- **Unloading costs the next load a full verification.** `unload()` ends the worker, which is the only thing that returns
+  its WebAssembly memory to the browser (measured on the Apple M5 Pro: the Chrome process tree shrank by more than the
+  load's peak). The next `load()` is a first load: it re-acquires the stored files, re-hashes every one in the worker
+  and starts a fresh engine (about 1.8 s for the 0.6B answer model on this Mac, TD-64). There is no "already verified" shortcut.
+- **A web page cannot read free memory.** The capability profile carries `navigator.deviceMemory` as the browser
+  reports it, a coarse power of two clamped to at most 8, and 0 when the browser does not say (unknown is not
+  "too small"). It is user-controlled, so it is a usability guard and never a security control; nothing in this library
+  refuses a load because of it.
+- **The memory options of the WebAssembly session change nothing measurable** (R17): they reach ONNX Runtime and the
+  output is token-identical, but onnxruntime-web already treats both as off (`docs/memory-options.md`).
+- **The engine-load retry is not explained.** A model file written less than about a second ago once failed its first
+  engine read in dockit; 83 immediate snapshots of 64 MiB and 3 of 600 MiB read back whole in Chrome, so the OPFS-flush
+  hypothesis is refuted and the cause is not established (`docs/engine-load-retry.md`).
 - **Not measured on 8 GB.** Every timing, memory and size figure in this README is from one Apple-silicon Mac; nothing was measured on an 8 GB Windows laptop (the Benchmarks columns read "not measured on 8 GB").
 - **No key revocation, no transparency log, one signature is enough** (MANIFEST.md, Security considerations). A signed manifest stays valid until its `expiresAt`, and a manifest without one can be replayed on a fresh profile, so publishers should set `expiresAt`.
 - **Consumers must pin the expected manifest id.** A validly signed manifest for another product verifies like any other; an `expectId` verify option with its own reason is a Sprint 5 item, until then the application compares `manifest.id` itself.
@@ -552,7 +579,10 @@ This library makes no network requests other than the asset and manifest URLs yo
 - Trust roots are application configuration and are never fetched with the manifest. A trust set that
   holds any of the five RFC 8032 section 7.1 test keys (by key id, or by the raw key bytes under any key
   id) is refused with `test_key_refused`, before the manifest is parsed, unless `allowTestKeys === true`
-  (a strict boolean; the library default is false). `AssetManager` refuses it before it fetches anything.
+  (a strict boolean; the library default is false). `AssetManager` refuses it before it fetches anything. A trust
+  set that holds a weak Ed25519 public key (the identity, a small-order or mixed-order point, a non-canonical
+  encoding, bytes that are not on the curve) is refused with `weak_key_refused` the same way, before anything is
+  parsed, with no option to skip it (manifest 0.1.3, S1-113); every key made by key generation passes.
 - Capability details are allow-listed (vendor, architecture, numeric limits); `navigator.userAgent`
   and `userAgentData` are never read.
 - Events never carry URLs with query strings, document text, prompts or user identifiers;

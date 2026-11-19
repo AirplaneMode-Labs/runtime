@@ -3,9 +3,118 @@
 All notable changes to `@airplanemode/runtime` are recorded here. The format is based on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/). Nothing is released yet; the package version is
-`0.3.0-beta.0` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+`0.3.0-beta.1` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.3.0-beta.1] - 2026-11-19 (untagged)
+
+Runtime `0.3.0-beta.1` on spec release 0.6.0 (Sprint 6): memory hardening of the engine, the weak-key refusal and
+the Sprint 5 leftovers. Nothing is tagged or published (no tag, no publish); it is still not tag-ready (TD-30):
+the three-OS CI read, the 8 GB benchmark and a real signing key are open. Every figure comes from one Apple M5
+Pro with 48 GB: not measured on 8 GB. Version decided in TD-69.
+
+### Added
+
+- Spec release 0.6.0 (D1-02; `spec/CHANGELOG.md` has the detail): manifest 0.1.3 (`weak_key_refused`,
+  `WEAK_KEY_REFUSED_MESSAGE`, the Weak keys section, the Pinned entries note of TD-54, the `minProfile.ramGb` sentence
+  of TD-57), capability profile 0.1.1, event 0.1.5, storage API 0.4.0 (the HNSW index kind) and backend adapter 0.5.0
+  (R16 to R20). The vectors `weak-keys/` (26 rows, 20 refused across every class) come from
+  `test/tools/make-weak-key-vectors.mjs`, an independent computation; every 0.5.0 vector is byte-identical.
+- The weak-key refusal (S1-113, TD-68, TD-82): `isWeakEd25519PublicKey` (`src/ed25519-point.ts`, BigInt Edwards
+  arithmetic, no dependency) and `assertNoWeakKeys`. A trust set that holds the identity, a small-order or a
+  mixed-order point, a non-canonical encoding or bytes that are not on the curve is refused with
+  `weak_key_refused` BEFORE the manifest is parsed, with no option to skip it, in `verifyManifest` and in the asset
+  manager's `loadManifest`, and again for the key a signature actually uses, so a Map that hides keys from its
+  iterator is still caught. 1,000 Node-generated keys are all accepted; 64 keys are checked in about 30 ms.
+- Unload that frees the model (R16, B1): `unload()` resolves only after `worker.terminate()` returned and every
+  handle is released, and emits `model.unload` (adapter, model, device, host, loadId, reason `unload`, `abort`,
+  `error` or `out_of_memory`; durationMs from the call to `terminate()` returning). Measured with SmolLM2-135M in
+  installed Chrome (`test/browser/model.spec.ts`, `docs/memory-options.md`): the process tree shrank by 944.9 MiB,
+  130 percent of the load's WebAssembly peak of 726.7 MiB, and the engine worker target was gone (not measured on
+  8 GB).
+- Out of memory (R18): an allocation failure inside the engine (a RangeError that mentions memory or allocation,
+  `std::bad_alloc`, `Aborted(OOM)`) is classified inside the worker into the code enum only and is
+  `AdapterError('out_of_memory')`; the worker is terminated, the holds are released, nothing is retried, no part or
+  cache entry changes, and no worker string reaches an event (a sentinel test). `model.load.failed`, `model.embed`
+  and `model.generate` (finishReason `error`, attr `code`) carry the code.
+- A load after an unload is a first load (R19): every load re-acquires the files and re-hashes them in the worker;
+  `test/unload.test.ts` proves three cycles give three verify phases and that `cacheOnly` reaches every acquire, with no
+  request after the first load.
+- The engine memory options (R17): on the wasm device the worker host creates sessions with `enableCpuMemArena` false
+  and `enableMemPattern` false. They reach ONNX Runtime and the greedy output is token-identical, but their measured effect is
+  nil (onnxruntime-web 1.31.1 already treats an unset option as false; the worker's WebAssembly peak is 726.7 MiB with and
+  without), so they are not a memory saving (`docs/memory-options.md`).
+- `capability.ts` clamps `ramGb` to at most 8 (TD-57); `scripts/bundle-models.mjs` keeps the dockit answer model at
+  `minProfile.ramGb` 4 (TD-67) and refuses to emit any `ramGb` above 8.
+- The demo: Tamper lab case 15, a weak trust key (the exact reason `weak_key_refused`, 0 requests after the refusal);
+  an Unload button on the models page that shows the `model.unload` event and the engine worker count before and after
+  and no operating-system memory figure; the not-yet box and the Sprint 6 status line.
+- `docs/engine-load-retry.md` (the finding below) and `docs/memory-options.md`; `test/browser/opfs-snapshot.spec.ts`.
+
+### Changed
+
+- A trust set that holds a 32-byte value that is not a prime-order point is now refused (`weak_key_refused`), so a
+  placeholder such as 32 bytes of `0x07` no longer works as a stand-in key (it did not verify anything before, but it
+  was accepted into a trust set). Every key made by key generation is unaffected.
+- `npm run ci` now builds before it tests (the pack-figure test needs `dist/`).
+- README: the tarball figures are stated as "about N KiB in F files (U B unpacked)" and pinned to a fresh
+  `npm pack --dry-run` by `test/pack-figure.test.ts` (T3-R2-05, TD-81): the file count and the unpacked bytes are exact
+  (every text file is LF by `.gitattributes`), the packed size is within 1 KiB; the status line and the done-when sentence
+  are Sprint 6's (T3-R2-06).
+- A Stop after the first token whose abort the worker does not answer in time now emits `model.generate` with
+  finishReason `abort` before `model.unload` (S1-119); an abort that the worker answers in time already did.
+- Version `0.3.0-beta.1` (TD-69).
+
+### Fixed
+
+- S1-121: the weak-key and test-key rules judge the trust value by its bytes: any 32-byte ArrayBuffer view or
+  ArrayBuffer, from this realm or another (vm context, iframe), is copied to a same-realm Uint8Array before the
+  test-key, weak-key, key_mismatch and verify steps. A cross-realm identity key is now weak_key_refused.
+- BUG-T1-S6-02 / BUG-T3-S6-05 (TD-84): satisfies() treats profile ramGb 0 as unknown, not below a minimum; only a
+  reported smaller value fails. Wording in spec/manifest.ts and MANIFEST.md (schema unchanged).
+- BUG-T3-S6-06: the out-of-memory test cites the real evidence file name.
+- Spec 0.6.0 amended in place (versions unchanged): storage.query fallback `short`, `HNSW_MAX_GRAPHS` = 64 with
+  quota reason `max_graphs`.
+
+- T3-R2-06: the README Status section carries the TD-51 sentence 'build done on Apple M5 Pro 48 GB; 8 GB Windows
+  done-when NOT met (owner runbook step 5)', and `test/docs.test.ts` fails if it is missing.
+- S1-119: a Stop after the first token emitted no `model.generate` event on the 250 ms backstop path; it now emits
+  exactly one, with finishReason `abort`, outTokens and a numeric firstTokenMs (`test/run-control.test.ts`).
+- S1-116: the symlink-escape tests of `bundle-models` and `fetch-model` can no longer skip silently. `makeLink`
+  (`test/helpers.ts`) makes a junction on win32 (no privilege needed) and a symlink elsewhere, and a link that cannot be
+  made FAILS the test naming the OS and the error; `test/links.test.ts` proves it and that the only skip left is the
+  env-gated `RUNTIME_BUNDLE_REAL` describe. On macOS `npm run ci` reports skipped 1. windows-latest should show skipped 1
+  after the owner's push; at 4f5b011 it already did (`check (windows-latest)` of run 44325725878: 1694 passed, 1
+  skipped), so the two tests had run there; only that CI leg proves it again.
+- R20 (the engine-load retry, D1-07): a file that changed after the shim's one-byte probe failed in the middle of the
+  engine's own read and was reported as `backend`; when the load fails with a plain engine error the worker now reads one
+  byte of every hashed snapshot again, and an unreadable one is `integrity`, never retried. The root cause of the retry
+  itself was investigated and NOT reproduced: see `docs/engine-load-retry.md`.
+
+### Security
+
+- S1-113: the weak-key refusal above; a forged signature (R = identity, S = 0) under a trust set holding the identity key
+  is now unreachable (`spec/vectors/weak-keys/forged-identity.manifest.json`).
+- R18: the out-of-memory classification reads the engine's message only inside the worker; the host emits the code and
+  nothing else, and the new tests inject a RangeError whose message holds a sentinel and find it in no event, no
+  `AdapterError` message and no cause.
+- R19 and R20: a re-load re-verifies everything, and a snapshot that changed is `integrity`.
+
+### Known gaps
+
+- S1-036 stays an accepted residual, with the reason: keeping the downloaded part when a commit fails after the
+  evict-and-retry loop needs a different commit (the OPFS store deletes each chunk as it is streamed into `<sha>.bin`, so the
+  transient overhead is one chunk). Keeping the chunks until the final file is closed would double the storage a commit needs
+  at exactly the quota edge the T1-B1 fix was written for, so it is not a small change; the next `ensure()` downloads the
+  asset again. Availability only; no unverified byte is exposed.
+- The engine-load retry root cause is not established (`docs/engine-load-retry.md`); dockit's one retry stays, and a note
+  for D5 says the same failure may now arrive as `out_of_memory`.
+- The memory options (R17) have no measured effect on this stack; they are not counted as a saving.
+- What only windows-latest or ubuntu-latest can prove stays pending the owner's push: S1-116 (skipped 1, symlink tests
+  executed through a junction), T3-R2-05 (the pack figure on Windows) and the measured unload drop on Linux.
+- Not measured on 8 GB: every figure in this file and in the README. The out-of-memory behaviour on real low-memory
+  hardware and `deviceMemory` as a real 8 GB device reports it are owner measurements.
+
+## [0.3.0-beta.0] - 2026-11-18 (untagged)
 
 Runtime `0.3.0-beta.0` on spec release 0.5.0 (Sprint 5): the first beta. Nothing is tagged or published
 (no tag, no publish). It is not tag-ready (TD-30): the three-OS CI read, the 8 GB benchmark and a real

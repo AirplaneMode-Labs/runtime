@@ -1,4 +1,4 @@
-# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface (updated through Sprint 5)
+# Threat model: Airplane Mode Labs runtime and the Sprint 1 surface (updated through Sprint 6)
 
 Version 0.3 (Sprint 1, 9 to 22 November 2026, updated after fix round 1 on 9 November; Sprint 2 update of 9 November 2026 in section 7). Written by the security consultant (lane S1).
 Scope: `@airplanemode/runtime` (manifest verification, asset manager, capability profile, events),
@@ -605,8 +605,9 @@ No Critical, High or Medium finding is open. The pipeline's design keeps a hosti
 model's output has no sink but a text node and the network is closed after the cache phase, so the realistic
 harms are a wrong answer that the source panel lets the reader catch, and a memory-exhaustion crash from a hostile
 PDF (S1-107). The demo inherits the shared-origin limits of GitHub Pages (S1-108, S1-109, missing response
-headers), which a pilot removes with its own origin. Unmeasured: memory on the 8 GB laptop (about 7 GB summed RSS
-during a question on the Apple M5 Pro, row 20), Chrome's behaviour when a worker exhausts memory, and every Windows
+headers), which a pilot removes with its own origin. Unmeasured: memory on the 8 GB laptop (on the Apple M5 Pro the
+Chrome process tree peaks at 6,283 MiB median and 6,377 MiB worst during a question, `dockit/docs/benchmarks/e2e.csv`
+at 840ec8b; corrected 19 November 2026 from a rounder, higher figure the CSV does not contain; row 20), Chrome's behaviour when a worker exhausts memory, and every Windows
 path (`--out` containment, the PowerShell sampler) until the owner's push and runbook.
 
 ### 10.5 After Sprint 5 fix round 1
@@ -648,10 +649,93 @@ The model above holds as built; no STRIDE row changed its verdict. What the clos
 - Denial of service (S1-107, Low): final figure 8,121 MiB peak summed RSS for a 1 GiB font bomb on the Apple M5 Pro,
   page usable. On the 8 GB laptop the realistic outcome is a tab or worker crash, not a data loss; it stays a pilot
   gate (row 32).
-- Memory headroom (not a finding): the Chrome process tree peaks at about 6.5 to 6.9 GB per question with
-  Qwen3-0.6B on the Apple M5 Pro. On an 8 GB laptop memory pressure is the most likely failure, and a tab discard
-  mid-answer must fail closed (no partial answer shown as complete, see S1-119). Not measured on 8 GB.
+- Memory headroom (not a finding): the Chrome process tree peaks at 6,283 MiB median and 6,377 MiB worst (about
+  6.1 and 6.2 GiB) per question with Qwen3-0.6B on the Apple M5 Pro, over the five cold runs of
+  `dockit/docs/benchmarks/e2e.csv` at 840ec8b (column `process_rss_peak_bytes`). On an 8 GB laptop memory pressure
+  is the most likely failure, and a tab discard mid-answer must fail closed (no partial answer shown as complete,
+  see S1-119). Not measured on 8 GB. (Corrected 19 November 2026, Sprint 6 Part A: this line quoted a higher figure from an earlier run that the committed CSV does not contain.)
 
 Unproven on this Mac and proven only after the owner's push: the Windows `--out` containment in pagetriage and
 glyphsift with real links and junctions, the runtime Windows path test and Linux zero-network gate, the dockit
 Pages deploy limits, and the live demos' CSP as served.
+
+## 11. Sprint 6 update: weak trust keys, stream accounting, one engine at a time, HNSW (19 November 2026)
+
+Written by S1 against the working trees before the architect's wrap-up; findings in `FINDINGS.md`, "Sprint 6 review".
+Nothing here is measured on 8 GB.
+
+### 11.1 What changed in the trust boundaries
+
+- Trust-root configuration (A2) gains a structural rule: manifest 0.1.3 refuses, before parsing and with no opt-out,
+  a trust set holding any 32-byte value that is not the canonical encoding of a prime-order point other than the
+  identity (`weak_key_refused`), in the TypeScript verifier and in cp-manifest / cp-sign with the same reason and
+  message. This closes S1-113: a small-order key no longer lets an `S = 0` signature verify with no private key.
+  The rule reads only the key bytes, so it cannot be steered by the keyId, and it lives in the verifier, so no
+  0.1.2 document can downgrade it. S1-121 (found in the Sprint 6 review: the TypeScript gate checked
+  `instanceof Uint8Array`, so a key object from another JavaScript realm skipped it while WebCrypto still verified
+  under it) is fixed in fix round 1: every trust value that is a 32-byte `ArrayBuffer` view or `ArrayBuffer`, from any
+  realm, is copied once into a fresh same-realm `Uint8Array`, and the test-key check, the weak-key check (steps 1b and
+  5), `key_mismatch` and the WebCrypto verify all use that copy. Re-verified 19 November 2026 with
+  `S1/probes/cross-realm-weak-key.mjs` and `S1/probes/normalise-edge.mjs`.
+- The PDF boundary (A6, dockit) moves left: every stream object in the file is counted by pagetriage's
+  `account_pdf_streams` in the analysis worker before pdf.js is started. A font, image, content, form or other stream
+  that decodes past its cap, or a file whose structure lopdf cannot vouch for, is refused without pdf.js running.
+- The engine boundary (A4): dockit now holds one engine worker at a time; each question loads the embedder, unloads
+  it (the worker is terminated, which is the only way WebAssembly memory is returned), then loads the answer model.
+  Every load is a first load: the stored manifest is re-verified, files are acquired cache-only and re-hashed in the
+  worker (R19), and the engine reads exactly the bytes that were hashed (R20).
+- localdata (A6) gains a derived index, the HNSW graph, in the reserved driver namespace `__ld_ann.<ns>`. It holds no
+  vectors and no keys, so it adds no document-derived data at rest beyond the graph's neighbour lists (which still
+  reveal which stored rows are near each other to anyone who can read the profile; the vectors already did).
+
+### 11.2 STRIDE deltas
+
+| Threat                                                          | Where                                                | Control as built                                                                                                                                                                                                                                                                                                                     | Residual                                                                                                                                                                                                            |
+| --------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spoofing of the model bundle via a weak trusted key             | runtime `verifyManifest`, asset manager, cp-manifest | Weak-key refusal at step 1b and again at step 5 for the key in use; `S < L` and `verify_strict` kept; parity 0 differences over 26 + 9 weak-key rows                                                                                                                                                                                 | None open (S1-121, the cross-realm key object, fixed in fix round 1 and re-verified)                                                                                                                                |
+| Denial of service through a hostile PDF                         | dockit analysis worker, pagetriage                   | Stream accounting before pdf.js, fixed scratch buffer, every stream object counted, options can only lower limits, `unaccounted` refused; font bomb peak 3,056 MiB against 8,121 MiB in Sprint 5 (Apple M5 Pro)                                                                                                                      | Inside pdf.js: font-parser CPU cost, inline images, Type 3 procedures, shading and function streams under the 64 MiB cap, xref recovery differences; lopdf's per-object table for files of many tiny objects (Info) |
+| Tampering between hash and engine read on a re-load             | runtime worker host                                  | R19 first-load rule (verified by counters: one manifest verification and one in-worker hash per load), R20 snapshot rule, `integrity` never retried                                                                                                                                                                                  | Root cause of the observed first-load `backend` failure not reproduced (`runtime/docs/engine-load-retry.md`); one retry on `backend` repeats the whole verified load                                                |
+| Information disclosure through out-of-memory errors             | runtime worker host, events                          | `out_of_memory` classified inside the worker into the code enum only; sentinel tests find no worker or engine string in any event                                                                                                                                                                                                    | None found                                                                                                                                                                                                          |
+| Information disclosure / fingerprinting through the memory line | dockit capability card                               | The line is the verified manifest's `minProfile.ramGb`; the card shows only the clamped `ramGb` (at most 8) it showed before; nothing new is stored or sent                                                                                                                                                                          | None beyond `deviceMemory` itself                                                                                                                                                                                   |
+| Elevation through the memory line                               | dockit                                               | None claimed: the memory line is a usability guard, not a security control, because `navigator.deviceMemory` is user-controlled; an unknown value is not below the line (TD-84) and the out-of-memory refusal is the backstop                                                                                                        | By design                                                                                                                                                                                                           |
+| Tampering with the HNSW graph file                              | localdata kernel and SDK                             | Graph handled as untrusted input: exact length and CRC before allocation, namespace bound by its bytes, generation must not be ahead of HEAD and must equal it to be used, every link in range, liveness and keys from HEAD, hits re-scored from the stored vectors, one rebuild per generation then flat, a trap falls back to flat | A forged graph can lower recall; S1-123 (allocation sized by the header's `m` before the params compare, Info)                                                                                                      |
+| Supply chain of new code                                        | pagetriage-core, control-plane, localdata            | No new package in any tree: `flate2`/`weezl` (pagetriage) and `curve25519-dalek` (control-plane) made direct at locked versions with exact features; ldvec `[dependencies]` still empty; wheels job with hashed tools, `--locked`, `contents: read`, no cache, no secret, no publish                                                 | Wheels and sdist carry no signature or attestation (CI artefacts only; signed releases are an owner row)                                                                                                            |
+
+### 11.3 Residual risk after Sprint 6
+
+No Critical, High or Medium finding is open, and the two Sprint 5 Lows are closed. The hostile-PDF memory path is now
+bounded before the renderer for every stream kind, the weak-key forgery is refused on both verifiers, and the
+memory changes add no path by which an unverified file reaches an engine. What remains is availability inside pdf.js
+for files that pass the accounting (the cross-realm corner of the TypeScript key check, S1-121, is fixed), and everything only
+the owner can prove: the Windows and Linux CI legs after the push, the 8 GB laptop (the Chrome process tree still
+peaks at 5,440.8 MiB median per question on the Apple M5 Pro in D5's development after-run of B1, against the
+TD-66 target of 5,120 MiB: missed; the architect's wrap-up re-run of `bench:e2e` on the committed build replaces that
+figure in `dockit/docs/benchmarks/e2e.csv`; not measured on 8 GB), a real signing key and its custody, and a dedicated origin with response headers for
+any pilot.
+
+### 11.4 Sprint 6 close-out (after fix round 2 and the tester results, 19 November 2026)
+
+The tester rounds confirmed the Sprint 6 boundaries on this Mac without a new trust-boundary finding: the weak-key
+rule gives identical verdicts in TypeScript, `cp-manifest` and `cp-sign` (0 differences, 1,000 valid keys accepted);
+the offline dockit run makes 0 network requests before and after a Chrome restart with the embedder and generator
+swapping one at a time; every hostile-PDF case is refused before pdf.js; the HNSW graph survives truncation, flips,
+forged links and 10,000 seeded mutations per kernel with 0 panics and 0 traps and never returns a deleted key; the
+demos keep their CSPs byte for byte. Fix round 2 removed the remaining test hooks from localdata's published surface
+(BUG-T2-S6-12) and stopped queries throwing at the 64-graph cap (BUG-T2-S6-08), and the packaged-artefact gate now
+covers Windows builder paths (BUG-T2-S6-09).
+
+Two Info residuals are added, both in localdata's HNSW path and both outside dockit, which queries flat:
+
+- **Completeness of HNSW answers (S1-124).** On data with tens of exact duplicates per vector a fresh graph can
+  return k hits that are not the true top-k, with no fallback signal. This is allowed by the contract (a graph can
+  only lower recall, scores are exact), so no wrong score or deleted key is ever returned; but an application must
+  not use an HNSW answer to decide that something is absent. Use flat for that. The README wording is corrected
+  before any localdata tag.
+- **Handle exhaustion on build (S1-125).** `buildIndex` can refuse `max_graphs` in a long-lived store that has loaded
+  64 graphs for queries. Availability only.
+
+The evidence copy remains the one place where Sprint 6 material could leave the scratch carelessly: a case-sensitive
+volume is mounted under the tester scratch, so the copy must not cross a mount point (S1-122). Everything else that
+remains is the owner's to prove, as in 11.3: the Windows and Linux CI legs after the push, the 8 GB laptop (not
+measured on 8 GB; the Apple M5 Pro after-run misses the TD-66 target), a real signing key and its custody, and a
+dedicated origin with response headers for any pilot.
