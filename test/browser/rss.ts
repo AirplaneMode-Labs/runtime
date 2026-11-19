@@ -39,6 +39,24 @@ export function parsePs(text: string, profileDir: string): { bytes: number; proc
   return { bytes: kb * 1024, processes: members.size };
 }
 
+async function readPs(): Promise<string> {
+  const { stdout } = await run('ps', ['-A', '-o', 'pid=,ppid=,rss=,command='], {
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return stdout;
+}
+
+/**
+ * One reading of the tree right now (not a peak): the figure before and after an unload (Sprint 6 B1). macOS and
+ * Linux only (it reads `ps`); `readPsText` lets a test hand it a process table, so the unit test runs on every OS.
+ */
+export async function sampleOnce(
+  profileDir: string,
+  readPsText: () => Promise<string> = readPs,
+): Promise<{ bytes: number; processes: number }> {
+  return parsePs(await readPsText(), profileDir);
+}
+
 export function startRssSampler(
   profileDir: string,
   intervalMs = 250,

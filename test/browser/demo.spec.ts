@@ -105,6 +105,23 @@ for (const choice of ['auto', 'webgpu', 'wasm'] as const) {
         'a page heap figure',
       ).toBe(true);
 
+      // Sprint 6: the Unload button after the model answered (R16): the model.unload event, the worker count before
+      // and after, and no operating-system memory figure; the load button comes back, Run does not
+      await expect(page.locator('#btn-unload')).toBeEnabled();
+      await page.locator('#btn-unload').click();
+      const unloadLine = page.locator('#unload-line');
+      await expect(unloadLine).toBeVisible();
+      await expect(unloadLine).toContainText('model.unload');
+      await expect(unloadLine).toContainText('reason unload');
+      await expect(unloadLine).toContainText('engine workers: 1 before, 0 after');
+      await expect(unloadLine).toContainText('no operating-system memory figure');
+      const unloadText = (await unloadLine.textContent()) ?? '';
+      expect(unloadText).not.toMatch(/\b\d[\d,.]*\s?(KiB|MiB|GiB|KB|MB|GB)\b/);
+      expect(unloadText).not.toMatch(/free RAM/i);
+      await expect(page.locator('#btn-unload')).toBeDisabled();
+      await expect(page.locator('#btn-run')).toBeDisabled();
+      await expect(page.locator('#btn-download')).toBeEnabled();
+
       // errors and egress
       expect(errors, 'console and page errors').toEqual([]);
       const origin = new URL(BASE).origin;
@@ -124,6 +141,7 @@ for (const choice of ['auto', 'webgpu', 'wasm'] as const) {
         loadId,
         phases,
         heap: heap.slice(0, 3),
+        unloadLine: unloadText.trim(),
         requests: requests.length,
         modelRequestsAfterClick: modelRequests.length,
       };
@@ -148,7 +166,7 @@ test('the Embed card embeds two sentences through the worker host with multiling
     context.on('request', (r) => requests.push(r.url()));
     await page.goto(`${BASE}models.html`);
     // the page: the Sprint 5 line (same text as the root page) and the Embed card, nothing fetched yet
-    await expect(page.locator('#sprint-status')).toContainText('Sprint 5 (18 Nov 2026)');
+    await expect(page.locator('#sprint-status')).toContainText('Sprint 6 (19 Nov 2026)');
     await expect(page.locator('#sprint-status')).toContainText('not measured on 8 GB');
     expect(
       requests.filter((u) => new URL(u).pathname.startsWith('/runtime/models/')),

@@ -39,14 +39,14 @@ function walk(dir: string): string[] {
 }
 
 describe('spec 0.5.0: release, versions, status, wire strings, schema ids', () => {
-  it('SPEC_RELEASE and SPEC_VERSIONS carry the 0.5.0 values', () => {
-    expect(spec.SPEC_RELEASE).toBe('0.5.0');
+  it('SPEC_RELEASE and SPEC_VERSIONS carry the current (0.6.0) values; test/spec-0.6.test.ts pins them as release 0.6.0', () => {
+    expect(spec.SPEC_RELEASE).toBe('0.6.0');
     expect(spec.SPEC_VERSIONS).toEqual({
-      manifest: '0.1.2',
-      capabilityProfile: '0.1.0',
-      event: '0.1.4',
-      storageApi: '0.3.0',
-      backendAdapter: '0.4.0',
+      manifest: '0.1.3',
+      capabilityProfile: '0.1.1',
+      event: '0.1.5',
+      storageApi: '0.4.0',
+      backendAdapter: '0.5.0',
       modelDescriptor: '0.2.1',
     });
   });
@@ -68,10 +68,10 @@ describe('spec 0.5.0: release, versions, status, wire strings, schema ids', () =
     });
   });
 
-  it('a patch moves only the $id: manifest 0.1.2 and event 0.1.4; the others keep theirs', () => {
-    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.2');
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.4');
-    expect(SCHEMAS.capabilityProfile.$id).toBe('urn:airplanemode:spec:capability-profile:0.1.0');
+  it('a patch moves only the $id: manifest 0.1.3, event 0.1.5 and capability profile 0.1.1 (release 0.6.0); the descriptor keeps its own', () => {
+    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.3');
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.5');
+    expect(SCHEMAS.capabilityProfile.$id).toBe('urn:airplanemode:spec:capability-profile:0.1.1');
     expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.1');
     for (const f of ['manifest.schema.json', 'event.schema.json'])
       expect(readJson<{ $schema: string }>(resolve(specDir, f)).$schema).toBe(
@@ -105,6 +105,8 @@ describe('spec 0.5.0: files that must not change are byte-identical to release 0
     const bad = golden
       // the two schemas are checked below with their $id swapped back
       .filter(([p]) => p !== 'manifest.schema.json' && p !== 'event.schema.json')
+      // capability profile 0.1.1 (release 0.6.0) changed these two files; test/spec-0.6.test.ts pins the change
+      .filter(([p]) => p !== 'capability-profile.schema.json' && p !== 'capability-profile.ts')
       .filter(
         ([p, h]) =>
           !existsSync(resolve(specDir, p)) || sha(readFileSync(resolve(specDir, p))) !== h,
@@ -116,11 +118,11 @@ describe('spec 0.5.0: files that must not change are byte-identical to release 0
   it('manifest.schema.json and event.schema.json differ from their 0.4.0 text only in $id', () => {
     const want = new Map(golden);
     const m = text(resolve(specDir, 'manifest.schema.json')).replace(
-      'urn:airplanemode:spec:manifest:0.1.2',
+      'urn:airplanemode:spec:manifest:0.1.3',
       'urn:airplanemode:spec:manifest:0.1.1',
     );
     const e = text(resolve(specDir, 'event.schema.json')).replace(
-      'urn:airplanemode:spec:event:0.1.4',
+      'urn:airplanemode:spec:event:0.1.5',
       'urn:airplanemode:spec:event:0.1.3',
     );
     expect(sha(m)).toBe(want.get('manifest.schema.json'));
@@ -187,8 +189,8 @@ describe('spec 0.5.0: manifest 0.1.2', () => {
       expect(md, s).toContain(s);
   });
 
-  it('manifest.ts documents 0.1.2 and the wire is unchanged', () => {
-    expect(ts).toContain('Manifest contract 0.1.2');
+  it('manifest.ts documents 0.1.2 (still named in the header) and the wire is unchanged', () => {
+    expect(ts).toContain('0.1.2 (spec release 0.5.0) is an additive patch of 0.1.1');
     expect(ts).toContain("MANIFEST_SPEC = 'airplanemode.manifest/0.1'");
   });
 });
@@ -210,9 +212,9 @@ describe('spec 0.5.0: event 0.1.4', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('STORAGE_EVENT_NAMES grows from 7 to 10 with storage.doc.put, .delete and .query', () => {
-    expect(eventSpec.STORAGE_EVENT_NAMES).toHaveLength(10);
-    expect(eventSpec.STORAGE_EVENT_NAMES.slice(7)).toEqual([
+  it('STORAGE_EVENT_NAMES grew from 7 to 10 with storage.doc.put, .delete and .query (11 since 0.1.5)', () => {
+    expect(eventSpec.STORAGE_EVENT_NAMES).toHaveLength(11);
+    expect(eventSpec.STORAGE_EVENT_NAMES.slice(7, 10)).toEqual([
       'storage.doc.put',
       'storage.doc.delete',
       'storage.doc.query',
@@ -255,6 +257,9 @@ describe('spec 0.5.0: event 0.1.4', () => {
       'not_analysed',
       'held_low_score',
       'framed',
+      // Event 0.1.5 appended two reasons (test/spec-0.6.test.ts)
+      'stream_limit',
+      'out_of_memory',
     ]);
   });
 
@@ -267,7 +272,7 @@ describe('spec 0.5.0: event 0.1.4', () => {
   it('event.ts documents each new name with its attrs, the budget attr and the unexpected_id reason', () => {
     const f = flatTs(text(resolve(specDir, 'event.ts')));
     for (const s of [
-      'Event contract 0.1.4',
+      '0.1.4 (wire-compatible, spec release 0.5.0)',
       "attrs: adapter, model, device, host 'worker' | 'main', loadId, inputs",
       "measure 'wasm-memory' | 'unavailable'",
       'peak WebAssembly.Memory buffer.byteLength sampled every 50 ms inside the worker',
@@ -341,7 +346,7 @@ describe('spec 0.5.0: backend adapter 0.4.0', () => {
   it('backend-adapter.ts documents EmbedOptions, EmbedResult.truncated and GenerateResult.budget', () => {
     const f = flatTs(text(resolve(specDir, 'backend-adapter.ts')));
     for (const s of [
-      'Backend adapter contract 0.4.0',
+      '0.4.0 (minor, spec release 0.5.0)',
       'export interface EmbedOptions',
       "pooling?: 'mean' | 'cls'",
       'normalize?: boolean',
@@ -581,10 +586,12 @@ describe('spec 0.5.0: new vectors', () => {
 describe('spec 0.5.0: README, CHANGELOG and the index', () => {
   it('README lists the 0.5.0 release and versions; CHANGELOG has the [0.5.0] section', () => {
     const readme = flat(text(resolve(specDir, 'README.md')));
-    expect(readme).toContain('Spec release **0.5.0**');
-    expect(readme).toContain('manifest 0.1.2: published; other contracts: draft');
-    expect(readme).toContain('urn:airplanemode:spec:manifest:0.1.2');
-    expect(readme).toContain('urn:airplanemode:spec:event:0.1.4');
+    // the README now describes release 0.6.0 (test/spec-0.6.test.ts); the 0.5.0 history stays in its text
+    expect(readme).toContain('Spec release **0.6.0**');
+    expect(readme).toContain('manifest 0.1.3: published; other contracts: draft');
+    expect(readme).toContain('urn:airplanemode:spec:manifest:0.1.3');
+    expect(readme).toContain('urn:airplanemode:spec:event:0.1.5');
+    expect(readme).toContain('Release 0.5.0 bumps the minor again');
     const log = flat(text(resolve(specDir, 'CHANGELOG.md')));
     expect(log).toContain('## [0.5.0] - 2026-11-18 (untagged)');
     for (const s of [
@@ -605,8 +612,8 @@ describe('spec 0.5.0: README, CHANGELOG and the index', () => {
 
   it('index.ts header names release 0.5.0 and every contract version', () => {
     const f = flatTs(text(resolve(specDir, 'index.ts')));
-    expect(f).toContain('spec release 0.5.0');
-    for (const v of ['manifest 0.1.2', 'event 0.1.4', 'storage API 0.3.0', 'backend adapter 0.4.0'])
+    expect(f).toContain('spec release 0.6.0');
+    for (const v of ['manifest 0.1.3', 'event 0.1.5', 'storage API 0.4.0', 'backend adapter 0.5.0'])
       expect(f, v).toContain(v);
   });
 

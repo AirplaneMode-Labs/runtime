@@ -361,6 +361,46 @@ describe('fix round 1: honest wording', () => {
   });
 });
 
+// ---- Sprint 6 Part A (T3-R2-06, TD-51): the README Status carries the done-when sentence ------------
+describe('T3-R2-06: the README Status states the 8 GB done-when', () => {
+  const DONE_WHEN =
+    'build done on Apple M5 Pro 48 GB; 8 GB Windows done-when NOT met (owner runbook step 5)';
+  // Status = the lines between a line "## Status" and the next line that starts with "## " (a "### "
+  // sub-heading does not end it). CRLF is normalised so a Windows checkout reads the same text.
+  const lf = (s: string) => s.replace(/\r\n?/g, '\n');
+  const statusSection = (readme: string): string => {
+    const text = lf(readme);
+    const start = text.search(/^## Status[ \t]*$/m);
+    if (start === -1) return '';
+    const rest = text.slice(start + '## Status'.length);
+    const next = rest.search(/^## /m);
+    return next === -1 ? rest : rest.slice(0, next);
+  };
+  const hasSentence = (readme: string) =>
+    statusSection(readme).replace(/\s+/g, ' ').includes(DONE_WHEN);
+
+  it('README.md: the Status section carries the TD-51 sentence verbatim', () => {
+    expect(statusSection(read('README.md')).length).toBeGreaterThan(200);
+    expect(hasSentence(read('README.md'))).toBe(true);
+  });
+
+  it('the check fails on a README copy with the sentence removed, or moved out of Status', () => {
+    const readme = read('README.md');
+    expect(hasSentence(readme.split(DONE_WHEN).join(''))).toBe(false);
+    // present, but only after the next "## " heading: not in Status
+    const moved = lf(readme)
+      .replace(DONE_WHEN, '')
+      .replace('\n## Install', `\n## Install\n\n${DONE_WHEN}`);
+    expect(hasSentence(moved)).toBe(false);
+  });
+
+  it('is read through fs with CRLF normalised: a CRLF copy of the README gives the same verdict', () => {
+    const crlf = lf(read('README.md')).replace(/\n/g, '\r\n');
+    expect(hasSentence(crlf)).toBe(true);
+    expect(hasSentence(crlf.split(DONE_WHEN).join(''))).toBe(false);
+  });
+});
+
 describe('D1-03: docs describe the descriptor sessionOptions', () => {
   const flat = (x: string) => x.replace(/\s+/g, ' ');
   it('docs/examples/README.md and docs/model-choice.md say the 1.7B q4f16 descriptor carries graphOptimizationLevel disabled and that createDefaultAdapters needs no sessionOptions', () => {

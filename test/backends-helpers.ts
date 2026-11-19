@@ -232,6 +232,8 @@ export interface MockEngineOptions {
   pipelineError?: Error;
   /** Throw this from the generator call. */
   generateError?: Error;
+  /** Throw this from a feature-extraction call. */
+  embedError?: Error;
   /** Called inside pipeline() with the env, to simulate a rogue engine. */
   inPipeline?: (env: MockEnv, model: string) => Promise<void> | void;
   /** Number of generated tokens the fake streamer reports. */
@@ -337,6 +339,7 @@ export function mockEngine(o: MockEngineOptions = {}) {
       if (task === 'feature-extraction') {
         const texts = input as string[];
         generateCalls.push({ input, options: genOptions });
+        if (o.embedError) throw o.embedError;
         if (o.embedDelayMs) await new Promise((r) => setTimeout(r, o.embedDelayMs));
         const dims = o.embedDims ?? 3;
         // a unit vector per text, different per text index and identical for identical input

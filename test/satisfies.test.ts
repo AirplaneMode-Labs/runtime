@@ -44,7 +44,8 @@ describe('satisfies', () => {
   it('ramGb, storageFreeGb and cores are >= comparisons', () => {
     expect(satisfies(profile({ ramGb: 8 }), { ramGb: 8 })).toBe(true);
     expect(satisfies(profile({ ramGb: 8 }), { ramGb: 9 })).toBe(false);
-    expect(satisfies(profile({ ramGb: 0 }), { ramGb: 1 })).toBe(false);
+    expect(satisfies(profile({ ramGb: 0 }), { ramGb: 1 })).toBe(true); // 0 is unknown, not below (TD-84)
+    expect(satisfies(profile({ ramGb: 0.5 }), { ramGb: 1 })).toBe(false);
     expect(satisfies(profile({ storageFreeGb: 1.5 }), { storageFreeGb: 1 })).toBe(true);
     expect(satisfies(profile({ storageFreeGb: 0.99 }), { storageFreeGb: 1 })).toBe(false);
     expect(satisfies(profile({ cores: 4 }), { cores: 4 })).toBe(true);
@@ -101,5 +102,19 @@ describe('satisfies', () => {
     const before = JSON.stringify([p, m]);
     satisfies(p, m);
     expect(JSON.stringify([p, m])).toBe(before);
+  });
+});
+
+// BUG-T1-S6-02 / BUG-T3-S6-05 (TD-84, capability profile 0.1.1): ramGb 0 means unknown and is never below a minimum.
+// Red run: evidence/sprint-6/D1/red/D1-ramgb0.log.
+describe('satisfies: ramGb 0 is unknown, not below', () => {
+  it('0 vs 4 is true; 2 vs 4 false; 4 vs 4 true; 0 vs 0 true', () => {
+    expect(satisfies(profile({ ramGb: 0 }), { ramGb: 4 })).toBe(true);
+    expect(satisfies(profile({ ramGb: 2 }), { ramGb: 4 })).toBe(false);
+    expect(satisfies(profile({ ramGb: 4 }), { ramGb: 4 })).toBe(true);
+    expect(satisfies(profile({ ramGb: 0 }), { ramGb: 0 })).toBe(true);
+  });
+  it('the other clauses still apply to a ramGb 0 profile', () => {
+    expect(satisfies(profile({ ramGb: 0, cores: 1 }), { ramGb: 4, cores: 4 })).toBe(false);
   });
 });

@@ -23,8 +23,8 @@ const NOT_PUBLISHED =
   "Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.";
 
 describe('package.json', () => {
-  it('is version 0.3.0-beta.0, public, ESM, node 22', () => {
-    expect(pkg.version).toBe('0.3.0-beta.0');
+  it('is version 0.3.0-beta.1, public, ESM, node 22', () => {
+    expect(pkg.version).toBe('0.3.0-beta.1');
     expect(pkg['name']).toBe('@airplanemode/runtime');
     expect(pkg['private']).toBe(false);
     expect(pkg['type']).toBe('module');
@@ -130,9 +130,9 @@ describe('scripts/pack-check.mjs and its allow-list', () => {
 describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
   const readme = read('README.md');
 
-  it('README Status opens with the Sprint 5 line and says beta, not tag-ready (TD-30), with the promise limited to 0.3.x', () => {
+  it('README Status opens with the Sprint 6 line and says beta, not tag-ready (TD-30), with the promise limited to 0.3.x', () => {
     const status = flat(readme.slice(readme.indexOf('## Status'), readme.indexOf('## Install')));
-    expect(status.startsWith('## Status Sprint 5 (18 Nov 2026): Working:')).toBe(true);
+    expect(status.startsWith('## Status Sprint 6 (19 Nov 2026): Working:')).toBe(true);
     expect(status).toContain('Not yet:');
     expect(status).toContain('beta, not tagged');
     expect(status).toContain('not tag-ready (TD-30)');
@@ -145,9 +145,9 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     const section = flat(readme.slice(at, readme.indexOf('\n## ', at)));
     for (const s of [
       'no breaking change within 0.3.x',
-      'storage API 0.3.0',
-      'backend adapter 0.4.0',
-      'event 0.1.4',
+      'storage API 0.4.0',
+      'backend adapter 0.5.0',
+      'event 0.1.5',
       'capability profile',
       'manifest verify with expectId',
       'worker host with generate (Stop, budget) and embed',
@@ -244,10 +244,48 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     expect(cells).toBeGreaterThan(15);
   });
 
-  it('CHANGELOG has an Unreleased section for Sprint 5 with Added, Changed, Fixed and Security, naming the fixes and the spec release', () => {
+  it('CHANGELOG has the 0.3.0-beta.1 section (untagged) for Sprint 6 with Added, Changed, Fixed, Security and Known gaps, naming the ids and the spec release', () => {
     const log = read('CHANGELOG.md');
-    const start = log.indexOf('## [Unreleased]');
-    expect(start, '## [Unreleased]').toBeGreaterThan(0);
+    expect(log).toContain('## [0.3.0-beta.1] - 2026-11-19 (untagged)');
+    const start = log.indexOf('## [0.3.0-beta.1]');
+    const section = log.slice(start, log.indexOf('\n## [', start + 5));
+    for (const h of ['### Added', '### Changed', '### Fixed', '### Security', '### Known gaps'])
+      expect(section, h).toContain(h);
+    for (const id of [
+      'spec release 0.6.0',
+      'S1-113',
+      'weak_key_refused',
+      'TD-54',
+      'TD-57',
+      'TD-68',
+      'TD-69',
+      'TD-81',
+      'S1-116',
+      'S1-119',
+      'S1-036',
+      'T3-R2-05',
+      'T3-R2-06',
+      'R16',
+      'R17',
+      'R18',
+      'R19',
+      'R20',
+      'model.unload',
+      'out_of_memory',
+      'engine-load-retry.md',
+      'skipped 1',
+      'not measured on 8 GB',
+    ])
+      expect(section, id).toContain(id);
+    expect(section).toContain('no tag, no publish');
+    expect(log.indexOf('## [0.3.0-beta.1]')).toBeLessThan(log.indexOf('## [0.3.0-beta.0]'));
+  });
+
+  it('CHANGELOG keeps the Sprint 5 section as 0.3.0-beta.0 (untagged) with Added, Changed, Fixed and Security, naming the fixes and the spec release', () => {
+    const log = read('CHANGELOG.md');
+    expect(log).toContain('## [0.3.0-beta.0] - 2026-11-18 (untagged)');
+    const start = log.indexOf('## [0.3.0-beta.0]');
+    expect(start, '## [0.3.0-beta.0]').toBeGreaterThan(0);
     const section = log.slice(start, log.indexOf('\n## [', start + 5));
     for (const h of ['### Added', '### Changed', '### Fixed', '### Security'])
       expect(section, h).toContain(h);
@@ -271,7 +309,7 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     ])
       expect(section, id).toContain(id);
     expect(section).toContain('no tag, no publish');
-    expect(log.indexOf('## [Unreleased]')).toBeLessThan(log.indexOf('## [0.2.0-alpha.1]'));
+    expect(log.indexOf('## [0.3.0-beta.0]')).toBeLessThan(log.indexOf('## [0.2.0-alpha.1]'));
   });
 
   it('CHANGELOG has the 0.2.0-alpha.0 heading with ids on every Added, Changed, Fixed and Security line', () => {
@@ -334,7 +372,7 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     }
   });
 
-  it('pack-check proves the beta: the worker-support entry, no test hook in the build, spec release 0.5.0 and expectId from the tarball', () => {
+  it('pack-check proves the beta: the worker-support entry, no test hook in the build, spec release 0.6.0, expectId and the weak-key refusal from the tarball', () => {
     const src = read('scripts/pack-check.mjs');
     for (const needle of [
       'dist/worker-support.js',
@@ -342,9 +380,10 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
       'test-probe',
       'expectId',
       'unexpected_id',
+      "'0.6.0'",
+      "'0.1.3'",
       "'0.5.0'",
-      "'0.1.2'",
-      "'0.4.0'",
+      'weak_key_refused',
       'beta, not tagged',
     ])
       expect(src, needle).toContain(needle);

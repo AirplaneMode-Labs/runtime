@@ -374,3 +374,14 @@ describe('parseDescriptor 0.2.0 (D1-01)', () => {
     expect(reason({ ...tjs, sessionOptions: {} })).toBe('accepted');
   });
 });
+
+describe('descriptor precheck and ramGb 0 (TD-84)', () => {
+  it('a device that does not report its memory (ramGb 0) is not refused unsupported_profile for a ramGb minimum', async () => {
+    const w = await makeWorld({ descriptorEntry: { minProfile: { ramGb: 4 } } });
+    const loaded = await loadDescriptor(
+      w.descriptorEntry,
+      ctxOf(w, { profile: { ...profileOf('wasm-simd'), ramGb: 0 } }),
+    );
+    expect(loaded.descriptor.id).toBe('m');
+  });
+});

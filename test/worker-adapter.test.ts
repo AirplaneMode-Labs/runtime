@@ -223,8 +223,11 @@ describe('load: R1 and R2 on the main thread, the engine in a worker', () => {
     });
     await r.load();
     const mock = (r.workers[0] as LoopbackWorker).mock;
+    // the descriptor's level, plus the engine memory options the worker host adds on wasm (R17, Sprint 6)
     expect(mock.pipelineCalls[0]!.options['session_options']).toEqual({
       graphOptimizationLevel: 'disabled',
+      enableCpuMemArena: false,
+      enableMemPattern: false,
     });
     expect(Object.getPrototypeOf(mock.pipelineCalls[0]!.options['session_options'])).toBe(
       Object.prototype,

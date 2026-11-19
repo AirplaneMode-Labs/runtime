@@ -226,6 +226,34 @@ describe('detectCapabilities', () => {
   });
 });
 
+describe('ramGb is clamped to at most 8 (capability profile 0.1.1, TD-57)', () => {
+  it('deviceMemory 16 gives 8, 8 gives 8, 0.5 gives 0.5, undefined gives 0', async () => {
+    expect((await detectCapabilities(laptopEnv({ deviceMemory: 16 }))).ramGb).toBe(8);
+    expect((await detectCapabilities(laptopEnv({ deviceMemory: 8 }))).ramGb).toBe(8);
+    expect((await detectCapabilities(laptopEnv({ deviceMemory: 0.5 }))).ramGb).toBe(0.5);
+    expect((await detectCapabilities(laptopEnv({ deviceMemory: undefined }))).ramGb).toBe(0);
+  });
+
+  it('a value the browser should never report is still a valid profile: 64 and Infinity give 8, NaN and a negative give 0', async () => {
+    for (const [dm, want] of [
+      [64, 8],
+      [Number.POSITIVE_INFINITY, 8],
+      [Number.NaN, 0],
+      [-1, 0],
+    ] as const) {
+      const p = await detectCapabilities(laptopEnv({ deviceMemory: dm }));
+      expect(p.ramGb, String(dm)).toBe(want);
+      expect(validateSchema(SCHEMAS.capabilityProfile, p).ok, String(dm)).toBe(true);
+    }
+  });
+
+  it('the schema carries maximum 8 for ramGb: a profile above 8 does not validate', async () => {
+    const p = await detectCapabilities(laptopEnv({ deviceMemory: 8 }));
+    expect(validateSchema(SCHEMAS.capabilityProfile, { ...p, ramGb: 8 }).ok).toBe(true);
+    expect(validateSchema(SCHEMAS.capabilityProfile, { ...p, ramGb: 9 }).ok).toBe(false);
+  });
+});
+
 describe('envFromGlobals never reads userAgent or userAgentData', () => {
   function trappedNavigator(extra: Record<string, unknown> = {}) {
     const target: Record<string, unknown> = {

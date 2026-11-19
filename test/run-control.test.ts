@@ -229,3 +229,100 @@ describe('createRunControl (the Stop button logic)', () => {
     expect(log).toEqual(['run:disabled', 'stop:enabled', 'stop:disabled', 'run:enabled']);
   });
 });
+
+// ---- Sprint 6, D1-05 (S1-119): a Stop after the first token is a model.generate event ---------------------
+// Written before the host emitted it; the red run is evidence/sprint-6/D1/red/D1-05.log. At 4f5b011 the
+// grace-timeout path (the worker did not answer the abort within 250 ms, so it is terminated and the partial
+// answer is returned) resolved finishReason 'abort' and emitted no model.generate at all.
+
+import { eventsNamed } from './backends-helpers';
+import { SilentWorker as Silent } from './worker-rig';
+
+/** A worker that streams `tokens` tokens, one per 5 ms, and then ignores everything (a slow engine). */
+function deafWorker(tokens: number) {
+  return (u: string, n: string): Silent => {
+    const w = new Silent(u, n);
+    w.script = (m, self) => {
+      if (m.type === 'init') {
+        self.deliver({ v: 1, type: 'phase', phase: 'handoff', durationMs: 1, bytes: 10 });
+        self.deliver({ v: 1, type: 'phase', phase: 'session', durationMs: 2 });
+        self.deliver({ v: 1, type: 'ready' });
+      } else if (m.type === 'generate') {
+        const id = m['id'] as number;
+        for (let i = 0; i < tokens; i++)
+          setTimeout(() => self.deliver({ v: 1, type: 'token', id, text: `t${i} ` }), 5 * (i + 1));
+        // no done and no answer to 'abort': the host's 250 ms backstop (here 40 ms) must act
+      }
+    };
+    return w;
+  };
+}
+
+describe('S1-119: Stop after the first token emits model.generate with finishReason abort', () => {
+  it('the grace path returns the partial answer, emits exactly one model.generate (abort, outTokens, numeric firstTokenMs) and then model.unload reason abort', async () => {
+    const r = await workerRig({ spawn: deafWorker(3), abortGraceMs: 40 });
+    await r.load();
+    const ctl = new AbortController();
+    const seen: string[] = [];
+    const p = r.adapter.generate('say something', {
+      maxTokens: 64,
+      signal: ctl.signal,
+      onToken: (t) => seen.push(t),
+    });
+    await new Promise((res) => setTimeout(res, 60)); // all three tokens are delivered
+    expect(seen).toHaveLength(3);
+    ctl.abort();
+    const res = await p;
+    expect(res.finishReason).toBe('abort');
+    expect(res.text).toBe('t0 t1 t2 ');
+    const gen = eventsNamed(r.events, 'model.generate');
+    expect(gen).toHaveLength(1);
+    expect(gen[0]!.attrs['finishReason']).toBe('abort');
+    expect(gen[0]!.attrs['outTokens']).toBe(3);
+    expect(gen[0]!.attrs['host']).toBe('worker');
+    expect(typeof gen[0]!.attrs['firstTokenMs']).toBe('number');
+    expect(gen[0]!.attrs['firstTokenMs'] as number).toBeGreaterThanOrEqual(0);
+    expect(typeof gen[0]!.durationMs).toBe('number');
+    // no text in the event
+    expect(JSON.stringify(gen[0])).not.toContain('t0 t1');
+    // the worker was terminated (R8) and model.unload follows model.generate
+    expect((r.workers[0] as Silent).terminated).toBe(true);
+    const names = r.events.snapshot().map((e) => e.name);
+    expect(names.indexOf('model.generate')).toBeLessThan(names.indexOf('model.unload'));
+    expect(eventsNamed(r.events, 'model.unload').map((e) => e.attrs['reason'])).toEqual(['abort']);
+  });
+
+  it('a Stop before the first token still rejects aborted and emits no model.generate', async () => {
+    const r = await workerRig({ spawn: deafWorker(0), abortGraceMs: 40 });
+    await r.load();
+    const ctl = new AbortController();
+    const p = r.adapter.generate('say something', { maxTokens: 64, signal: ctl.signal });
+    const assertion = expect(p).rejects.toMatchObject({ code: 'aborted' });
+    ctl.abort();
+    await assertion;
+    expect(eventsNamed(r.events, 'model.generate')).toHaveLength(0);
+  });
+
+  it('when the worker answers the abort in time (done with abort) there is still exactly one model.generate, and it is the worker result', async () => {
+    const r = await workerRig({ spawn: (u, n) => streamingWorker(u, n) });
+    await r.load();
+    const ctl = new AbortController();
+    const p = r.adapter.generate('say something long', { maxTokens: 512, signal: ctl.signal });
+    await new Promise((res) => setTimeout(res, 80));
+    ctl.abort();
+    const res = await p;
+    expect(res.finishReason).toBe('abort');
+    const gen = eventsNamed(r.events, 'model.generate');
+    expect(gen).toHaveLength(1);
+    expect(gen[0]!.attrs['finishReason']).toBe('abort');
+  });
+
+  it('a normal completion is unchanged: one model.generate with finishReason stop or length', async () => {
+    const r = await workerRig();
+    await r.load();
+    await r.adapter.generate('hi', { maxTokens: 8, temperature: 0 });
+    const gen = eventsNamed(r.events, 'model.generate');
+    expect(gen).toHaveLength(1);
+    expect(['stop', 'length']).toContain(gen[0]!.attrs['finishReason']);
+  });
+});

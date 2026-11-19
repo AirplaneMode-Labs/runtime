@@ -114,8 +114,8 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
     await expect(page.locator('#build-id')).toHaveText(
       /^(Built from main at [0-9a-f]{12}|Local build [0-9a-f]{12}(-dirty)?|Local build local \(no \.git checkout\))$/,
     );
-    await expect(page.locator('#status-line')).toContainText('Sprint 5 (18 Nov 2026)');
-    await expect(page.locator('#status-line')).toContainText('runtime beta 0.3.0-beta.0');
+    await expect(page.locator('#status-line')).toContainText('Sprint 6 (19 Nov 2026)');
+    await expect(page.locator('#status-line')).toContainText('runtime beta 0.3.0-beta.1');
     await expect(page.locator('#status-line')).toContainText('not measured on 8 GB');
     await expect(page.locator('#not-yet')).toContainText(
       'WebLLM (cut; revisit after the 8 GB measurement)',
@@ -140,6 +140,7 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
       ...ASSET_CASES.map(([id]) => id),
       'valid',
       'other-product',
+      'weak-key',
     ]);
 
     const cell = (id: string, name: string) =>
@@ -226,6 +227,22 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
     results['otherProduct'] = {
       reason: await cell('other-product', 'reason').textContent(),
       match: await cell('other-product', 'match').textContent(),
+    };
+
+    // manifest 0.1.3 (Sprint 6): the 15th case. A trust set that holds a weak Ed25519 key (the identity) is refused
+    // before the manifest is parsed, with the exact reason, at the trust-set stage, and nothing is requested.
+    await run('weak-key');
+    await expect(cell('weak-key', 'verdict')).toHaveText('Refused');
+    await expect(cell('weak-key', 'reason')).toHaveText('weak_key_refused');
+    await expect(cell('weak-key', 'stage')).toHaveText('trust set, before parse');
+    await expect(cell('weak-key', 'match')).toContainText('matches the vector table');
+    await expect(cell('weak-key', 'after')).toHaveText('Requests after refusal: 0');
+    await expect(cell('weak-key', 'assetRequests')).toHaveText('Asset requests: 0');
+    results['weakKey'] = {
+      reason: await cell('weak-key', 'reason').textContent(),
+      stage: await cell('weak-key', 'stage').textContent(),
+      match: await cell('weak-key', 'match').textContent(),
+      after: await cell('weak-key', 'after').textContent(),
     };
 
     // isolation: the persistent runtime stores hold nothing of the lab

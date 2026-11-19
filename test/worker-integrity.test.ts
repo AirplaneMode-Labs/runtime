@@ -251,3 +251,93 @@ describe('R15: the main thread no longer re-hashes on the load path', () => {
 });
 
 void makeWorld;
+
+// ---- Sprint 6, D1-07 (backend adapter R20): a file changed between the hash and the engine read ---------------
+// Written before the worker re-checked the snapshots after an engine failure; the red run is
+// evidence/sprint-6/D1/red/D1-07.log. The platform fact behind it (an OPFS File snapshot that was changed after it
+// was taken is unreadable, NotReadableError, never a read of other bytes) is proved in Chrome by
+// test/browser/opfs-snapshot.spec.ts. The engine's own read of a file is a Response over the very snapshot, and
+// a failure in the middle of it reaches the worker only as an opaque engine error; so when the engine fails, the
+// worker looks at the snapshots again, and one that can no longer be read is 'integrity', never 'backend'.
+
+import { AdapterError } from '../spec/backend-adapter';
+import { LoopbackWorker } from './worker-rig';
+
+describe('R20: a snapshot that changed after the hash is integrity, never success and never backend', () => {
+  /** Blobs that hash fine and pass the shim's one-byte probe, and become unreadable once `state.changed`. */
+  function changingWorker(
+    state: { changed: boolean },
+    engine: ConstructorParameters<typeof LoopbackWorker>[2],
+  ) {
+    class ChangingWorker extends LoopbackWorker {
+      override postMessage(msg: unknown): void {
+        const m = msg as { type?: string; files?: { blob: Blob }[] };
+        if (m.type === 'init' && m.files)
+          for (const f of m.files) {
+            const real = f.blob;
+            f.blob = Object.assign(Object.create(real) as Blob, {
+              slice: (a?: number, b?: number) => ({
+                arrayBuffer: () =>
+                  state.changed
+                    ? Promise.reject(
+                        new DOMException('changed after the snapshot', 'NotReadableError'),
+                      )
+                    : real.slice(a, b).arrayBuffer(),
+              }),
+            });
+          }
+        super.postMessage(msg);
+      }
+    }
+    return (url: string, name: string) => new ChangingWorker(url, name, engine);
+  }
+  const eventsOf = (r: Awaited<ReturnType<typeof workerRig>>, name: string) =>
+    eventsNamed(r.events, name);
+
+  it('the file changes after the hash and the probe, the engine then fails: the load rejects integrity, is not retried and is not a success', async () => {
+    const state = { changed: false };
+    const r = await workerRig({
+      spawn: changingWorker(state, {
+        inPipeline: () => {
+          state.changed = true; // the file is written while the engine is reading it
+          throw new Error('Failed to fetch (the engine says nothing useful)');
+        },
+      }),
+    });
+    const e: unknown = await r.load().catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(AdapterError);
+    expect((e as AdapterError).code).toBe('integrity');
+    // one worker, one pipeline() call: the adapter never retries an integrity failure
+    expect(r.workers).toHaveLength(1);
+    expect((r.workers[0] as LoopbackWorker).mock.pipeline).toHaveBeenCalledTimes(1);
+    expect((r.workers[0] as LoopbackWorker).terminated).toBe(true);
+    expect(eventsOf(r, 'model.load.failed').map((x) => x.attrs['code'])).toEqual(['integrity']);
+    expect(eventsOf(r, 'model.load')).toHaveLength(0); // never a success
+    expect((await r.w.mgr.list()).every((x) => x.refcount === 0)).toBe(true);
+  });
+
+  it('the same engine failure with snapshots that are still readable stays backend (the re-check changes nothing else)', async () => {
+    const state = { changed: false };
+    const r = await workerRig({
+      spawn: changingWorker(state, {
+        inPipeline: () => {
+          throw new Error('Failed to fetch (the engine says nothing useful)');
+        },
+      }),
+    });
+    const e: unknown = await r.load().catch((x: unknown) => x);
+    expect((e as AdapterError).code).toBe('backend');
+  });
+
+  it('an out_of_memory failure is not turned into integrity by the re-check, and the engine text still reaches nothing', async () => {
+    const state = { changed: false };
+    const r = await workerRig({
+      spawn: changingWorker(state, {
+        pipelineError: new RangeError('Array buffer allocation failed SENTINEL-R20-1c9e'),
+      }),
+    });
+    const e: unknown = await r.load().catch((x: unknown) => x);
+    expect((e as AdapterError).code).toBe('out_of_memory');
+    expect(JSON.stringify(r.events.snapshot())).not.toContain('SENTINEL-R20-1c9e');
+  });
+});

@@ -108,13 +108,13 @@ describe('TD-26: strict SemVer 2.0 grammar, one grammar everywhere (BUG-T2-S4-04
     expect(onDisk.$defs.ManifestEntry.properties.version.pattern).toBe(STRICT_SEMVER);
   });
 
-  it('the contract is manifest 0.1.2 (the 0.1.1 wire string is unchanged) in release 0.5.0 on the same wire string', () => {
-    expect(SPEC_VERSIONS.manifest).toBe('0.1.2');
-    expect(SPEC_RELEASE).toBe('0.5.0');
+  it('the contract is manifest 0.1.3 (the 0.1.1 wire string is unchanged) in release 0.6.0 on the same wire string', () => {
+    expect(SPEC_VERSIONS.manifest).toBe('0.1.3');
+    expect(SPEC_RELEASE).toBe('0.6.0');
     expect(SPEC_STATUS.manifest).toBe('published');
     expect(SPEC_WIRE.manifest).toBe('airplanemode.manifest/0.1');
     expect(readJson<{ $id: string }>(resolve(specDir, 'manifest.schema.json')).$id).toBe(
-      'urn:airplanemode:spec:manifest:0.1.2',
+      'urn:airplanemode:spec:manifest:0.1.3',
     );
   });
 

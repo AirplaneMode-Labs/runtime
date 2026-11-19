@@ -24,8 +24,9 @@
 // Each leg runs in a fresh browser context (own OPFS), so each downloads and verifies all seven
 // manifest entries. Results go to model-run.json (RUNTIME_MODEL_OUT, default runtime/test-results/, git-ignored).
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir, totalmem } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   chromium,
   expect,
@@ -37,6 +38,7 @@ import {
 } from 'playwright/test';
 import { mainEgressAttrs, workerEgressAttrs } from '../egress-expect';
 import { resultsDir } from './out-dir';
+import { sampleOnce } from './rss';
 
 const PROMPT = 'What is the capital of France? Answer in one word.';
 const REQUIRE_WEBGPU = process.env['RUNTIME_REQUIRE_WEBGPU'] === '1';
@@ -672,6 +674,176 @@ test('T1-S2-02: abort from onToken on the wasm rung ends generation within a few
     expect(check.second.text.trim().length).toBeGreaterThan(0);
     await assertGate(gate, page, base, expected, 'abort-on-token');
     results['abortOnToken'] = check;
+  } finally {
+    await context.close();
+  }
+});
+
+// ---- Sprint 6, D1-04 (f): unload really frees the model (backend adapter R16, B1) -----------------------------
+// SmolLM2-135M through the worker host on WebAssembly: load, generate, read the Chrome process-tree RSS (the sum
+// over the browser process and everything under it, sampled from ps; macOS and Linux), unload, settle 3 s, read
+// it again. The drop must be at least 50 percent of that load's model.memory peak (the engine's own
+// WebAssembly.Memory peak, posted by the worker), and the engine worker target must be gone. The model.unload
+// event must have been emitted (reason 'unload'). Figures go to unload-drop.json and unload-drop.log in
+// RUNTIME_MODEL_OUT. Not measured on 8 GB: every figure comes from the machine named in the log.
+
+test('D1-04 (f): unload() frees the model: the process-tree RSS drops by at least half of the load peak and the engine worker is gone', async ({
+  baseURL,
+}) => {
+  test.skip(!LEGS.includes('wasm'), 'the unload proof rides the wasm leg');
+  test.setTimeout(10 * 60_000);
+  const base = baseURL!;
+  const profile = mkdtempSync(join(tmpdir(), 'chrome-profile-unload-'));
+  let context: BrowserContext | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      channel: 'chrome',
+      headless: true,
+      args: ['--enable-precise-memory-info'],
+    });
+    const origin = new URL(base).origin;
+    const aborted: string[] = [];
+    await context.route('**/*', async (route) => {
+      const u = route.request().url();
+      let ok = false;
+      try {
+        ok = new URL(u).origin === origin || u.startsWith('blob:') || u.startsWith('data:');
+      } catch {
+        ok = false;
+      }
+      if (ok) return route.continue();
+      aborted.push(u);
+      return route.abort('blockedbyclient');
+    });
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(`${base}/models.html?models=test`);
+    await page.waitForFunction(
+      () => 'run' in ((window as unknown as { __models?: object }).__models ?? {}),
+    );
+    const report = (await page.evaluate(
+      (o) =>
+        (window as unknown as { __models: { run: (x: unknown) => Promise<unknown> } }).__models.run(
+          o,
+        ),
+      { forceRung: 'wasm', host: 'worker', prompt: PROMPT, maxTokens: 16, temperature: 0 },
+    )) as HookReport;
+    expect(report.ok, JSON.stringify(report)).toBe(true);
+    const peak = (report.events ?? []).find(
+      (e) =>
+        e.name === 'model.memory' &&
+        e.attrs['phase'] === 'load' &&
+        e.attrs['measure'] === 'wasm-memory',
+    );
+    expect(peak, 'the worker reported its WebAssembly memory peak for the load').toBeDefined();
+    const peakBytes = peak!.bytes ?? 0;
+    expect(peakBytes).toBeGreaterThan(0);
+
+    await new Promise((r) => setTimeout(r, 1000)); // let the load garbage settle before the first reading
+    const workersBefore = page.workers().length;
+    const before = await sampleOnce(profile);
+    expect(workersBefore, 'the engine worker is a worker target').toBe(1);
+
+    const t0 = Date.now();
+    await page.evaluate(() =>
+      (window as unknown as { __models: { unload: () => Promise<void> } }).__models.unload(),
+    );
+    const unloadMs = Date.now() - t0;
+    await new Promise((r) => setTimeout(r, 3000)); // settle
+    const after = await sampleOnce(profile);
+    const workersAfter = page.workers().length;
+    const dropBytes = before.bytes - after.bytes;
+
+    const events = (await page.evaluate(() => {
+      const hook = (globalThis as { __airplanemodeDevtools?: { snapshot(): string } })
+        .__airplanemodeDevtools;
+      return hook ? hook.snapshot() : '';
+    })) as string;
+    const mib = (n: number) => Math.round((n / 1048576) * 10) / 10;
+    const lines = [
+      `D1-04 (f) unload drop, ${new Date().toISOString()}`,
+      `machine: ${process.platform} ${process.arch}, ${Math.round(totalmem() / 2 ** 30)} GB (NOT MEASURED ON 8 GB)`,
+      `model: SmolLM2-135M-Instruct q4, wasm, worker host; greedy answer (${report.usage?.completionTokens ?? '?'} tokens): ${JSON.stringify(report.text ?? '')}`,
+      `load model.memory peak (WebAssembly.Memory): ${mib(peakBytes)} MiB`,
+      `process-tree RSS before unload: ${mib(before.bytes)} MiB (${before.processes} processes)`,
+      `process-tree RSS after unload + 3 s: ${mib(after.bytes)} MiB (${after.processes} processes)`,
+      `drop: ${mib(dropBytes)} MiB = ${Math.round((dropBytes / peakBytes) * 100)} percent of the load peak (required: at least 50)`,
+      `worker targets before: ${workersBefore}, after: ${workersAfter}`,
+      `unload() took ${unloadMs} ms`,
+    ];
+    mkdirSync(OUT_DIR, { recursive: true });
+    writeFileSync(resolve(OUT_DIR, 'unload-drop.log'), lines.join('\n') + '\n');
+    writeFileSync(
+      resolve(OUT_DIR, 'unload-drop.json'),
+      JSON.stringify(
+        {
+          peakBytes,
+          rssBefore: before,
+          rssAfter: after,
+          dropBytes,
+          dropPercentOfPeak: Math.round((dropBytes / peakBytes) * 1000) / 10,
+          workersBefore,
+          workersAfter,
+          unloadMs,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    console.log(lines.join('\n'));
+    results['unloadDrop'] = { peakBytes, before, after, dropBytes, workersBefore, workersAfter };
+
+    expect(aborted, 'no request left the origin').toEqual([]);
+    expect(workersAfter, 'one fewer worker target after unload').toBe(workersBefore - 1);
+    expect(events).toContain('model.unload');
+    expect(dropBytes, lines.join('\n')).toBeGreaterThanOrEqual(0.5 * peakBytes);
+  } finally {
+    await context?.close();
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+// ---- Sprint 6, D1-10: the Unload button of models.html -----------------------------------------------------------
+// After a model is loaded the button is enabled; clicking it ends the engine worker and the page shows the
+// model.unload event and the engine worker count before and after, and no operating-system memory figure. Behind the
+// same aborting network gate; the page shows nothing about memory in bytes.
+
+test('D1-10: the Unload button shows the model.unload event and the worker count before and after, and no memory figure', async ({
+  browser,
+  baseURL,
+}) => {
+  test.skip(!LEGS.includes('wasm'), 'the Unload button proof rides the wasm leg');
+  test.setTimeout(10 * 60_000);
+  const base = baseURL!;
+  const expected = await expectedEntries(base);
+  const { context, page, gate } = await gated(browser, base);
+  try {
+    await page.goto(`${base}/models.html?models=test`);
+    await expect(page.locator('#btn-unload')).toBeDisabled(); // nothing is loaded yet
+    const report = await runHook(page, {
+      forceRung: 'wasm',
+      host: 'worker',
+      prompt: PROMPT,
+      maxTokens: 8,
+      temperature: 0,
+    });
+    expect(report.ok, JSON.stringify(report)).toBe(true);
+    await expect(page.locator('#btn-unload')).toBeEnabled();
+    await page.locator('#btn-unload').click();
+    const line = page.locator('#unload-line');
+    await expect(line).toBeVisible();
+    await expect(line).toContainText('model.unload');
+    await expect(line).toContainText('reason unload');
+    await expect(line).toContainText('engine workers: 1 before, 0 after');
+    await expect(line).toContainText('no operating-system memory figure');
+    const text = (await line.textContent()) ?? '';
+    expect(text).not.toMatch(/\b\d[\d,.]*\s?(KiB|MiB|GiB|KB|MB|GB)\b/);
+    expect(text).not.toMatch(/free RAM/i);
+    await expect(page.locator('#btn-unload')).toBeDisabled();
+    await expect(page.locator('#btn-run')).toBeDisabled();
+    // one worker target existed and is gone; nothing left the origin
+    expect(page.workers()).toHaveLength(0);
+    await assertGate(gate, page, base, expected, 'unload button', 1);
+    results['unloadButton'] = { line: text.trim() };
   } finally {
     await context.close();
   }

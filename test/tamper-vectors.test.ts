@@ -21,10 +21,12 @@ import {
 import { MemoryAssetStore } from '../src/store/memory';
 import { FakeServer } from './fake-fetch';
 import {
+  OTHER_SEED_HEX,
   RFC8032_PUBLIC,
   RFC8032_TEST2_PUBLIC,
   hexToBytes,
   keyIdOf,
+  publicKeyOfSeed,
   readJson,
   specDir,
 } from './helpers';
@@ -258,7 +260,9 @@ describe('test keys: all five RFC 8032 keys are refused unless allowTestKeys ===
   });
 
   it('a trust set without any test key is never refused, whatever allowTestKeys says', async () => {
-    const real = new Map([['a'.repeat(64), new Uint8Array(32).fill(7)]]);
+    // a real (generated) key that did not sign the manifest. Manifest 0.1.3 refuses junk 32-byte values such as
+    // fill(7) as weak keys (not curve points), so the stand-in must be a key made by key generation.
+    const real = new Map([['a'.repeat(64), publicKeyOfSeed(OTHER_SEED_HEX)]]);
     const r = await verifyManifest(valid, real, { now: Date.parse('2026-11-14T00:00:00Z') });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('no_valid_signature');

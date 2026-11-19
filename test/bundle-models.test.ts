@@ -5,19 +5,20 @@
 
 import { createHash, generateKeyPairSync, type KeyObject } from 'node:crypto';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifyManifest, type TrustSet } from '../src/manifest';
+import { makeLink } from './helpers';
 import { InMemoryManifestState } from '../src/manifest';
 // @ts-expect-error: plain ESM script
 import { SETS, bundleModels, main, DEFAULT_MAX_BYTES } from '../scripts/bundle-models.mjs';
@@ -432,16 +433,14 @@ describe('--out is confined to --root', () => {
     expect(await run(base(l, f, l.root), f)).toBe(2);
   });
 
-  it('a symlink inside the root that points outside exits 2', async (ctx) => {
+  it('a symlink inside the root that points outside exits 2', async () => {
     const f = fixture();
     const l = layout();
     const target = join(tmp, 'outside-target');
     mkdirSync(target);
-    try {
-      symlinkSync(target, join(l.root, 'link'), 'dir');
-    } catch {
-      return ctx.skip(); // cannot create a symlink here; asserted by the CI legs that can
-    }
+    // S1-116: a junction on win32 (no privilege needed), a symlink elsewhere; when neither can be made this
+    // test FAILS naming the OS and the error, it never skips
+    makeLink('dir', target, join(l.root, 'link'));
     expect(await run(base(l, f, join(l.root, 'link')), f)).toBe(2);
     expect(await run(base(l, f, join(l.root, 'link', 'models')), f)).toBe(2);
     expect(readdirSync(target)).toEqual([]);
@@ -497,4 +496,55 @@ describe.skipIf(process.env['RUNTIME_BUNDLE_REAL'] !== '1')('the real dockit bun
     expect(v.ok).toBe(true);
     expect(JSON.parse(text).entries.map((e: { id: string }) => e.id)).toContain('qwen3-0.6b.onnx');
   }, 600_000);
+});
+
+// ---- Sprint 6, D1-04 (g): minProfile.ramGb (TD-67, TD-57, PO) ----------------------------------------------
+// The dockit answer model stays at ramGb 4 (not 8: Chrome rounds deviceMemory and a web page cannot read free
+// memory), and the bundler refuses to emit any minProfile.ramGb above 8, which no browser can ever report.
+describe('minProfile.ramGb in the bundles', () => {
+  it('the dockit answer-model entries carry minProfile.ramGb 4, and no entry of any set carries more than 8', async () => {
+    const { l } = await build('dockit');
+    const manifest = JSON.parse(readFileSync(join(l.out, 'manifest.json'), 'utf8')) as {
+      entries: { id: string; minProfile: { ramGb?: number } }[];
+    };
+    const qwen = manifest.entries.filter((e) => e.id.startsWith('qwen3-0.6b.'));
+    expect(qwen.length).toBeGreaterThan(0);
+    for (const e of qwen) expect(e.minProfile.ramGb, e.id).toBe(4);
+    for (const e of manifest.entries) expect(e.minProfile.ramGb ?? 0, e.id).toBeLessThanOrEqual(8);
+    for (const set of Object.values(
+      SETS as Record<string, { models: { minProfile: { ramGb?: number } }[] }>,
+    ))
+      for (const m of set.models) expect(m.minProfile.ramGb ?? 0).toBeLessThanOrEqual(8);
+  });
+
+  it('refuses to emit a minProfile.ramGb above 8, before anything is written', async () => {
+    const sets = SETS as unknown as Record<
+      string,
+      { models: { minProfile: { ramGb?: number } }[] }
+    >;
+    const model = sets['dockit']!.models[0]!;
+    const saved = model.minProfile.ramGb;
+    model.minProfile.ramGb = 16;
+    try {
+      const f = fixture();
+      const l = layout();
+      await expect(
+        bundleModels(
+          {
+            set: 'dockit',
+            out: l.out,
+            root: l.root,
+            manifestId: (SETS as Record<string, { manifestId: string }>)['dockit']!.manifestId,
+            ortDir: f.ortDir,
+            trustRootOut: l.trust,
+            cache: f.cache,
+          },
+          { models: f.models, pins: f.pins },
+        ),
+      ).rejects.toThrow(/ramGb/);
+      expect(existsSync(l.out)).toBe(false);
+    } finally {
+      model.minProfile.ramGb = saved as number;
+    }
+  });
 });

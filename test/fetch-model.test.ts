@@ -6,7 +6,6 @@ import {
   readdirSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +19,7 @@ import {
   validateModelPath,
   type ModelsJson,
 } from './tools/fetch-model.mjs';
-import { repoDir } from './helpers';
+import { makeLink, repoDir } from './helpers';
 
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -258,15 +257,12 @@ describe('fetch-model: refusals (nothing is renamed into place on failure)', () 
     expect(() => validateModelPath('onnx/model_q4.onnx')).not.toThrow();
   });
 
-  it('a symlink inside --dest that points outside is refused (dest_escape) and nothing is written outside', async (ctx) => {
+  it('a symlink inside --dest that points outside is refused (dest_escape) and nothing is written outside', async () => {
     const dest = temp();
     const outside = temp();
-    try {
-      symlinkSync(outside, join(dest, 'tiny'));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'EPERM') return ctx.skip(); // Windows without symlink rights
-      throw e;
-    }
+    // S1-116: a junction on win32 (no privilege needed), a symlink elsewhere; when neither can be made this
+    // test FAILS naming the OS and the error, it never skips
+    makeLink('dir', outside, join(dest, 'tiny'));
     const hub = fakeHub(hubFiles());
     expect(
       await code(fetchModel({ name: 'tiny', models: modelsJson(), dest, fetchImpl: hub.impl })),

@@ -2,7 +2,7 @@
 // vectors are public, non-secret data.
 
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { linkSync, readFileSync, symlinkSync } from 'node:fs';
 import * as nodePath from 'node:path';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,4 +189,50 @@ export function pseudoRandomBytes(n: number, seed = 1): Uint8Array {
     out[i] = x & 0xff;
   }
   return out;
+}
+
+/** The slice of node:fs that makeLink uses (tests inject a fake to prove the failure path). */
+export interface LinkFs {
+  symlinkSync(target: string, path: string, type?: 'dir' | 'file' | 'junction'): void;
+  linkSync(existing: string, path: string): void;
+}
+
+/**
+ * Makes a link for a symlink-escape test and says how (S1-116). A directory link is a junction on win32 (no
+ * privilege needed; lstat reports it as a link and realpath resolves it) and a directory symlink elsewhere,
+ * with a directory symlink as the last resort on win32. A file link is a file symlink and, when the platform
+ * refuses it, a hard link (a directory can never be hard-linked). When nothing can be made this THROWS, with
+ * the OS and the error code: a test that cannot make its link must FAIL, never skip, because a skipped test
+ * is a containment that is silently unproven (S1-116, BUG-T1-S5-R3-03).
+ */
+export function makeLink(
+  kind: 'dir' | 'file',
+  target: string,
+  path: string,
+  o: { fs?: LinkFs; platform?: NodeJS.Platform } = {},
+): 'symlink' | 'junction' | 'hardlink' {
+  const fs: LinkFs = o.fs ?? { symlinkSync, linkSync };
+  const platform = o.platform ?? process.platform;
+  const errors: string[] = [];
+  const attempt = (name: string, fn: () => void): boolean => {
+    try {
+      fn();
+      return true;
+    } catch (e) {
+      errors.push(`${name}: ${(e as NodeJS.ErrnoException).code ?? 'error'}`);
+      return false;
+    }
+  };
+  if (kind === 'dir') {
+    if (platform === 'win32' && attempt('junction', () => fs.symlinkSync(target, path, 'junction')))
+      return 'junction';
+    if (attempt('dir symlink', () => fs.symlinkSync(target, path, 'dir'))) return 'symlink';
+  } else {
+    if (attempt('file symlink', () => fs.symlinkSync(target, path, 'file'))) return 'symlink';
+    if (attempt('hard link', () => fs.linkSync(target, path))) return 'hardlink';
+  }
+  throw new Error(
+    `cannot create a ${kind === 'dir' ? 'directory' : 'file'} link on ${platform} (${errors.join(', ')}): ` +
+      'the symlink-escape test cannot run here and must not be skipped (S1-116); give the runner link rights',
+  );
 }

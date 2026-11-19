@@ -27,8 +27,8 @@ export default defineConfig({
   testMatch: QWEN06
     ? ['qwen06.spec.ts']
     : HINDI
-      ? ['model.spec.ts', 'hindi-smoke.spec.ts']
-      : ['model.spec.ts'],
+      ? ['model.spec.ts', 'opfs-snapshot.spec.ts', 'hindi-smoke.spec.ts']
+      : ['model.spec.ts', 'opfs-snapshot.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

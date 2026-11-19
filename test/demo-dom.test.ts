@@ -233,6 +233,7 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     'asset-truncated',
     'valid',
     'other-product',
+    'weak-key',
   ];
 
   it('index.html has the lab section with one run button per case, in order, and the demo-only label', () => {
@@ -308,8 +309,8 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     const m = /<p id="status-line"[^>]*>([\s\S]*?)<\/p>/.exec(html);
     expect(m, 'a status line').not.toBeNull();
     const line = flat(m![1]!.replace(/<[^>]+>/g, ' '));
-    expect(line.startsWith('Sprint 5 (18 Nov 2026):')).toBe(true);
-    expect(line).toContain('runtime beta 0.3.0-beta.0');
+    expect(line.startsWith('Sprint 6 (19 Nov 2026): Working:')).toBe(true);
+    expect(line).toContain('runtime beta 0.3.0-beta.1');
     expect(line).toContain('not measured on 8 GB');
     expect(line).toContain('Not yet:');
     const demos = resolve(repoDir, '../site/data/demos.json');
@@ -317,8 +318,8 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     const entry = (
       JSON.parse(readFileSync(demos, 'utf8')) as { repo: string; status: string }[]
     ).find((d) => d.repo === 'runtime');
-    // until D5 copies this lane's status-line.txt into site/data/demos.json the file carries the Sprint 4 line
-    if (entry?.status.startsWith('Sprint 5')) expect(line).toBe(flat(entry.status));
+    // until D5 copies this lane's status-line.txt into site/data/demos.json the file carries the Sprint 5 line
+    if (entry?.status.startsWith('Sprint 6')) expect(line).toBe(flat(entry.status));
   });
 });
 
@@ -536,13 +537,23 @@ describe('the status line of both runtime demo pages (D1-10)', () => {
     expect(m, `${file} #${id}`).not.toBeNull();
     return flat(m![1]!.replace(/<[^>]+>/g, ' '));
   };
-  it('index.html #status-line and models.html #sprint-status carry the same Sprint 5 line, rendered as text', () => {
+  it('index.html #status-line and models.html #sprint-status carry the same Sprint 6 line, rendered as text', () => {
     const a = lineOf('demo/index.html', 'status-line');
     const b = lineOf('demo/models.html', 'sprint-status');
     expect(a).toBe(b);
-    expect(a).toContain('Working:');
+    expect(a.startsWith('Sprint 6 (19 Nov 2026): Working:')).toBe(true);
     expect(a).toContain('Not yet:');
     expect(a).toContain('not measured on 8 GB');
+    expect(a).not.toMatch(/free RAM/i);
+    expect(a).toContain('weak_key_refused');
+    expect(a).toContain('Tamper lab now has fifteen cases');
+    for (const item of [
+      'WebLLM (cut)',
+      'key revocation',
+      'a real signing key',
+      'a transparency log',
+    ])
+      expect(a, item).toContain(item);
     expect(read('demo/models.html')).toMatch(/id="sprint-status"/);
   });
 });
