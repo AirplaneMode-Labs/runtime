@@ -1,4 +1,4 @@
-// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.5.0): fourteen buttons, each one
+// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.6.0): fifteen buttons, each one
 // runs the real verifier or the real asset manager over bytes copied verbatim from spec/vectors/tamper
 // and spec/vectors/tamper-assets (demo/tools/tamper-fixture.mjs fails the build if a copy differs), and
 // shows the verdict, the reason code, the per-signature reasons and the stage exactly as the library
@@ -29,7 +29,7 @@ import {
 } from '../src/index.ts';
 import type { Manifest, SignatureCheck } from '../src/index.ts';
 
-type Kind = 'manifest' | 'asset' | 'valid' | 'expect-id';
+type Kind = 'manifest' | 'asset' | 'valid' | 'expect-id' | 'weak-key';
 
 interface LabCase {
   id: string;
@@ -63,6 +63,9 @@ const CASES: readonly LabCase[] = [
   { id: 'valid', kind: 'valid', file: 'tamper-14-test-key-refused.json' },
   // manifest 0.1.2: the validly signed base manifest (id 'tamper-base') meets a page that expects another id
   { id: 'other-product', kind: 'expect-id', file: 'tamper-14-test-key-refused.json' },
+  // manifest 0.1.3 (S1-113): a trust set that holds the identity point as a key meets the forged manifest
+  // (signature R = identity, S = 0): the verifier refuses the TRUST SET before it parses the manifest
+  { id: 'weak-key', kind: 'weak-key', file: 'forged-identity.manifest.json' },
 ];
 
 const BASE_FILE = 'tamper-14-test-key-refused.json';
@@ -337,6 +340,62 @@ async function runExpectIdCase(c: LabCase): Promise<Outcome> {
   };
 }
 
+interface WeakVerifyRow {
+  manifest: string;
+  trust: { keyIdHex: string; publicKeyHex: string }[];
+  expect: { throws: string };
+}
+
+/**
+ * Case 'weak-key' (manifest 0.1.3): row 1 of vectors/weak-keys/verify.json. The lab's trust set holds the identity
+ * point, filed under its own key id, and the verifier is handed the forged manifest (R = identity, S = 0). The
+ * verifier must THROW weak_key_refused before it parses anything: no verdict on the document, nothing requested.
+ * Nothing but the lab's own in-memory data is involved, and allowTestKeys stays the literal true of this module.
+ */
+async function runWeakKeyCase(c: LabCase): Promise<Outcome> {
+  const rows = JSON.parse(await fetchText('vectors/weak-keys-verify.json')) as WeakVerifyRow[];
+  const row = rows.find((r) => r.manifest === `weak-keys/${c.file}`);
+  if (!row) throw new Error('no forged-identity row in weak-keys-verify.json');
+  const text = await fetchText(`vectors/${c.file}`);
+  const trust = new Map<string, Uint8Array>(
+    row.trust.map((k) => [k.keyIdHex, hexToBytes(k.publicKeyHex)]),
+  );
+  let thrown: unknown;
+  let accepted = false;
+  try {
+    const r = await verifyManifest(text, trust, {
+      allowTestKeys: true,
+      now: VECTOR_NOW,
+      state: new InMemoryManifestState(),
+    });
+    accepted = r.ok;
+  } catch (e) {
+    thrown = e;
+  }
+  const at = performance.now();
+  if (thrown instanceof ManifestError) {
+    const same = thrown.reason === row.expect.throws;
+    return {
+      verdict: 'Refused',
+      reason: thrown.reason,
+      signatures: [],
+      stage: 'trust set, before parse',
+      at,
+      match: same
+        ? 'matches the vector table (row 1 of weak-keys/verify.json: the verifier throws before it reads the manifest)'
+        : `DIFFERS from the vector table (${row.expect.throws})`,
+    };
+  }
+  return {
+    verdict: accepted ? 'Accepted' : 'Refused',
+    reason: accepted ? 'none' : 'unexpected',
+    signatures: [],
+    stage: accepted ? 'accepted' : 'verify',
+    at,
+    match: `DIFFERS from the vector table (${row.expect.throws}): the weak key was not refused`,
+  };
+}
+
 async function runAssetCase(c: LabCase): Promise<Outcome> {
   const { assets } = await loadTables();
   const informative = assets[c.file]?.informative;
@@ -426,7 +485,9 @@ async function runCase(c: LabCase): Promise<void> {
         ? runAssetCase(c)
         : c.kind === 'expect-id'
           ? runExpectIdCase(c)
-          : runValidCase(c));
+          : c.kind === 'weak-key'
+            ? runWeakKeyCase(c)
+            : runValidCase(c));
   } catch (e) {
     const message = e instanceof ManifestError ? `${e.reason}: ${e.message}` : String(e);
     setCell(c.id, 'verdict', 'Error');

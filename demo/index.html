@@ -29,14 +29,16 @@
         source: <code id="quota-source">?</code>.
       </p>
       <p id="status-line" class="status-line">
-        Sprint 5 (18 Nov 2026): Working: runtime beta 0.3.0-beta.0 on spec release 0.5.0: capability
-        profile, signed-manifest verification (now with an expected-id check that refuses a validly
-        signed manifest of another product), download, hash check and quota eviction of synthetic
-        assets, resume, and a Tamper lab of fourteen cases that shows the exact refusal reason, with
-        0 requests after a manifest refusal. The test-model page adds embeddings through the worker
-        host, in-worker hashing of every model file, a token budget and Stop. This page's policy is
-        now connect-src 'self': it can only reach its own origin. Not yet: WebLLM (cut), Windows and
-        8 GB measurements (not measured on 8 GB), key revocation, a real signing key.
+        Sprint 6 (19 Nov 2026): Working: runtime beta 0.3.0-beta.1 on spec release 0.6.0: a trust
+        set that holds a weak Ed25519 public key is refused before anything is parsed, and the
+        Tamper lab now has fifteen cases (case 15 shows the exact reason, weak_key_refused, with 0
+        requests after the refusal); the engine can be unloaded and its WebAssembly memory is
+        returned by ending the worker (an Unload button shows the model.unload event and the engine
+        worker count before and after; in installed Chrome on an Apple M5 Pro 48 GB the process tree
+        shrank by more than the load peak, not measured on 8 GB); an out-of-memory failure in the
+        engine is a plain refusal of its own; a Stop after the first token is logged as an aborted
+        generation. Not yet: WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB), key
+        revocation, a real signing key, a transparency log.
       </p>
       <p id="range-note" class="note hidden">
         The <code>?manifest=range</code> parameter is honoured only on 127.0.0.1 or localhost (it
@@ -101,7 +103,14 @@
             <li>No key revocation, transparency log or Sigstore (security finding S1-001).</li>
             <li>
               Not yet: WebLLM (cut; revisit after the 8 GB measurement), Windows and 8 GB no-GPU
-              measurements (not measured on 8 GB), revocation of a signing key, a real signing key.
+              measurements (not measured on 8 GB), revocation of a signing key, a real signing key,
+              a transparency log.
+            </li>
+            <li>
+              A web page cannot read free memory. The capability profile carries
+              <code>navigator.deviceMemory</code> as the browser reports it (a coarse power of two,
+              clamped to at most 8; 0 when the browser does not say), and nothing on this page
+              refuses a load because of it.
             </li>
             <li>
               This page can reach only its own origin (Content-Security-Policy
@@ -199,7 +208,7 @@
           RFC 8032 public test keys: demo only; allowTestKeys is false by default in the library
         </p>
         <div class="row">
-          <button id="lab-run-all" type="button">Run all fourteen cases</button>
+          <button id="lab-run-all" type="button">Run all fifteen cases</button>
         </div>
         <table class="lab">
           <thead>
@@ -467,6 +476,27 @@
                 Manifest for another product<br /><span class="small muted"
                   >a validly signed manifest whose id is not the one this page expects: refused
                   before the downgrade state is read</span
+                >
+              </th>
+              <td><button type="button" data-action="run">Run</button></td>
+              <td data-cell="verdict" aria-live="polite"></td>
+              <td data-cell="reason"></td>
+              <td data-cell="signatures"></td>
+              <td data-cell="stage"></td>
+              <td class="detail">
+                <div data-cell="asset"></div>
+                <div data-cell="bytes"></div>
+                <div data-cell="assetRequests"></div>
+                <div data-cell="after"></div>
+                <div data-cell="match" class="muted"></div>
+              </td>
+            </tr>
+            <tr data-case="weak-key">
+              <th scope="row">
+                Weak trust key<br /><span class="small muted"
+                  >the trust set holds the identity point as a key, so the signature R = identity, S
+                  = 0 would verify any message: the trust set is refused before the manifest is
+                  parsed</span
                 >
               </th>
               <td><button type="button" data-action="run">Run</button></td>

@@ -1,6 +1,8 @@
 // The Tamper lab fixture of the runtime demo: a VERBATIM copy of spec/vectors/tamper (fifteen tamper
-// vectors and tamper.json), spec/vectors/expect-id/expect-id.json and spec/vectors/tamper-assets (three signed manifests, three .bin files and
-// expect.json) into demo/public/tamper/, which Vite copies to demo/dist/tamper/.
+// vectors and tamper.json), spec/vectors/expect-id/expect-id.json, three files of spec/vectors/weak-keys
+// (the table, the verify rows and the forged-identity manifest: lab case 15) and spec/vectors/tamper-assets
+// (three signed manifests, three .bin files and expect.json) into demo/public/tamper/, which Vite copies to
+// demo/dist/tamper/.
 //
 //   demo/public/tamper/vectors/   <- spec/vectors/tamper/*   (README.md is documentation, not copied)
 //   demo/public/tamper/assets/    <- spec/vectors/tamper-assets/*
@@ -63,6 +65,10 @@ export const TAMPER_FIXTURE_FILES = Object.freeze([
   ...TAMPER_VECTORS.map((f) => ({ from: `tamper/${f}`, to: `vectors/${f}` })),
   // manifest 0.1.2: the expect-id table (the lab's case 'other-product' runs its row 02)
   { from: 'expect-id/expect-id.json', to: 'vectors/expect-id.json' },
+  // manifest 0.1.3: the weak-key vectors (the lab's case 'weak-key' runs row 1 of verify.json)
+  { from: 'weak-keys/weak-keys.json', to: 'vectors/weak-keys.json' },
+  { from: 'weak-keys/verify.json', to: 'vectors/weak-keys-verify.json' },
+  { from: 'weak-keys/forged-identity.manifest.json', to: 'vectors/forged-identity.manifest.json' },
   ...TAMPER_ASSETS.map((f) => ({ from: `tamper-assets/${f}`, to: `assets/${f}` })),
 ]);
 

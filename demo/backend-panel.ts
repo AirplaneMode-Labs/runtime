@@ -40,6 +40,7 @@ import { ORT_FACTORY_FILE } from '../src/backends/ort-pins.ts';
 import engineWorkerUrl from '../src/worker/engine-host.ts?worker&url';
 import { maxTokensFor } from './limits.ts';
 import { createRunControl } from './run-control.ts';
+import { liveWorkers, unloadLine } from './unload-line.ts';
 import { AdapterError } from '../spec/backend-adapter.ts';
 import { EventBus } from '../src/events.ts';
 import { exposeDevtoolsHook } from '../src/devtools-hook.ts';
@@ -246,6 +247,7 @@ async function loadModel(
   });
   const loadMs = performance.now() - t0;
   current = { session, result };
+  btnUnload.disabled = false; // the model is loaded: it can be unloaded (R16)
   let bytesDownloaded = 0;
   for (const e of session.events.snapshot())
     if (e.name === 'asset.download.complete') bytesDownloaded += e.bytes ?? 0;
@@ -267,6 +269,7 @@ async function loadModel(
 const btnDownload = $<HTMLButtonElement>('btn-download');
 const btnRun = $<HTMLButtonElement>('btn-run');
 const btnStop = $<HTMLButtonElement>('btn-stop');
+const btnUnload = $<HTMLButtonElement>('btn-unload');
 const inPrompt = $<HTMLTextAreaElement>('in-prompt');
 const selEngine = $<HTMLSelectElement>('sel-engine');
 const chkBuiltin = $<HTMLInputElement>('chk-builtin');
@@ -397,6 +400,37 @@ const runControl = createRunControl({
     offerReload('Stopped.');
   },
 });
+
+/**
+ * The Unload button (backend adapter R16, Sprint 6 B1): ends the engine worker, which is what returns the model's
+ * WebAssembly memory to the browser, and shows the model.unload event and the engine worker count before and
+ * after. It shows no operating-system memory figure (a page cannot read one).
+ */
+async function onUnloadClick(): Promise<void> {
+  const loaded = current;
+  if (!loaded) return;
+  btnUnload.disabled = true;
+  btnRun.disabled = true;
+  btnStop.disabled = true;
+  const bus = loaded.session.events;
+  const isUnload = (e: Event): boolean => e.name === 'model.unload';
+  const eventsBefore = bus.snapshot();
+  const before = liveWorkers(eventsBefore);
+  const seen = eventsBefore.filter(isUnload).length;
+  await loaded.result.adapter.unload();
+  current = undefined;
+  const events = bus.snapshot();
+  const after = liveWorkers(events);
+  // only a model.unload that this call produced (a Stop may have ended the worker earlier)
+  const event = events.filter(isUnload).slice(seen).pop();
+  const line = $('unload-line');
+  line.textContent = unloadLine({ before, after, event });
+  line.classList.remove('hidden');
+  btnDownload.disabled = false;
+  $('out-timing').textContent =
+    'The model is unloaded. Click "Download test model and load" to load it again.';
+  renderReadout();
+}
 
 /** Re-enables the load button and says that a reload costs nothing (the verified files are in the store). */
 function offerReload(lead: string): void {
@@ -555,6 +589,7 @@ function initModelSection(): void {
   }
 }
 
+btnUnload.addEventListener('click', () => void onUnloadClick());
 selEngine.addEventListener('change', () => void renderPlan());
 chkBuiltin.addEventListener('change', () => void renderPlan());
 initModelSection();
