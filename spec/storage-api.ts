@@ -1,8 +1,18 @@
 /**
- * Storage API contract 0.3.0 (draft; normative; see storage-api.md for prose).
+ * Storage API contract 0.4.0 (draft; normative; see storage-api.md for prose).
  *
  * Implemented by @airplanemode/localdata over OPFS with an IndexedDB fallback. The SDK does
  * validation, codec and quota accounting above a StorageDriver.
+ *
+ * 0.4.0 (minor, spec release 0.6.0) adds the approximate vector index (HNSW), with the index kind chosen by
+ * the caller: `buildIndex()` and `dropIndex()`, `QueryOptions.index` and `QueryOptions.ef`,
+ * `VectorIndexInfo.ann`, `UsageResult.annBytes`, the types `VectorIndexKind = 'flat' | 'hnsw'`,
+ * `BuildIndexOptions`, `BuildIndexResult` and `AnnIndexInfo`, and the constants HNSW_M_MIN, HNSW_M_MAX,
+ * HNSW_M_DEFAULT, HNSW_EF_CONSTRUCTION_DEFAULT, HNSW_EF_CONSTRUCTION_MAX, HNSW_EF_MAX, HNSW_EF_DEFAULT_MIN,
+ * HNSW_MAX_LEVEL and ANN_NS_PREFIX = '__ld_ann.'. Flat stays the default and the fallback: a query that asks
+ * for 'hnsw' and cannot be answered by a current, valid graph answers with the flat scan and reports why in
+ * the event. HNSW hits are re-scored with the exact flat scoring function from the stored vectors, so a
+ * crafted graph can only lower recall. Nothing of 0.3.0 changes (storage-api.md, Approximate index (0.4.0)).
  *
  * 0.3.0 (minor, spec release 0.5.0) adds the documents API for the dockit pipeline: `putDocument()`,
  * `getDocument()`, `listDocuments()`, `deleteDocument()`, `queryChunks()` and `redactNamespacePrefix()`, the
@@ -72,6 +82,32 @@ export const VECTOR_VALUE_BYTES_MAX = 1048576;
 /** 'cosine' or 'dot' (storage-api.md, Scoring). Default 'cosine'. */
 export type VectorMetric = 'cosine' | 'dot';
 
+// ---- approximate index (0.4.0) -----------------------------------------------------------------
+
+/** 0.4.0: which index answers a query. 'flat' is the default and the fallback. */
+export type VectorIndexKind = 'flat' | 'hnsw';
+/** Smallest and largest HNSW `m` (links per node above layer 0; layer 0 holds up to 2m), and the default. */
+export const HNSW_M_MIN = 4;
+export const HNSW_M_MAX = 64;
+export const HNSW_M_DEFAULT = 16;
+/** HNSW efConstruction: the default and the largest value; the smallest is `m`. */
+export const HNSW_EF_CONSTRUCTION_DEFAULT = 200;
+export const HNSW_EF_CONSTRUCTION_MAX = 1000;
+/** Largest `ef` of a query (an integer 1..HNSW_EF_MAX). */
+export const HNSW_EF_MAX = 1000;
+/** The effective ef of a query is max(ef ?? max(HNSW_EF_DEFAULT_MIN, k), k). */
+export const HNSW_EF_DEFAULT_MIN = 64;
+/** The highest layer a node can have. A graph that declares a higher level is refused. */
+export const HNSW_MAX_LEVEL = 16;
+/** Fix round 1: graphs loaded per open store; a buildIndex that would exceed it throws quota_exceeded reason 'max_graphs'. */
+export const HNSW_MAX_GRAPHS = 64;
+/**
+ * The SDK-reserved driver namespace prefix of a namespace's HNSW graph: ANN_NS_PREFIX + ns. It sits next to
+ * '__ld_vec.' (the flat index) and '__ld_doc.' (documents) under the reserved '__ld_' prefix, so no caller
+ * namespace can name it.
+ */
+export const ANN_NS_PREFIX = '__ld_ann.' as const;
+
 /**
  * One row of the vector index. `key`: the storage key rules, String.prototype.isWellFormed(), and a UTF-8
  * length <= VECTOR_KEY_UTF8_MAX, else invalid_key. `vector`: length 1..VECTOR_DIM_MAX and equal to the
@@ -100,6 +136,54 @@ export interface QueryOptions {
   metric?: VectorMetric;
   /** false leaves `value` off every hit. Default: values are returned when the row has one. */
   values?: boolean;
+  /**
+   * 0.4.0. The index the caller asks for; default 'flat'. 'hnsw' answers from a current, valid graph, else the
+   * flat scan answers (same results as flat) and the event reports the fallback.
+   */
+  index?: VectorIndexKind;
+  /** 0.4.0. HNSW search breadth, an integer 1..HNSW_EF_MAX; effective ef = max(ef ?? max(64, k), k). Ignored by flat. */
+  ef?: number;
+}
+
+/** 0.4.0. What buildIndex() builds. */
+export interface BuildIndexOptions {
+  kind: 'hnsw';
+  /** Default 'cosine'. A query with another metric falls back to flat ('metric'). */
+  metric?: VectorMetric;
+  /** HNSW_M_MIN..HNSW_M_MAX, default HNSW_M_DEFAULT. */
+  m?: number;
+  /** m..HNSW_EF_CONSTRUCTION_MAX, default HNSW_EF_CONSTRUCTION_DEFAULT. */
+  efConstruction?: number;
+  /** uint32, default 1. Build is deterministic for (rows, order, metric, m, efConstruction, seed). */
+  seed?: number;
+}
+
+export interface BuildIndexResult {
+  kind: 'hnsw';
+  /** Rows the graph was built over (the live flat rows at the HEAD generation). */
+  rows: number;
+  liveRows: number;
+  /** Graph bytes written. */
+  bytes: number;
+  /** The flat HEAD generation the graph is current for. */
+  generation: number;
+  /** True when the call replaced an existing graph. */
+  replaced: boolean;
+}
+
+/** 0.4.0. Facts about the namespace's HNSW graph (VectorIndexInfo.ann). */
+export interface AnnIndexInfo {
+  kind: 'hnsw';
+  metric: VectorMetric;
+  m: number;
+  efConstruction: number;
+  seed: number;
+  nodes: number;
+  liveNodes: number;
+  bytes: number;
+  generation: number;
+  /** True only when the graph generation EQUALS the flat HEAD generation. */
+  current: boolean;
 }
 
 export interface VectorIndexInfo {
@@ -116,6 +200,8 @@ export interface VectorIndexInfo {
   generation: number;
   /** The scan kernel in use. */
   kernel: 'simd' | 'scalar';
+  /** 0.4.0: the HNSW graph, when the namespace has one (a refused graph is not reported). */
+  ann?: AnnIndexInfo;
 }
 
 export interface ListOptions {
@@ -141,6 +227,8 @@ export interface UsageResult {
   vectorBytes?: number;
   /** 0.3.0: live documents (omitted when there is no document namespace in scope). */
   documents?: number;
+  /** 0.4.0: bytes of the HNSW graph, included in `bytes` (omitted when no graph is in scope). */
+  annBytes?: number;
 }
 
 export interface QueryHit {
@@ -258,6 +346,16 @@ export interface StorageApi {
   ): Promise<PutVectorsResult>;
   /** Index facts, or undefined when the namespace has no index. */
   indexInfo(ns: string): Promise<VectorIndexInfo | undefined>;
+  /**
+   * 0.4.0. Builds the HNSW graph over the live rows, in stored order, deterministically for (rows, order,
+   * metric, m, efConstruction, seed), and replaces any existing graph in one commit under the writer lock.
+   * Throws quota_exceeded (reason 'quota' | 'max_index_bytes' | 'wasm_memory' | 'max_graphs') before writing. Allowed on an
+   * empty namespace. Validation: ns, then opts (invalid_value with details.reason 'kind' | 'm' |
+   * 'efConstruction' | 'seed' | 'metric').
+   */
+  buildIndex(ns: string, opts: BuildIndexOptions): Promise<BuildIndexResult>;
+  /** 0.4.0. Removes the namespace's graph (the flat index is untouched). Resolves true when one existed. */
+  dropIndex(ns: string, kind: 'hnsw'): Promise<boolean>;
   /**
    * 0.3.0. Stores a document and every chunk in ONE commit (all-or-nothing); a document with the same
    * docId is replaced in that same commit (replaced: true). Zero chunks is allowed. Validation order and

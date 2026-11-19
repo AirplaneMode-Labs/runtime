@@ -3,12 +3,12 @@
 The open, signed model-asset manifest of Airplane Mode Labs. This document is normative and standalone:
 an implementation can be written from it, the schema and the vectors alone. It is the plan's "manifest
 spec v0.1": the manifest contract on the wire string `airplanemode.manifest/0.1`, published as manifest
-0.1.2 in spec release 0.5.0, status: published (committed; public after the owner's push; manifest 0.1.1
+0.1.3 in spec release 0.6.0, status: published (committed; public after the owner's push; manifest 0.1.1
 was pushed on 15 Nov 2026). Published means frozen on its wire string: later changes are additive patches
-that change no accepted or refused input, or a new wire string. Manifest 0.1.2 is such a patch (see
-Manifest 0.1.2 below): the wire format of manifest 0.1.1 is unchanged.
+that change no accepted or refused input, or a new wire string. Manifest 0.1.2 and 0.1.3 are such patches
+(see Manifest 0.1.2 and Manifest 0.1.3 below): the wire format of manifest 0.1.1 is unchanged.
 
-Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.2`),
+Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.3`),
 `manifest.ts` (the TypeScript mirror and the shared constants), `vectors/` (positive, negative and
 tamper vectors), `examples/` (a signed and an unsigned example, `TEST-KEY.md`). The key words MUST,
 MUST NOT, SHOULD and MAY are used as in RFC 2119.
@@ -191,8 +191,15 @@ verifier that finds an entry whose key does not hash to its `keyId` reports the 
 
 ## Verification order
 
-1. Test keys: a trust set holding any RFC 8032 test key is refused with `test_key_refused`, before the
-   manifest is parsed (see Test keys). This is the only reason that is raised as an exception.
+1. Trust-set checks, both before the manifest is parsed and over the whole iterated trust set:
+   - 1a. Test keys: a trust set holding any RFC 8032 test key is refused with `test_key_refused` (see Test
+     keys). It is skipped only with `allowTestKeys === true`.
+   - 1b. Weak keys: a trust set holding any key that is not the canonical encoding of a prime-order point other
+     than the identity is refused with `weak_key_refused` (see Weak keys). It always runs; there is no
+     opt-out.
+
+   `test_key_refused` and `weak_key_refused` are the only reasons that are raised as an exception.
+
 2. Parse. The parse stage runs over the whole text, signatures[] included: repeated members, the
    digit-key rule, floats, integers above 2^53-1 and lone surrogates are refused wherever they occur, in
    a signature as well as in the body.
@@ -213,6 +220,9 @@ verifier that finds an entry whose key does not hash to its `keyId` reports the 
      with `test_key_refused` unless `allowTestKeys === true`: the check of the Test keys section, repeated
      here for the key that is actually used, so a trust object that hides keys from iteration cannot
      smuggle one in;
+   - a trusted key that is weak (see Weak keys) is refused with `weak_key_refused`, whatever its `keyId`
+     and whether or not `allowTestKeys` is true: the check of step 1b, repeated for the key that is actually
+     used. A key that is not 32 bytes keeps its 0.1.2 outcome (`key_mismatch`);
    - a `publicKey` present and different from the trusted bytes is `key_mismatch`; it is never silently accepted;
    - the `keyId` recomputed from the trusted key must equal the `keyId`, else `key_mismatch`;
    - S < L and the Ed25519 verification over `signedBytes` must both pass, else `bad_signature`.
@@ -232,7 +242,7 @@ verifier that finds an entry whose key does not hash to its `keyId` reports the 
 Malformed input never throws out of a verifier: it is a rejection with a reason. The reasons are
 `invalid_json`, `float`, `bigint`, `digit_key`, `invalid_key`, `lone_surrogate`, `bad_spec`, `bad_url`,
 `schema`, `unsorted_entries`, `duplicate_entries`, `expired`, `no_valid_signature`, `unexpected_id`,
-`downgrade`, `state` and `test_key_refused`. A verifier reports the per-signature reasons (`unknown_alg`, `malformed_key_id`,
+`downgrade`, `state`, `test_key_refused` and `weak_key_refused`. A verifier reports the per-signature reasons (`unknown_alg`, `malformed_key_id`,
 `untrusted_key`, `key_mismatch`, `malformed_sig`, `bad_signature`, or `valid`) in signature order.
 
 ## Reason precedence
@@ -371,8 +381,10 @@ code this runtime returns).
 - A member that no table declares is refused under any name (`__proto__`, `constructor`, ...), and sig and
   publicKey have one accepted encoding each: the bytes a human reads, the value a verifier checks and the
   value a consumer uses are the same value, and no unsigned member or spelling rides along.
-- Small-order public keys in a trust set are a configuration error (informative): the trust set is
-  application configuration and is not validated against a list of weak points.
+- A weak public key in a trust set (the identity, any small-order point, a mixed-order point, or bytes that
+  are not a canonical curve point) is refused with `weak_key_refused` before anything is parsed (normative
+  since 0.1.3; see Weak keys). The identity key, for example, verifies the signature R = identity, S = 0 for
+  every message.
 - Bytes are hashed in full before a consumer reads them; a mismatch, a truncation or an extension is
   refused and no partial file is exposed.
 
@@ -382,7 +394,9 @@ An implementation conforms to manifest spec v0.1 when it accepts the 5 positive 
 rejects every row of vectors/negative.json (32) with its reason and stage, and gives every row of
 vectors/tamper/tamper.json (15) its expected result, skipping only requiresState rows if it keeps no
 downgrade state. tamper-assets is runtime-specific: its normative fields apply to any implementation that
-fetches assets.
+fetches assets. Since 0.1.3 it also gives every row of `vectors/weak-keys/weak-keys.json` its verdict
+(`weak_key_refused` for every refused class, accepted for every `ok` row) and every row of
+`vectors/weak-keys/verify.json` its expected throw.
 
 "Accepts the 5 positive vectors byte-for-byte" means: `canonical()` of each `vectors/0n-*.json` equals its
 `.canonical.txt`, and the Ed25519 signature of those bytes under the TEST 1 seed equals its `.sig.txt`.
@@ -440,3 +454,73 @@ normative for the files `scripts/bundle-models.mjs` writes; they do not change t
   exported (no file, no log line, no serialised form). The public half is compiled into the consumer as its
   trust root: trust-root.ts exports exactly one { keyId, publicKeyB64 }. The signature proves only that the
   manifest and the bundle came from the same build, not who published it.
+
+## Manifest 0.1.3
+
+Manifest 0.1.3 is an additive patch of 0.1.2 (spec release 0.6.0; team decisions TD-68 and TD-82, finding
+S1-113). The wire string stays `airplanemode.manifest/0.1`, the shape and the canonical bytes are unchanged,
+and the verdict of every document under every trust set of honestly generated keys is unchanged. The `$id`
+of the schema moves to `urn:airplanemode:spec:manifest:0.1.3`; its body is byte-identical. What it adds:
+
+- the reason `weak_key_refused` and the constant `WEAK_KEY_REFUSED_MESSAGE` in `manifest.ts`, with the
+  normative rule in Weak keys below, and the vectors `vectors/weak-keys/`;
+- the informative Pinned entries note;
+- an informative sentence on `minProfile.ramGb`: capability profile 0.1.1 clamps ramGb to at most 8, so a
+  minProfile.ramGb above 8 is schema-valid but can never be satisfied; producers MUST NOT emit it, and the
+  reference bundler refuses it;
+- the `minProfile.ramGb` rule wording (TD-84): a consumer that compares `ramGb` with a minimum treats a profile
+  `ramGb` of 0 as unknown, never as too small; only a reported value below `minProfile.ramGb` fails. The
+  schema is unchanged.
+
+Every manifest that 0.1.2 accepted still verifies under 0.1.3 with a trust set of honestly generated keys:
+the published 0.1.2 wire format stays readable.
+
+### Pinned entries (informative)
+
+The optional `pin` member of an entry is a storage hint (TD-54): pin is a storage hint that tells a consumer
+not to evict the file to make room. In the reference runtime evictToFit skips pinned rows, and runtime
+evict() refuses a pinned row unless { force: true } is passed. A pin is not covered by any check of this
+spec beyond the signature over the manifest that carries it: pin is not a security property, it does not make
+a file trusted, and a consumer that stores a file with its own policy is free to ignore it.
+
+## Weak keys
+
+A trusted key of exactly 32 bytes MUST satisfy every one of the following, else the trust set is refused with
+`weak_key_refused`:
+
+1. decode per RFC 8032 section 5.1.3: the 255-bit little-endian y is below p = 2^255 - 19 (a canonical y (y <
+   p)), the x coordinate is recovered by the square-root rule and the point lies on the curve; an encoding with
+   no such x is refused, and so is x = 0 with the sign bit set;
+2. not be the identity (0, 1);
+3. not be small order: [8]P must not be the identity;
+4. be torsion-free: [L]P must be the identity, where L is the order of the base point. This refuses the
+   mixed-order points (a point of the prime-order subgroup plus a small-order point), which pass the previous
+   two rules but are not in the prime-order subgroup that key generation produces.
+
+A key that is not 32 bytes keeps its 0.1.2 outcome. The rule is exactly this, nothing is added:
+
+- (a) The predicate takes only the 32 raw key bytes, never the keyId, so a weak key filed under any keyId
+  (including 64 zero characters) is refused before key_mismatch is evaluated.
+- (b) A key made by RFC 8032 key generation is always in the prime-order subgroup, so the rule cannot refuse a
+  correctly generated key.
+- (c) The rule does not replace S < L or verify_strict; both stay.
+- (d) The check is a pure function of the bytes: no cache keyed by keyId, and no result stored on the trust-set
+  object.
+- (e) Manifest 0.1.3 has no document-level marker and the check lives in the verifier, so no 0.1.2 document can
+  downgrade it.
+
+Order. Step 1 of Verification order is now 1a (test keys, skipped only with `allowTestKeys === true`) and 1b
+(weak keys, always); both run over the iterated trust set before the manifest is parsed. A trust set that holds
+a test key and a weak key reports `test_key_refused` unless `allowTestKeys` is true, and `weak_key_refused`
+after that. A malformed manifest with a weak trust key is `weak_key_refused`, not `invalid_json`. Step 5
+repeats the weak check for the key a signature actually uses (the entry the verifier reads for its `keyId`), so
+a trust Map whose iterator hides a key is still caught. A trust set that cannot be iterated is not checked at step 1b; step 5 still checks every key a signature uses. There is no option to skip the check.
+
+Vectors: `vectors/weak-keys/weak-keys.json` rows `{ id, publicKeyHex, keyIdHex, class, expect }` with class
+`identity`, `identity_sign_bit`, `small_order`, `small_order_noncanonical`, `mixed_order`, `not_on_curve`,
+`noncanonical_y` or `valid`, and expect `weak_key_refused` or `ok`; and `vectors/weak-keys/verify.json` rows
+`{ manifest, trust: [{ keyIdHex, publicKeyHex }], allowTestKeys, expect: { throws: 'weak_key_refused' } }`,
+among them `forged-identity.manifest.json` (a signature with R = identity and S = 0 under the identity key).
+Every hex value is derived by computation in `test/tools/make-weak-key-vectors.mjs`, which asserts each class
+(for `ok` rows [L]P = O and P is not O; for `mixed_order` [8]P is not O and [L]P is not O). The libsodium
+blocklist of small-order points is informative only.

@@ -1,6 +1,16 @@
 /**
- * Manifest contract 0.1.2 (airplanemode.manifest/0.1), status "published": this is the plan's
+ * Manifest contract 0.1.3 (airplanemode.manifest/0.1), status "published": this is the plan's
  * "manifest spec v0.1" (pushed 15 Nov 2026 as 0.1.1).
+ *
+ * 0.1.3 (spec release 0.6.0) is an additive patch of 0.1.2 (TD-68, TD-82, S1-113). A trusted key must be the
+ * canonical 32-byte encoding of a point of the prime-order subgroup other than the identity: a trust set
+ * holding any other 32-byte key (not a curve point, a non-canonical encoding, the identity, any other
+ * small-order point, a mixed-order point) is refused with the new reason `weak_key_refused`, raised BEFORE
+ * the manifest is parsed (as `test_key_refused` is), with no opt-out, and again for the key a signature
+ * actually uses. The predicate takes only the 32 key bytes, never the keyId. Honestly generated keys are
+ * always in the prime-order subgroup, so no verdict of any document under any honestly generated trust set
+ * changes. The wire format is unchanged and the schema body is byte-identical: only its $id moves. Also
+ * informative: the Pinned entries note (TD-54) and the minProfile.ramGb wording (TD-57), both in MANIFEST.md.
  *
  * 0.1.2 (spec release 0.5.0) is an additive patch of 0.1.1 and changes the verdict of no input unless the
  * caller opts in: `VerifyOptions.expectId` (the verifier throws TypeError 'invalid expectId' for an
@@ -14,7 +24,7 @@
  * Normative prose: MANIFEST.md (scope, shape, canonicalisation, duplicate members, signing, trust
  * roots, verification order, reason precedence, downgrade, test keys, tamper vectors, security
  * considerations, conformance). Normative JSON Schema: manifest.schema.json ($id
- * urn:airplanemode:spec:manifest:0.1.2; the body is unchanged since 0.1.0). This file is the
+ * urn:airplanemode:spec:manifest:0.1.3; the body is unchanged since 0.1.0). This file is the
  * TypeScript mirror of the schema plus the constants every implementation shares.
  *
  * 0.1.1 is an additive patch of 0.1.0 (spec release 0.4.0): it changes no input that 0.1.0 accepted
@@ -148,7 +158,8 @@ export const DEFAULT_CHUNK_SIZE = 8388608;
  * Minimum requirements of an entry. Integers only. `{}` means any device.
  *
  * satisfies(profile, min) iff (min.gpu absent or 'none' or profile.gpu == 'webgpu')
- *   && profile.ramGb >= min.ramGb && profile.storageFreeGb >= min.storageFreeGb
+ *   && (profile.ramGb == 0 || profile.ramGb >= min.ramGb) && profile.storageFreeGb >= min.storageFreeGb
+ *   (profile.ramGb 0 means unknown, which is not below a minimum; only a reported smaller value fails)
  *   && profile.cores >= min.cores && rank(profile.backendTier) >= rank(min.backendTier).
  */
 export interface MinProfile {
@@ -223,7 +234,13 @@ export type ManifestRejectReason =
   | 'unexpected_id'
   | 'downgrade'
   | 'state'
-  | 'test_key_refused';
+  | 'test_key_refused'
+  /**
+   * 0.1.3: the trust set holds a key that is not the canonical encoding of a prime-order point other than
+   * the identity. Raised as an exception before parsing (like test_key_refused), never a verdict on a
+   * document; not listed in MANIFEST_REJECT_PRECEDENCE.
+   */
+  | 'weak_key_refused';
 
 /** Why an individual signature was judged invalid. */
 export type SignatureInvalidReason =
@@ -258,11 +275,18 @@ export const RFC8032_TEST_KEY_IDS = Object.freeze([
 ] as const);
 
 /**
+ * The message of the ManifestError('weak_key_refused') that a verifier throws for a weak trusted key
+ * (manifest 0.1.3). Implementations (the runtime, cp-manifest, cp-sign) use the same text.
+ */
+export const WEAK_KEY_REFUSED_MESSAGE =
+  'trust set contains a weak Ed25519 public key (not the canonical encoding of a prime-order point other than the identity)' as const;
+
+/**
  * Reason precedence (normative, MANIFEST.md "Reason precedence"): when several faults hold, the
  * reason is the first stage below that fails. Each group is one stage; shared vectors never combine
  * two parse-stage faults, so the order inside the first group is not tested.
- * test_key_refused is not listed: it is raised before parsing and is the only reason that throws. The
- * TypeError 'invalid expectId' (0.1.2) is a caller error, not a reason.
+ * test_key_refused and weak_key_refused (0.1.3) are not listed: they are raised before parsing and are the
+ * only reasons that throw. The TypeError 'invalid expectId' (0.1.2) is a caller error, not a reason.
  *
  *  1. parse stage: invalid_json (including a repeated member name at any depth), lone_surrogate, float,
  *     bigint, digit_key, invalid_key

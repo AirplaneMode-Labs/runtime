@@ -1,0 +1,59 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "weak-key-downgrade",
+  "version": "0.1.2",
+  "publisher": "Airplane Mode Labs (vectors) 1",
+  "createdAt": "2026-11-01T00:00:00Z",
+  "expiresAt": "2027-11-01T00:00:00Z",
+  "entries": [
+    {
+      "id": "m-x",
+      "kind": "data",
+      "url": "assets/m-x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m.x",
+      "kind": "data",
+      "url": "assets/m.x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m_x",
+      "kind": "data",
+      "url": "assets/m_x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "mx",
+      "kind": "data",
+      "url": "assets/mx",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "1381231a2021f331f1b9b69d2f5ff04a2cc77582d08b909ffc0ace9530351722",
+      "publicKey": "xxdqcD1N2E+6PAt2DRBnDyogU/osOczGTsf9d5KsA3o=",
+      "sig": "JuiVj8KyJ7BFw/SJ8u+Y8NXfrAXTxjM5sTgCiG1T/AUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "signedAt": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

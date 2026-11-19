@@ -1,0 +1,210 @@
+[
+  {
+    "id": "identity",
+    "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000",
+    "keyIdHex": "01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5",
+    "class": "identity",
+    "expect": "weak_key_refused",
+    "why": "the neutral element (0, 1)"
+  },
+  {
+    "id": "identity-sign-bit",
+    "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000080",
+    "keyIdHex": "05e33a7a25dc39ab258dacfea5a955d0d3742731d8f1c42c427bf98ca9c75ccc",
+    "class": "identity_sign_bit",
+    "expect": "weak_key_refused",
+    "why": "y = 1 with the sign bit set: x = 0 cannot carry a sign (RFC 8032 section 5.1.3)"
+  },
+  {
+    "id": "small-order-8-a",
+    "publicKeyHex": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "keyIdHex": "1381231a2021f331f1b9b69d2f5ff04a2cc77582d08b909ffc0ace9530351722",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 8 in canonical form"
+  },
+  {
+    "id": "small-order-4-sign-bit",
+    "publicKeyHex": "0000000000000000000000000000000000000000000000000000000000000080",
+    "keyIdHex": "63794a3bf8875ac2c32ba6238d27e7e15e56a3b794b8d2d6aec82faef2360e3a",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 4 in canonical form"
+  },
+  {
+    "id": "small-order-8-b",
+    "publicKeyHex": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "keyIdHex": "0d34fd0d99957c53e4dc954ddaae5934077f594e73c3fda29f2fff1b232d549a",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 8 in canonical form"
+  },
+  {
+    "id": "small-order-2",
+    "publicKeyHex": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "keyIdHex": "ffe1ea08f3af443b5a2d6497c9b7c5a74a25a2b60ac58b44a22b7b1dd2218bfc",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 2 in canonical form"
+  },
+  {
+    "id": "small-order-8-c",
+    "publicKeyHex": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+    "keyIdHex": "5204010488ca3338ed6c56bb34a9e26cbc3602857b8d5ec720144dc8fa2b95ca",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 8 in canonical form"
+  },
+  {
+    "id": "small-order-4-all-zero",
+    "publicKeyHex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "keyIdHex": "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 4 in canonical form"
+  },
+  {
+    "id": "small-order-8-d",
+    "publicKeyHex": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    "keyIdHex": "ea4d97c02b411d7bc6e52582295463fe73127094421423255452b673644001cb",
+    "class": "small_order",
+    "expect": "weak_key_refused",
+    "why": "a point of order 8 in canonical form"
+  },
+  {
+    "id": "small-order-y-eq-p-sign0",
+    "publicKeyHex": "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "keyIdHex": "bd6174a7c16e1af07272966a9c071c8a3cf16b2726c50d672a09f60636b08901",
+    "class": "small_order_noncanonical",
+    "expect": "weak_key_refused",
+    "why": "y = p reduces to y = 0"
+  },
+  {
+    "id": "small-order-y-eq-p-sign1",
+    "publicKeyHex": "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "keyIdHex": "138397e6a9ff992e43ff57dfb09f75ef2ff6fb55e91228e3d9237445eb658a7c",
+    "class": "small_order_noncanonical",
+    "expect": "weak_key_refused",
+    "why": "y = p reduces to y = 0"
+  },
+  {
+    "id": "small-order-y-eq-p-plus-1-sign0",
+    "publicKeyHex": "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "keyIdHex": "ebcaabd64b0947b64d68135119c54f2d3466bd7ed11257b3a3059689ae2dbd91",
+    "class": "small_order_noncanonical",
+    "expect": "weak_key_refused",
+    "why": "y = p + 1 reduces to y = 1 (identity)"
+  },
+  {
+    "id": "small-order-y-eq-p-plus-1-sign1",
+    "publicKeyHex": "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "keyIdHex": "ea5aed9fda92d9b0e5e9bc01c7ae57fc299f2590317209a7cb74038f456911bd",
+    "class": "small_order_noncanonical",
+    "expect": "weak_key_refused",
+    "why": "y = p + 1 with the sign bit set"
+  },
+  {
+    "id": "small-order-minus-one-sign1",
+    "publicKeyHex": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "keyIdHex": "185c3c71208cfd21f71028544b41e3b61d605a95ce3d8281ed29acd2b0168b43",
+    "class": "small_order_noncanonical",
+    "expect": "weak_key_refused",
+    "why": "y = -1 with the sign bit set: x = 0 cannot carry a sign"
+  },
+  {
+    "id": "mixed-test1-plus-order8",
+    "publicKeyHex": "9158312a9a8d6e3b34c891d6d61444f8b8211c5117ebad15bdb0bd68b07e0245",
+    "keyIdHex": "b16a63f38aa1e300d62a5131743ff7e54564e41953abad6ff68f9f499db7ce9d",
+    "class": "mixed_order",
+    "expect": "weak_key_refused",
+    "why": "RFC 8032 TEST 1 plus a point of order 8"
+  },
+  {
+    "id": "mixed-test1-plus-order4",
+    "publicKeyHex": "ad38a8f0b22ab7ca46ecee7bbef12b5f336c182652fac34392f859dbd9666a7d",
+    "keyIdHex": "2d17aa75dff379c4b592e829adb3b81808ea28429bba595a1396549889f4c78f",
+    "class": "mixed_order",
+    "expect": "weak_key_refused",
+    "why": "RFC 8032 TEST 1 plus a point of order 4"
+  },
+  {
+    "id": "mixed-test1-plus-order2",
+    "publicKeyHex": "16a567fe7d4ef5482ab4012c369bf8c5f11e8d0c2559dcda50fde59708f8aee5",
+    "keyIdHex": "189eee6edfa0791f17ce0b6e864c69f87eb892c0544badbfee1e5dd54a6157ba",
+    "class": "mixed_order",
+    "expect": "weak_key_refused",
+    "why": "RFC 8032 TEST 1 plus a point of order 2"
+  },
+  {
+    "id": "not-on-curve-smallest-y",
+    "publicKeyHex": "0200000000000000000000000000000000000000000000000000000000000000",
+    "keyIdHex": "5778f985db754c6628691f56fadae50c65fddbe8eb2e93039633fefa05d45e31",
+    "class": "not_on_curve",
+    "expect": "weak_key_refused",
+    "why": "y = 2 has no square root"
+  },
+  {
+    "id": "noncanonical-y-first-on-curve",
+    "publicKeyHex": "f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "keyIdHex": "e7e7d5048bfba44795508d0358d4cf95e6c1a29b10da91263b7ddecf40a91817",
+    "class": "noncanonical_y",
+    "expect": "weak_key_refused",
+    "why": "y = 3 + p: the point with y = 3 is on the curve, but y >= p is not canonical"
+  },
+  {
+    "id": "noncanonical-y-all-ones",
+    "publicKeyHex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "keyIdHex": "af9613760f72635fbdb44a5a0a63c39f12af30f950a6ee5c971be188e89c4051",
+    "class": "noncanonical_y",
+    "expect": "weak_key_refused",
+    "why": "all 256 bits set: y = 2^255 - 1 >= p"
+  },
+  {
+    "id": "ok-rfc8032-1",
+    "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "keyIdHex": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "class": "valid",
+    "expect": "ok",
+    "why": "TEST 1: published RFC 8032 test key; [L]P = O"
+  },
+  {
+    "id": "ok-rfc8032-2",
+    "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+    "keyIdHex": "39f713d0a644253f04529421b9f51b9b08979d08295959c4f3990ee617f5139f",
+    "class": "valid",
+    "expect": "ok",
+    "why": "TEST 2: published RFC 8032 test key; [L]P = O"
+  },
+  {
+    "id": "ok-rfc8032-3",
+    "publicKeyHex": "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+    "keyIdHex": "dac073e0123bdea59dd9b3bda9cf6037f63aca82627d7abcd5c4ac29dd74003e",
+    "class": "valid",
+    "expect": "ok",
+    "why": "TEST 3: published RFC 8032 test key; [L]P = O"
+  },
+  {
+    "id": "ok-rfc8032-1024",
+    "publicKeyHex": "278117fc144c72340f67d0f2316e8386ceffbf2b2428c9c51fef7c597f1d426e",
+    "keyIdHex": "91384c411e5af29648f17f922b402655b11ecaec1b33fc45796241963f95f202",
+    "class": "valid",
+    "expect": "ok",
+    "why": "TEST 1024: published RFC 8032 test key; [L]P = O"
+  },
+  {
+    "id": "ok-rfc8032-sha-abc",
+    "publicKeyHex": "ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf",
+    "keyIdHex": "5f9b247e2a654719f198e4f241d6b0df9a1a937a13ef5ef899f64d9285fce224",
+    "class": "valid",
+    "expect": "ok",
+    "why": "TEST SHA(abc): published RFC 8032 test key; [L]P = O"
+  },
+  {
+    "id": "ok-generated-1",
+    "publicKeyHex": "ca297e68793f3a509777c5010101f6db5cd43e0ed8d8ae5298643e1e8413682d",
+    "keyIdHex": "5b1236ca06c08db96fee7f20403666e8cdea16011dfbae090894100d726b3f98",
+    "class": "valid",
+    "expect": "ok",
+    "why": "a key made by Ed25519 key generation from a fixed public derivation; [L]P = O"
+  }
+]

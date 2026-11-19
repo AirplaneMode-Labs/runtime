@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:airplanemode:spec:capability-profile:0.1.0",
+  "$id": "urn:airplanemode:spec:capability-profile:0.1.1",
   "title": "CapabilityProfile",
   "description": "What one device can do, measured once per page load by the runtime. Used by manifests (minimum requirements), by the backend fallback chain and later by control-plane policy. Wire format: airplanemode.capability/0.1. Never contains navigator.userAgent, userAgentData, adapter description or device strings.",
   "type": "object",
@@ -25,7 +25,8 @@
     "ramGb": {
       "type": "number",
       "minimum": 0,
-      "description": "navigator.deviceMemory in GiB (browsers cap it at 8). 0 = unknown."
+      "maximum": 8,
+      "description": "navigator.deviceMemory as the browser reports it, a coarse power of two that Chrome reports from 0.25 to 8, clamped by the runtime to at most 8; 0 when not exposed (unknown, which is not below a memory line: TD-84). A page cannot read free memory."
     },
     "storageFreeGb": {
       "type": "number",

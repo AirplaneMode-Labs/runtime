@@ -1,0 +1,59 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "forged-identity",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs (vectors)",
+  "createdAt": "2026-11-01T00:00:00Z",
+  "expiresAt": "2027-11-01T00:00:00Z",
+  "entries": [
+    {
+      "id": "m-x",
+      "kind": "data",
+      "url": "assets/m-x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m.x",
+      "kind": "data",
+      "url": "assets/m.x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "m_x",
+      "kind": "data",
+      "url": "assets/m_x",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    },
+    {
+      "id": "mx",
+      "kind": "data",
+      "url": "assets/mx",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 0,
+      "version": "0.1.0",
+      "licence": "Apache-2.0",
+      "minProfile": {}
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5",
+      "publicKey": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "sig": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "signedAt": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

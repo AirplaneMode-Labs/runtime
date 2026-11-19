@@ -1,5 +1,12 @@
 /**
- * Backend adapter contract 0.4.0 (see backend-adapter.md for prose).
+ * Backend adapter contract 0.5.0 (see backend-adapter.md for prose).
+ *
+ * 0.5.0 (minor, spec release 0.6.0; B1 memory hardening): no interface method changes (`unload()` already
+ * exists); the error code 'out_of_memory'. backend-adapter.md adds R16 (unload: for host 'worker' it resolves
+ * only after the worker is terminated and every AssetHandle is released, and emits model.unload), R17 (engine
+ * memory options, informative), R18 (out of memory: classified inside the worker into the code enum only), R19
+ * (a re-load after unload is a first load and re-verifies everything) and R20 (the engine consumes exactly the
+ * bytes the R15 re-hash covered).
  *
  * 0.4.0 (minor, spec release 0.5.0): `embed(texts, opts?)` takes `EmbedOptions` (`pooling`, `normalize`,
  * `signal`) and returns `EmbedResult` with `truncated` and `timings`; the limits EMBED_MAX_TEXTS and
@@ -198,7 +205,13 @@ export type AdapterErrorCode =
   /** The prompt leaves no room to generate: contextLength - promptTokens < 1 (R4b). Rejected before decode. */
   | 'context_overflow'
   /** cacheOnly was requested and the file is not stored in full, or the stored file disappeared. */
-  | 'not_cached';
+  | 'not_cached'
+  /**
+   * 0.5.0 (R18): an allocation failure inside the engine (a RangeError from WebAssembly.Memory.grow, or an
+   * engine allocation error). Classified inside the worker into this code only; the worker is terminated, the
+   * holds are released and there is no retry.
+   */
+  | 'out_of_memory';
 
 export class AdapterError extends Error {
   override readonly name = 'AdapterError';

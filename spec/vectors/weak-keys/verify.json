@@ -1,0 +1,123 @@
+[
+  {
+    "manifest": "weak-keys/forged-identity.manifest.json",
+    "trust": [
+      {
+        "keyIdHex": "01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5",
+        "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "allowTestKeys": false,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "weak-keys/forged-identity.manifest.json",
+    "trust": [
+      {
+        "keyIdHex": "01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5",
+        "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "allowTestKeys": true,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "weak-keys/forged-order8.manifest.json",
+    "trust": [
+      {
+        "keyIdHex": "1381231a2021f331f1b9b69d2f5ff04a2cc77582d08b909ffc0ace9530351722",
+        "publicKeyHex": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"
+      }
+    ],
+    "allowTestKeys": false,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "tamper/tamper-base.json",
+    "trust": [
+      {
+        "keyIdHex": "5b1236ca06c08db96fee7f20403666e8cdea16011dfbae090894100d726b3f98",
+        "publicKeyHex": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+      }
+    ],
+    "allowTestKeys": false,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "tamper/tamper-base.json",
+    "trust": [
+      {
+        "keyIdHex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "publicKeyHex": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "allowTestKeys": false,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "tamper/tamper-base.json",
+    "trust": [
+      {
+        "keyIdHex": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      {
+        "keyIdHex": "b16a63f38aa1e300d62a5131743ff7e54564e41953abad6ff68f9f499db7ce9d",
+        "publicKeyHex": "9158312a9a8d6e3b34c891d6d61444f8b8211c5117ebad15bdb0bd68b07e0245"
+      }
+    ],
+    "allowTestKeys": true,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "tamper/tamper-07-truncated.txt",
+    "trust": [
+      {
+        "keyIdHex": "01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5",
+        "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "allowTestKeys": false,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "weak-keys/forged-order8.manifest.json",
+    "trust": [
+      {
+        "keyIdHex": "5778f985db754c6628691f56fadae50c65fddbe8eb2e93039633fefa05d45e31",
+        "publicKeyHex": "0200000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "allowTestKeys": true,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  },
+  {
+    "manifest": "tamper/tamper-base.json",
+    "trust": [
+      {
+        "keyIdHex": "e7e7d5048bfba44795508d0358d4cf95e6c1a29b10da91263b7ddecf40a91817",
+        "publicKeyHex": "f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+      }
+    ],
+    "allowTestKeys": true,
+    "expect": {
+      "throws": "weak_key_refused"
+    }
+  }
+]

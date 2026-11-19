@@ -1,10 +1,15 @@
-# Backend adapter 0.4.0 (with model descriptor 0.2.1)
+# Backend adapter 0.5.0 (with model descriptor 0.2.1)
 
 Normative definition: `backend-adapter.ts` and, for the descriptor, `model-descriptor.ts` and
 `model-descriptor.schema.json`. One interface over Transformers.js (ONNX Runtime Web), WebLLM and the
 Chrome Prompt API, so the fallback chain WebGPU -> WASM -> Chrome built-in can pick a backend without
 the application changing. `backend-adapter.ts` imports nothing from `model-descriptor.ts`; the two are
 released together and versioned separately.
+
+0.5.0 (spec release 0.6.0, draft) is a minor change over 0.4.0: no interface method changes (`unload()`
+already exists) and the error code `out_of_memory` is new. R16 (unload that really frees memory), R17 (engine
+memory options, informative), R18 (out of memory), R19 (re-load re-verifies everything) and R20 (the engine
+consumes exactly the hashed bytes) are new. Model descriptor 0.2.1 is unchanged.
 
 0.4.0 (spec release 0.5.0, draft) is a minor change over 0.3.1: `embed(texts, opts?)` takes `EmbedOptions`
 (`signal`, `pooling`, `normalize`) and returns an `EmbedResult` with `truncated` and `timings`; the limits
@@ -447,6 +452,50 @@ The `verify` phase of `model.load.phase` is emitted by the worker host with host
 equals the total re-hashed in the worker. The main-thread load-time re-hash is removed from the load path of
 the worker adapter: the asset manager's download-time verification stays, and `getBlob(id, { rehash: true })`
 is not called on that path. The main-thread engine adapter (no worker) keeps R2 unchanged.
+
+## R16 Unload
+
+Rule: for host 'worker', unload() resolves only after the worker is terminated and every AssetHandle is released,
+and it emits model.unload (Event 0.1.5: adapter, model, device, host, loadId, reason; `durationMs` runs from
+the `unload()` call to the worker's `terminate()` returning). WebAssembly memory is returned only by ending the
+worker, never by an in-worker dispose: an engine that frees its session inside a live worker still holds the
+linear memory it grew. An abort that terminates the worker (R8) and a failed load emit `model.unload` with
+reason 'abort' or 'error'; an out-of-memory failure (R18) with reason 'out_of_memory'. `unload()` on an adapter
+that is not loaded resolves and emits nothing. An application that needs two engines (an embedder and a
+generator) never needs both in memory at once: it unloads one before it loads the other.
+
+## R17 Engine memory options (informative)
+
+On device 'wasm' the worker host creates sessions with ONNX Runtime enableCpuMemArena false and
+enableMemPattern false, if the engine passes session options through. They trade a little speed for a
+smaller peak; the greedy output of a model is unchanged by them. An implementation whose engine does not pass
+them through says so and omits the options: they are not part of the interface.
+
+## R18 Out of memory
+
+An allocation failure inside the engine (a RangeError from WebAssembly.Memory.grow, or an engine allocation
+error) is classified inside the worker into the code enum only and reported as AdapterError('out_of_memory'):
+the worker sends the code and no text (R13). The host terminates the worker, releases the holds, and does not
+retry: there is no retry, no part or cache entry changes, and no worker string reaches an event. The events
+are `model.load.failed` with code 'out_of_memory' during a load, or `model.generate` with finishReason 'error'
+and code 'out_of_memory' during generation (and `model.embed` with outcome 'out_of_memory' for an embedder),
+then `model.unload` with reason 'out_of_memory'. An application shows a plain refusal; it does not retry the
+same model on the same device.
+
+## R19 Re-load
+
+In short, a load() after unload() is a first load. It re-verifies the stored manifest, does a fresh acquire under
+cacheOnly (a cache miss is a refusal, never a network fetch), repeats the R15 in-worker re-hash of every
+engine-readable file, and takes the descriptor entry from the verified manifest. No 'already verified' cache
+keyed by URL, entry id, sha256 or model name may skip any of these. The cost of unloading is therefore a full
+re-hash on the next load, by design.
+
+## R20 Snapshot
+
+Rule: the engine consumes exactly the bytes the R15 re-hash covered: the same File snapshot or the same buffer. A
+File may be re-taken only BEFORE hashing (for example after a size mismatch with entry.size); a File taken
+after the hash is hashed again in full. Any size or hash mismatch takes the 'integrity' path, which is never
+retried (R9).
 
 ## Worker support exports
 

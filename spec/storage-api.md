@@ -1,9 +1,14 @@
-# Storage API 0.3.0
+# Storage API 0.4.0
 
 Normative definition: `storage-api.ts`. This page is the prose companion and carries the normative
-semantics of the vector index and of the documents API. Implemented by `@airplanemode/localdata` over OPFS
-with an IndexedDB fallback (and an in-memory driver for tests). Status: draft (spec release 0.5.0,
-committed; public after the owner's push).
+semantics of the vector index, of the documents API and of the approximate index. Implemented by
+`@airplanemode/localdata` over OPFS with an IndexedDB fallback (and an in-memory driver for tests). Status:
+draft (spec release 0.6.0, committed; public after the owner's push).
+
+0.4.0 is a minor change over 0.3.0: the approximate vector index, HNSW, with the index kind chosen by the
+caller (`buildIndex`, `dropIndex`, `QueryOptions.index` and `ef`, `VectorIndexInfo.ann`,
+`UsageResult.annBytes`). See Approximate index (0.4.0) below. Nothing of 0.3.0 changes: a caller that
+never passes `index` gets the flat scan it always got.
 
 0.3.0 is a minor change over 0.2.0: the documents API (`putDocument`, `getDocument`, `listDocuments`,
 `deleteDocument`, `queryChunks`, `redactNamespacePrefix`), the types and constants of `storage-api.ts`
@@ -25,6 +30,8 @@ interface StorageApi {
   query(ns, vector: Float32Array, k: number, opts?: QueryOptions): Promise<QueryHit[]>;
   putVectors(ns, rows: Iterable<VectorRow> | AsyncIterable<VectorRow>): Promise<PutVectorsResult>;
   indexInfo(ns): Promise<VectorIndexInfo | undefined>;
+  buildIndex(ns, opts: BuildIndexOptions): Promise<BuildIndexResult>; // 0.4.0
+  dropIndex(ns, kind: 'hnsw'): Promise<boolean>; // 0.4.0
   putDocument(
     ns,
     doc: DocumentInput,
@@ -173,8 +180,9 @@ are never returned. KV operations on the namespace are unaffected.
 
 ## Namespaces
 
-Namespaces are isolated. Each index lives in its own reserved driver namespace `'__ld_vec.' + ns`, and the
-documents of a namespace in `'__ld_doc.' + ns` (Documents (0.3.0)). The
+Namespaces are isolated. Each index lives in its own reserved driver namespace `'__ld_vec.' + ns`, the
+documents of a namespace in `'__ld_doc.' + ns` (Documents (0.3.0)) and its HNSW graph in
+`'__ld_ann.' + ns` (Approximate index (0.4.0)). The
 prefix `__ld_` is reserved: validateNamespace rejects the prefix '__ld_' for callers, so a caller can
 neither read nor write an index file as a KV value.
 
@@ -279,6 +287,105 @@ Semantics (normative):
 A per-document namespace is how an application makes Delete physical: it calls `clear(ns)` for that
 document's namespace, which removes every byte of it.
 
+## Approximate index (0.4.0)
+
+An application with many vectors can ask for an approximate nearest-neighbour graph (HNSW) instead of the
+exact scan. The caller chooses the index kind per query; the graph is a derived structure, built from the
+stored vectors, and it is treated as untrusted input every time it is read.
+
+```ts
+type VectorIndexKind = 'flat' | 'hnsw';
+const HNSW_M_MIN = 4,
+  HNSW_M_MAX = 64,
+  HNSW_M_DEFAULT = 16;
+const HNSW_EF_CONSTRUCTION_DEFAULT = 200,
+  HNSW_EF_CONSTRUCTION_MAX = 1000; // minimum: m
+const HNSW_EF_MAX = 1000;
+const HNSW_EF_DEFAULT_MIN = 64; // effective ef = max(ef ?? max(64, k), k)
+const HNSW_MAX_LEVEL = 16;
+const ANN_NS_PREFIX = '__ld_ann.';
+interface BuildIndexOptions {
+  kind: 'hnsw';
+  metric?: VectorMetric;
+  m?: number;
+  efConstruction?: number;
+  seed?: number; // uint32, default 1
+}
+interface BuildIndexResult {
+  kind: 'hnsw';
+  rows: number;
+  liveRows: number;
+  bytes: number;
+  generation: number;
+  replaced: boolean;
+}
+interface AnnIndexInfo {
+  kind: 'hnsw';
+  metric: VectorMetric;
+  m: number;
+  efConstruction: number;
+  seed: number;
+  nodes: number;
+  liveNodes: number;
+  bytes: number;
+  generation: number;
+  current: boolean;
+}
+```
+
+`QueryOptions` gains `index?: VectorIndexKind` (default `'flat'`) and `ef?: number` (an integer
+1..HNSW_EF_MAX). `VectorIndexInfo` gains `ann?: AnnIndexInfo`. `UsageResult` gains `annBytes?: number`; these
+bytes are included in `bytes`, and the field is omitted when no graph is in scope. `StorageApi` gains
+`buildIndex(ns, opts)` and `dropIndex(ns, kind)`.
+
+Semantics (normative):
+
+- Flat is the default and the fallback. `query(index: 'hnsw')` answers with the flat scan, giving the same
+  results as flat, and reports the fallback in the event, when: no graph exists ('absent'); the graph
+  generation is behind the HEAD ('stale'); filterPrefix is set ('filter'); the metric differs ('metric'); the
+  graph or its params were refused, including a graph generation AHEAD of HEAD ('refused'); or the kernel
+  trapped ('trap').
+- If the HNSW candidates that survive the liveness and ordinal checks are fewer than min(k, live rows) and no
+  other fallback applies, the query answers with the flat scan and reports fallback 'short'.
+- A graph is current only when its generation EQUALS HEAD (the flat index generation).
+- Liveness and the row-ordinal-to-key map come from the flat store HEAD at query time, never from the graph's
+  deleted flags. Every HNSW candidate ordinal is checked to be below the HEAD row count and live before
+  re-scoring, so a deleted key is never returned, even from a stale or forged graph.
+- HNSW hits are re-scored with the exact flat scoring function (Scoring) and ordered as flat orders them
+  (score descending, then key ascending by UTF-8 bytes). They are a subset of the true top-k with bit-identical
+  scores. A crafted graph can only lower recall.
+- `buildIndex` builds over the live rows in stored order, deterministically for (rows, order, metric, m,
+  efConstruction, seed); replaces an existing graph in one commit, under the writer lock; throws
+  quota_exceeded (reason 'quota' | 'max_index_bytes' | 'wasm_memory' | 'max_graphs') before writing; and is
+  allowed on an empty namespace. At most HNSW_MAX_GRAPHS (64) graphs are loaded per open store; a build that
+  would exceed the cap is quota_exceeded with reason 'max_graphs'.
+- With a current graph, `putVectors` inserts new rows (a replaced row's old node is marked deleted) and
+  `delete(ns, key)` marks the node deleted, both inside the same writer lock and commit as the flat change.
+- Graph bytes count toward the pre-write quota check, so a namespace with a graph can refuse a `putVectors`
+  that a flat-only namespace would accept. Flat-only quota behaviour is unchanged.
+- If a graph write fails after the flat commit, the graph stays at the old generation and becomes 'stale'.
+- The graph lives in the SDK-reserved driver namespace ANN_NS_PREFIX + ns, where ANN_NS_PREFIX = '__ld_ann.'
+  and sits next to '__ld_vec.' and '__ld_doc.'. It holds a 'graph' record and a separate 'params' record.
+- Every path that removes a namespace's vectors (clear, deleting the last row, dropNamespace or destroy) also
+  removes the ANN namespace. `usage()` counts it. Public set, get and delete on a '__ld_' namespace is refused
+  by the existing reserved-prefix check.
+- A refused graph is removed and rebuilt from the stored vectors with the stored params, under the writer lock,
+  before the query answers (`storage.index.build` reason 'rebuild').
+- At most one rebuild runs per (ns, HEAD generation) per open store. If the rebuilt graph or the params are
+  refused, the index is dropped and queries fall back to flat with fallback 'refused'. There is no rebuild loop.
+- A WebAssembly.RuntimeError from the kernel discards and re-instantiates the module and fails the HNSW path.
+  The query answers flat (fallback 'trap'). The flat scan never runs on a trapped instance.
+- It works on the opfs, indexeddb and memory drivers. queryChunks (documents API) stays flat in 0.4.0.
+- Validation order: ns, then the opts shape (invalid_value with details.reason 'kind' | 'm' | 'efConstruction'
+  | 'seed' | 'ef' | 'metric').
+- The on-disk format is localdata-internal (docs/hnsw-format.md); the contract promises the behaviour. The
+  graph file holds no vectors and no keys. It binds the namespace by UTF-8 length plus bytes (at most 64), not
+  by a CRC.
+- Events: `storage.index.build` (Event 0.1.5), and the attrs `requested`, `index`, `fallback` and `ef` on
+  `storage.query`. Never a key, a vector, a score or the seed.
+
+Not in 0.4.0: quantisation, compaction, encryption at rest, and HNSW for `queryChunks`.
+
 ## Errors
 
 `class StorageError extends Error { code; details? }` with codes `not_implemented` (thrown by 0.1
@@ -314,7 +421,7 @@ driver only moves bytes.
 Events are optional and are not part of this contract: localdata emits `storage.set`, `storage.get`,
 `storage.delete`, `storage.quota`, `storage.query`, `storage.index.open` and `storage.index.write` (source
 `localdata`; Event 0.1.3, `STORAGE_EVENT_NAMES`; `storage.doc.put`, `storage.doc.delete` and
-`storage.doc.query` since Event 0.1.4) through an optional `EventSink`. The sink is called
+`storage.doc.query` since Event 0.1.4; `storage.index.build` since Event 0.1.5) through an optional `EventSink`. The sink is called
 synchronously inside a try/catch and never awaited. An event never carries a key, a prefix, a query
 vector, a score or a value. **Privacy:** the namespace (attr 'ns') DOES appear in events and in the
 DevTools snapshot. Applications must not encode personal data or document identifiers in namespace

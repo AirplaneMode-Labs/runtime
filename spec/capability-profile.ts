@@ -1,8 +1,15 @@
 /**
- * Capability profile contract 0.1.0 (airplanemode.capability/0.1).
+ * Capability profile contract 0.1.1 (airplanemode.capability/0.1).
  *
  * Normative JSON Schema: capability-profile.schema.json
- * ($id urn:airplanemode:spec:capability-profile:0.1.0).
+ * ($id urn:airplanemode:spec:capability-profile:0.1.1).
+ *
+ * 0.1.1 (draft patch, spec release 0.6.0; TD-57): wire-compatible. `ramGb` is `navigator.deviceMemory` as the
+ * browser reports it, a coarse power of two that Chrome reports from 0.25 to 8, clamped by the runtime to at
+ * most 8 (the schema gains `maximum: 8`); 0 when not exposed. Unknown (0) is not below a memory line (TD-84):
+ * a consumer that compares ramGb with a minimum treats 0 as "cannot tell", never as "too small". No new
+ * field: a page cannot read free memory. Informative: a manifest minProfile.ramGb above 8 is schema-valid
+ * but can never be satisfied. The schema body is unchanged except that member; only its $id moves too.
  *
  * Measured once per page load by the runtime (`detectCapabilities()`), used by manifests
  * (MinProfile), by the backend fallback chain and later by control-plane policy.
@@ -62,7 +69,10 @@ export interface CapabilityProfile {
   spec: CapabilityProfileSpec;
   /** webgpu iff requestAdapter() returned an adapter. */
   gpu: GpuKind;
-  /** navigator.deviceMemory (browsers cap at 8); 0 = unknown. */
+  /**
+   * navigator.deviceMemory as the browser reports it, a coarse power of two that Chrome reports from 0.25 to 8,
+   * clamped by the runtime to at most 8; 0 when not exposed (unknown: not below a memory line, TD-84).
+   */
   ramGb: number;
   /** (quota - usage) / 2^30 to 2 decimals; 0 if unknown. */
   storageFreeGb: number;

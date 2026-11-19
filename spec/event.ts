@@ -1,7 +1,18 @@
 /**
- * Event contract 0.1.4 (airplanemode.event/0.1; the wire string never changes on a patch).
+ * Event contract 0.1.5 (airplanemode.event/0.1; the wire string never changes on a patch).
  *
- * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.4).
+ * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.5).
+ *
+ * 0.1.5 (wire-compatible, spec release 0.6.0; B1 memory hardening and the HNSW index kind): reserves
+ * model.unload (RUNTIME_EVENT_NAMES, backend adapter R16); model.generate is emitted on a Stop after the first
+ * token with finishReason 'abort' (a Stop after the first token) carrying outTokens and a numeric firstTokenMs
+ * (S1-119), and when finishReason is 'error' it gains an optional attr code, an AdapterErrorCode;
+ * model.load.failed code and model.embed outcome may be 'out_of_memory' (backend adapter R18);
+ * STORAGE_EVENT_NAMES grows from 10 to 11 with storage.index.build (storage API 0.4.0); storage.query gains
+ * the attrs requested, index, fallback and ef; storage.index.open gains the attr kind and, for a refused graph,
+ * a reason; PIPELINE_REASONS gains 'stream_limit' and 'out_of_memory'; pipeline.answer outcome is one of
+ * 'ok' | 'refused' | 'error' | 'aborted' (PIPELINE_ANSWER_OUTCOMES). No event carries text, keys, vectors,
+ * worker or engine strings, or pagetriage notes. The schema body is unchanged: only its $id moves.
  *
  * 0.1.4 (wire-compatible, spec release 0.5.0): reserves model.embed and model.memory (RUNTIME_EVENT_NAMES);
  * model.generate gains the attr budget (an integer) and its finishReason may be 'abort'; the reason of
@@ -176,6 +187,11 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
    * prefillMs, decodeMs, firstTokenMs (number, or null when no token was produced), host and, since
    * 0.1.4, budget (integer: the token budget of backend adapter R4b); finishReason may be 'abort' (Stop
    * after the first token); top-level durationMs. Never the prompt or the output.
+   *
+   * Since 0.1.5 (S1-119): a Stop after the first token emits exactly one model.generate with finishReason
+   * 'abort', outTokens equal to the tokens delivered and a numeric firstTokenMs (a Stop before the first token
+   * rejects 'aborted' and emits none); when finishReason is 'error' it gains an optional attr code, an
+   * AdapterErrorCode (never an engine message).
    */
   'model.generate',
   /**
@@ -223,6 +239,14 @@ export const RUNTIME_EVENT_NAMES = Object.freeze([
    * 'unavailable'. Read from the engine's own memory object, never estimated.
    */
   'model.memory',
+  /**
+   * 0.1.5. kind model-load; level info (warn for reason 'error' and 'out_of_memory'). attrs: adapter, model,
+   * device, host 'worker' | 'main', loadId, reason 'unload' | 'abort' | 'error' | 'out_of_memory'; top-level
+   * durationMs runs from the unload() call to the worker's terminate() returning (backend adapter R16).
+   * Emitted once per ended load, by the host, with the host's own values only: no worker or engine string.
+   * model.load.failed code and model.embed outcome may be 'out_of_memory' (R18).
+   */
+  'model.unload',
 ] as const);
 
 export type RuntimeEventName = (typeof RUNTIME_EVENT_NAMES)[number];
@@ -250,7 +274,8 @@ export type MemorySamplePoint = (typeof MEMORY_SAMPLE_POINTS)[number];
  * Event names localdata emits (source 'localdata'), through an optional EventSink outside the
  * Storage API contract. The sink is called synchronously inside try/catch and never awaited. No
  * event carries a key, a prefix, a query vector, a score or a value; the namespace (attr 'ns') does
- * appear. Seven names since Event 0.1.3, ten since 0.1.4 (the documents API of storage API 0.3.0).
+ * appear. Seven names since Event 0.1.3, ten since 0.1.4 (the documents API of storage API 0.3.0), eleven since 0.1.5
+ * (storage.index.build, the HNSW index kind of storage API 0.4.0).
  */
 export const STORAGE_EVENT_NAMES = Object.freeze([
   /** kind timing. attrs: ns, driver 'opfs' | 'indexeddb' | 'memory', outcome 'ok' | StorageErrorCode; bytes; durationMs. */
@@ -269,12 +294,22 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * 'custom', outcome ('ok' or a StorageErrorCode), k, candidates (rows that matched the filter),
    * metric 'cosine' | 'dot', kernel 'simd' | 'scalar' | 'none'; durationMs. Never the query vector,
    * the filterPrefix, a key, a score or a value.
+   *
+   * Since 0.1.5 (storage API 0.4.0) also: requested 'flat' | 'hnsw', index 'flat' | 'hnsw' (the index that
+   * answered), fallback '' | 'absent' | 'stale' | 'filter' | 'metric' | 'short' | 'refused' | 'trap' and ef (integer or
+   * null). `requested` is QueryOptions.index as the caller gave it (default 'flat'); `fallback` is '' when the
+   * index that answered is the one requested, otherwise why the flat scan answered a request for 'hnsw'; `ef`
+   * is the effective ef of an hnsw answer and null for a flat one. 'short' (fix round 1) means the HNSW path returned fewer than
+   * min(k, live rows) hits, so the flat scan answered.
    */
   'storage.query',
   /**
    * kind timing; level debug, warn when the index is corrupt. attrs: ns, driver, outcome ('ok' |
    * 'absent' | a StorageErrorCode), rows, segments, reason ('' or a corrupt reason code), kernel
    * 'simd' | 'scalar' | 'none'; bytes (index bytes) and durationMs.
+   *
+   * Since 0.1.5: kind 'flat' | 'hnsw' (which index file was opened) and, for a refused graph (kind 'hnsw'),
+   * reason 'magic' | 'version' | 'length' | 'dim' | 'ns' | 'generation' | 'bounds' | 'links' | 'crc'.
    */
   'storage.index.open',
   /**
@@ -304,6 +339,14 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * never reaches an event or the DevTools snapshot.
    */
   'storage.doc.query',
+  /**
+   * 0.1.5. kind timing; attrs: ns, kind 'hnsw', reason 'build' | 'rebuild' | 'replace', outcome 'ok' or a
+   * StorageErrorCode, rows, liveRows, dim, m, efConstruction; top-level bytes = graph bytes written; durationMs;
+   * level debug, warn on failure. 'build' is a buildIndex() call on a namespace without a graph, 'replace' one
+   * over an existing graph, 'rebuild' the SDK's rebuild of a refused graph (storage API 0.4.0). Never a key, a
+   * vector, a score or the seed.
+   */
+  'storage.index.build',
 ] as const);
 
 export type StorageEventName = (typeof STORAGE_EVENT_NAMES)[number];
@@ -323,6 +366,9 @@ export const DOCKIT_EVENT_NAMES = Object.freeze([
   /**
    * kind timing. attrs: outcome, reason, k, sources, budget (integers), firstTokenMs (number or null),
    * unknownCitations (integer: citations the model invented that matched no retrieved chunk); durationMs.
+   * Since 0.1.5: outcome 'ok' | 'refused' | 'error' | 'aborted' (PIPELINE_ANSWER_OUTCOMES; 'aborted' is a Stop,
+   * S1-119); reason may be 'stream_limit' or 'out_of_memory'. No event carries text, keys, vectors, worker or
+   * engine strings, or pagetriage notes.
    */
   'pipeline.answer',
   /**
@@ -368,5 +414,18 @@ export const PIPELINE_REASONS = Object.freeze([
   'not_analysed',
   'held_low_score',
   'framed',
+  /** 0.1.5: pagetriage stream accounting (pagetriage.streams/0.1) refused the document before pdf.js ran (S1-107). */
+  'stream_limit',
+  /** 0.1.5: the engine ran out of memory (backend adapter R18), or the memory line refused the load (TD-67). */
+  'out_of_memory',
 ] as const);
 export type PipelineReason = (typeof PIPELINE_REASONS)[number];
+
+/** 0.1.5: the outcomes of a pipeline.answer event (attrs.outcome). 'aborted' is a Stop (S1-119). */
+export const PIPELINE_ANSWER_OUTCOMES = Object.freeze([
+  'ok',
+  'refused',
+  'error',
+  'aborted',
+] as const);
+export type PipelineAnswerOutcome = (typeof PIPELINE_ANSWER_OUTCOMES)[number];
