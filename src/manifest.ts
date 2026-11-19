@@ -1,5 +1,11 @@
 /**
- * Manifest parsing and verification (manifest spec v0.1, manifest 0.1.2). See spec/MANIFEST.md.
+ * Manifest parsing and verification (manifest spec v0.1, manifest 0.1.3). See spec/MANIFEST.md.
+ *
+ * 0.1.3: a trust set holding a weak Ed25519 public key (not the canonical encoding of a prime-order point other
+ * than the identity: see src/ed25519-point.ts) is refused with ManifestError('weak_key_refused') BEFORE anything
+ * is parsed, right after the test-key check, with no option to skip it; and again for the key a signature
+ * actually uses (step 5), so a trust Map whose iterator hides a key is still caught. The check reads only the 32
+ * key bytes, never the keyId, and keeps no state. A key that is not 32 bytes keeps its 0.1.2 outcome.
  *
  * 0.1.2: an optional `expectId` pins the manifest id. An invalid value throws TypeError('invalid expectId')
  * before anything is parsed (a caller error, no reason); a validly signed manifest of another id is refused
@@ -22,12 +28,14 @@ import {
   MANIFEST_SPEC,
   RFC8032_TEST_KEY_IDS,
   RFC8032_TEST_PUBLIC_KEYS_HEX,
+  WEAK_KEY_REFUSED_MESSAGE,
   type Manifest,
   type ManifestRejectReason,
   type SignatureInvalidReason,
 } from '../spec/manifest';
 import { CANONICAL_KEY_PATTERN } from '../spec/manifest';
 import { CanonicalError, signedBytes } from './canonical';
+import { isWeakEd25519PublicKey } from './ed25519-point';
 import { newEvent } from './events';
 import { hasRepeatedMember } from './json-scan';
 import { SCHEMAS, validateSchema } from './schema';
@@ -76,9 +84,32 @@ export function isNonCanonicalS(sig: Uint8Array): boolean {
   return true; // S == L
 }
 
+/**
+ * S1-121: a trust value is judged by its bytes, never by its realm or view type. Any ArrayBuffer.isView value or
+ * ArrayBuffer of exactly 32 bytes (from this realm or another) is copied into a fresh same-realm Uint8Array; any
+ * other value is returned unchanged and keeps its 0.1.2 outcome. Pure: no cache, nothing stored on the trust set.
+ */
+export function normaliseKeyBytes(value: unknown): unknown {
+  try {
+    if (ArrayBuffer.isView(value)) {
+      if (value.byteLength !== 32) return value;
+      return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + 32));
+    }
+    if (Object.prototype.toString.call(value) === '[object ArrayBuffer]') {
+      const buf = value as ArrayBuffer;
+      if (buf.byteLength !== 32) return value;
+      return new Uint8Array(buf.slice(0));
+    }
+  } catch {
+    // a hostile or detached value: left as it is
+  }
+  return value;
+}
+
 /** True when `keyId` or the raw 32 bytes `bytes` are one of the five RFC 8032 section 7.1 test keys. */
-function isTestKey(keyId: unknown, bytes: unknown): boolean {
+function isTestKey(keyId: unknown, raw: unknown): boolean {
   if (typeof keyId === 'string' && TEST_KEY_ID_SET.has(keyId)) return true;
+  const bytes = normaliseKeyBytes(raw);
   return (
     bytes instanceof Uint8Array &&
     bytes.length === 32 &&
@@ -119,6 +150,41 @@ export function assertTestKeysAllowed(trust: TrustSet, allowTestKeys: unknown): 
     refuseTestKey(UNCHECKABLE_TRUST); // iteration threw: the set is hostile or broken, and is never trusted
   }
   if (found) refuseTestKey();
+}
+
+function refuseWeakKey(): never {
+  throw new ManifestError('weak_key_refused', WEAK_KEY_REFUSED_MESSAGE);
+}
+
+/** True when `bytes` is a 32-byte Uint8Array that is a weak key. Any other value is outside the rule. */
+function isWeakTrustedKey(raw: unknown): boolean {
+  const bytes = normaliseKeyBytes(raw);
+  return bytes instanceof Uint8Array && bytes.length === 32 && isWeakEd25519PublicKey(bytes);
+}
+
+/**
+ * Throws ManifestError('weak_key_refused') when `trust` holds a weak Ed25519 public key (manifest 0.1.3): any
+ * 32-byte value that is not the canonical encoding of a prime-order point other than the identity (an identity
+ * or small-order point, a mixed-order point, a non-canonical encoding, bytes that are not on the curve). It runs
+ * over the iterated trust set, always: there is no opt-out, and `allowTestKeys` does not affect it. It reads only
+ * the key bytes, never the keyId, and stores nothing on `trust`.
+ *
+ * A trust set that cannot be iterated is not checked here; the signature loop of verifyManifest repeats the check
+ * for the key it actually uses, so a Map that hides keys from iteration is still caught.
+ */
+export function assertNoWeakKeys(trust: TrustSet): void {
+  let weak = false;
+  try {
+    for (const [, bytes] of trust) {
+      if (isWeakTrustedKey(bytes)) {
+        weak = true;
+        break;
+      }
+    }
+  } catch {
+    return; // not iterable: step 5 guards the key in use
+  }
+  if (weak) refuseWeakKey();
 }
 
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
@@ -440,7 +506,8 @@ function attrString(v: unknown): string {
  * (the published Signature schema applies to every signatures[] item). The only throw is
  * ManifestError('test_key_refused'): a trust set holding any of the five RFC 8032 test keys, by keyId or
  * by raw bytes, is refused BEFORE anything is parsed unless opts.allowTestKeys === true (strict boolean;
- * the default is false), and again for the key a signature actually uses.
+ * the default is false), and again for the key a signature actually uses. 0.1.3 adds the second throw,
+ * ManifestError('weak_key_refused'), raised the same way and with no option to skip it.
  */
 export async function verifyManifest(
   input: Manifest | unknown,
@@ -454,6 +521,8 @@ export async function verifyManifest(
   )
     throw new TypeError('invalid expectId');
   if (opts.allowTestKeys !== true) assertTestKeysAllowed(trust, opts.allowTestKeys);
+  // 0.1.3: step 1b, after 1a, before the parse, with no opt-out
+  assertNoWeakKeys(trust);
   const now = opts.now ?? Date.now();
   let textError: ManifestError | undefined;
   let value: unknown = input;
@@ -549,14 +618,17 @@ export async function verifyManifest(
       invalid('malformed_key_id');
       continue;
     }
-    const trusted = trust.get(keyId);
-    if (!trusted) {
+    const trustedRaw = trust.get(keyId);
+    if (!trustedRaw) {
       invalid('untrusted_key');
       continue;
     }
+    const trusted = normaliseKeyBytes(trustedRaw) as Uint8Array; // S1-121: judged by bytes, any realm or view
     // S1-089: the same refusal as assertTestKeysAllowed, for the key actually used, so a trust object
     // that hides keys from iteration (or reports them under another keyId) cannot smuggle a test key in.
     if (opts.allowTestKeys !== true && isTestKey(keyId, trusted)) refuseTestKey();
+    // 0.1.3: the same weak-key refusal for the key actually used, before key_mismatch is evaluated
+    if (isWeakTrustedKey(trusted)) refuseWeakKey();
     if (trusted.length !== 32 || toHex(sha256(trusted)) !== keyId) {
       invalid('key_mismatch');
       continue;

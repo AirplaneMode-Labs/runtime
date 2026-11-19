@@ -26,6 +26,7 @@ import { AssetError, isAbortError, isQuotaExceeded } from './errors';
 import { EventBus, newEvent } from './events';
 import {
   ManifestError,
+  assertNoWeakKeys,
   assertTestKeysAllowed,
   isAllowedAssetUrl,
   parseManifest,
@@ -315,6 +316,7 @@ export class AssetManager implements AssetSource {
     // A trust set with an RFC 8032 test key is refused before the store opens, before any fetch and
     // before the manifest is parsed.
     assertTestKeysAllowed(trust, this.allowTestKeys);
+    assertNoWeakKeys(trust); // manifest 0.1.3: a weak key is refused here too, before the store opens
     await this.ready();
     let manifest: Manifest;
     let baseUrl: string | undefined;

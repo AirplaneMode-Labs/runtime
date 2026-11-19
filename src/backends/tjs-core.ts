@@ -90,6 +90,20 @@ export function buildSessionOptions(
 }
 
 /**
+ * The engine memory options of the worker host (backend adapter R17, Sprint 6 B1): on device 'wasm' the
+ * session is created with ONNX Runtime's CPU memory arena and memory-pattern planning turned off, which trades
+ * a little speed for a smaller peak. They are fixed by the host and are NOT part of the application-facing
+ * `sessionOptions` allow-list (checkSessionOptions still accepts graphOptimizationLevel and nothing else), so
+ * no descriptor and no caller can set or flip them. WebGPU gets none: ONNX Runtime Web already forces
+ * memory-pattern planning off there. A fresh object on every call.
+ */
+export function memorySessionOptions(
+  device: 'wasm' | 'webgpu',
+): { enableCpuMemArena: false; enableMemPattern: false } | undefined {
+  return device === 'wasm' ? { enableCpuMemArena: false, enableMemPattern: false } : undefined;
+}
+
+/**
  * chatTemplateKwargs as a fresh plain object: each validated key is defined as an own data property,
  * so even a key that names a prototype slot could not reach Object.prototype (the descriptor parser
  * has already refused __proto__, constructor and prototype).

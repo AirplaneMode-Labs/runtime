@@ -1,6 +1,6 @@
 /**
- * The Transformers.js adapter with the engine in a dedicated worker (backend adapter 0.4.0: host
- * 'worker', rules R2w, R3w, R7 to R13 and R15).
+ * The Transformers.js adapter with the engine in a dedicated worker (backend adapter 0.5.0: host
+ * 'worker', rules R2w, R3w, R7 to R13, R15 and R16 to R20).
  *
  * On the page (this file) R1 and R2 run as on the main thread, except the load-time re-hash: every file is
  * acquired and the SAME Blob objects are posted to the worker together with their manifest entries. In the
@@ -20,6 +20,13 @@
  * unknown type, a bad shape or a repeated phase is a crash (the worker is terminated and the pending
  * calls reject 'backend'). Only token text and the result text reach the application; no worker
  * string reaches an event, a message or the DOM. The page builds every event itself (R12).
+ *
+ * Unload and memory (0.5.0, Sprint 6 B1): WebAssembly memory is returned only by ending the worker, so
+ * unload() resolves only after worker.terminate() returned and every handle is released, and emits
+ * model.unload (R16: adapter, model, device, host, loadId, reason; durationMs from the call to terminate()
+ * returning). An allocation failure the worker classifies as 'out_of_memory' (R18) rejects the pending calls
+ * with that code, terminates the worker, releases the holds and is never retried. A load after unload is a
+ * first load (R19): nothing here remembers that a file was verified.
  */
 
 import {
@@ -128,6 +135,10 @@ interface Pending {
   reject(e: Error): void;
   onToken: ((t: string) => void) | undefined;
   text: string;
+  /** Tokens delivered so far (S1-119: outTokens of a Stop or an error before the worker's own answer). */
+  tokens: number;
+  /** When the first token arrived (S1-119: a numeric firstTokenMs on the abort and error events). */
+  firstTokenAt: number | undefined;
   startedAt: number;
   graceTimer: ReturnType<typeof setTimeout> | undefined;
   signal: AbortSignal | undefined;
@@ -193,6 +204,9 @@ function mapError(e: unknown, message: string): Error {
 }
 
 const codeOf = (e: Error): string => (e instanceof AdapterError ? e.code : 'backend');
+
+/** Why a session ended (model.unload attrs.reason, Event 0.1.5). */
+type UnloadReason = 'unload' | 'abort' | 'error' | 'out_of_memory';
 
 export class WorkerTransformersAdapter implements BackendAdapter {
   readonly id = ADAPTER_ID;
@@ -520,7 +534,13 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       const err = mapError(e, 'the inference engine failed to load the model');
       const reason =
         err instanceof AdapterError && err.code === 'aborted' ? 'abort' : 'load_failed';
-      if (session && !session.closed) await this.terminate(session, reason);
+      const unloadReason: UnloadReason =
+        err instanceof AdapterError && err.code === 'out_of_memory'
+          ? 'out_of_memory'
+          : reason === 'abort'
+            ? 'abort'
+            : 'error';
+      if (session && !session.closed) await this.terminate(session, reason, { unloadReason });
       else {
         bootstrap?.revoke();
         for (const h of held) h.release();
@@ -619,6 +639,8 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         const p = s.pending.get(m.id);
         if (!p || p.kind !== 'generate') return;
         p.text += m.text;
+        p.tokens++;
+        p.firstTokenAt ??= now();
         try {
           p.onToken?.(m.text);
         } catch {
@@ -709,14 +731,20 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       case 'error': {
         const err = new AdapterError(m.code, 'the inference engine reported an error');
         if (s.ready) {
+          // a load in progress: loadLocked's catch terminates the worker (and, for out_of_memory, says so)
           s.ready.reject(err);
           return;
         }
+        const oom = m.code === 'out_of_memory';
         for (const [id, p] of [...s.pending]) {
           this.finish(s, id, p);
           if (p.kind === 'embed') this.emitEmbed(s, p, m.code, { dims: 0, truncated: 0 });
+          else if (oom) this.emitGenerateError(s, p, m.code);
           p.reject(err);
         }
+        // R18: an allocation failure ends the worker: its memory is returned only by terminating it, the holds
+        // are released, and nothing retries
+        if (oom) void this.terminate(s, 'error', { unloadReason: 'out_of_memory' });
         return;
       }
       case 'egress': {
@@ -798,15 +826,89 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     );
   }
 
+  /**
+   * model.generate for a generation that ended without the worker's own `done` (Event 0.1.5). A Stop after the
+   * first token whose abort the worker did not answer in time (S1-119: finishReason 'abort'), or an engine error
+   * (finishReason 'error' with the code; only out_of_memory today). The attrs are counts and numbers the host
+   * measured itself: never the text and never anything the worker said.
+   */
+  private emitGenerateEnd(
+    s: Session,
+    p: Pending,
+    finishReason: 'abort' | 'error',
+    code: string | undefined,
+  ): void {
+    const t = now();
+    const firstTokenMs =
+      p.firstTokenAt !== undefined ? Math.max(0, p.firstTokenAt - p.startedAt) : null;
+    const decodeMs = p.firstTokenAt !== undefined ? Math.max(0, t - p.firstTokenAt) : 0;
+    safeEmit(s.events, () =>
+      newEvent({
+        source: 'runtime',
+        kind: 'timing',
+        name: 'model.generate',
+        level: finishReason === 'error' ? 'warn' : 'info',
+        durationMs: Math.max(0, Math.min(t - p.startedAt, MAX_PHASE_MS)),
+        attrs: {
+          adapter: this.id,
+          device: this.device,
+          finishReason,
+          inTokens: 0,
+          outTokens: p.tokens,
+          tokensPerSecond: decodeMs > 0 ? Math.round((p.tokens / decodeMs) * 1000 * 100) / 100 : 0,
+          prefillMs: firstTokenMs ?? 0,
+          decodeMs,
+          firstTokenMs,
+          host: 'worker',
+          ...(code !== undefined ? { code } : {}),
+        },
+      }),
+    );
+  }
+
+  private emitGenerateError(s: Session, p: Pending, code: string): void {
+    this.emitGenerateEnd(s, p, 'error', code);
+  }
+
+  /** model.unload (R16): after worker.terminate() returned and the holds are released. */
+  private emitUnload(s: Session, reason: UnloadReason, startedAt: number): void {
+    safeEmit(s.events, () =>
+      newEvent({
+        source: 'runtime',
+        kind: 'model-load',
+        name: 'model.unload',
+        level: reason === 'error' || reason === 'out_of_memory' ? 'warn' : 'info',
+        durationMs: Math.max(0, Math.min(now() - startedAt, MAX_PHASE_MS)),
+        attrs: {
+          adapter: this.id,
+          model: s.entryId,
+          device: this.device,
+          host: 'worker',
+          loadId: s.loadId,
+          reason,
+        },
+      }),
+    );
+  }
+
   // ---- termination --------------------------------------------------------------------------------
 
-  /** Terminates the worker and releases everything the page holds for it (R8). Idempotent. */
+  /**
+   * Terminates the worker and releases everything the page holds for it (R8). Idempotent. Emits
+   * backend.worker 'terminated' (unless the caller already said 'crashed') and model.unload (R16), both after
+   * worker.terminate() returned and the holds were released; model.unload's durationMs runs from `startedAt`
+   * (the unload() call; default: this call).
+   */
   private async terminate(
     s: Session,
     reason: 'unload' | 'load_failed' | 'abort' | 'error',
-    emitTerminated = true,
+    o: { emitTerminated?: boolean; unloadReason?: UnloadReason; startedAt?: number } = {},
   ): Promise<void> {
     if (s.closed) return;
+    const startedAt = o.startedAt ?? now();
+    const emitTerminated = o.emitTerminated ?? true;
+    const unloadReason: UnloadReason =
+      o.unloadReason ?? (reason === 'unload' ? 'unload' : reason === 'abort' ? 'abort' : 'error');
     s.closed = true;
     s.worker.onmessage = null;
     s.worker.onerror = null;
@@ -819,6 +921,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     s.bootstrap.revoke();
     for (const h of s.held) h.release();
     if (emitTerminated) this.workerEvent(s, 'terminated', reason, undefined);
+    this.emitUnload(s, unloadReason, startedAt);
     if (this.session === s) this.session = undefined;
   }
 
@@ -833,7 +936,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
       if (p.signal && p.onAbort) p.signal.removeEventListener('abort', p.onAbort);
     }
     s.pending.clear();
-    await this.terminate(s, 'error', false);
+    await this.terminate(s, 'error', { emitTerminated: false, unloadReason: 'error' });
     ready?.reject(err);
     for (const p of pending) p.reject(err);
   }
@@ -841,6 +944,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
   private async closeSession(reason: 'unload'): Promise<void> {
     const s = this.session;
     if (!s) return;
+    const startedAt = now();
     for (const [id, p] of [...s.pending]) {
       this.finish(s, id, p);
       p.reject(new AdapterError('not_loaded', 'the model was unloaded'));
@@ -850,7 +954,7 @@ export class WorkerTransformersAdapter implements BackendAdapter {
     } catch {
       // the worker is terminated next either way
     }
-    await this.terminate(s, reason);
+    await this.terminate(s, reason, { unloadReason: 'unload', startedAt });
   }
 
   async unload(): Promise<void> {
@@ -882,6 +986,8 @@ export class WorkerTransformersAdapter implements BackendAdapter {
         reject,
         onToken: opts.onToken,
         text: '',
+        tokens: 0,
+        firstTokenAt: undefined,
         startedAt: now(),
         graceTimer: undefined,
         signal: opts.signal,
@@ -899,10 +1005,22 @@ export class WorkerTransformersAdapter implements BackendAdapter {
             if (!s.pending.has(id)) return;
             this.finish(s, id, p);
             // R4b: Stop after the first token keeps the partial text; before it, the call is rejected
-            void this.terminate(s, 'abort').then(() =>
-              p.text === ''
+            const partial = p.tokens > 0;
+            // S1-119: the Stop after the first token is a model.generate event with finishReason 'abort'
+            // (emitted before the worker is terminated, so model.unload follows it)
+            if (partial) this.emitGenerateEnd(s, p, 'abort', undefined);
+            void this.terminate(s, 'abort', { unloadReason: 'abort' }).then(() =>
+              !partial
                 ? reject(new AdapterError('aborted', 'the generation was aborted'))
-                : resolve({ text: p.text, finishReason: 'abort', usage: {}, timings: {} }),
+                : resolve({
+                    text: p.text,
+                    finishReason: 'abort',
+                    usage: { completionTokens: p.tokens },
+                    timings:
+                      p.firstTokenAt !== undefined
+                        ? { firstTokenMs: Math.max(0, p.firstTokenAt - p.startedAt) }
+                        : {},
+                  }),
             );
           }, grace);
         };

@@ -156,6 +156,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set<AdapterErrorCode>([
   'integrity',
   'not_cached',
   'context_overflow',
+  'out_of_memory',
 ]);
 const FINISH: ReadonlySet<string> = new Set(['stop', 'length', 'abort', 'error']);
 const APIS: ReadonlySet<string> = new Set([

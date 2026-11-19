@@ -278,6 +278,9 @@ const tampered = await verifyManifest(readFileSync(process.env.TAMPER, 'utf8'), 
 const tamperReason = tampered.ok ? 'accepted' : tampered.reason;
 // manifest 0.1.2: expectId. A validly signed manifest of another id is refused with unexpected_id; a bad id is a TypeError.
 const other = await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, now: Date.parse('2026-11-14T00:00:00Z'), expectId: 'other-product' });
+// manifest 0.1.3: a trust set that holds the identity point as a key is refused before anything is parsed
+let weakKey = 'accepted';
+try { await verifyManifest(manifest, new Map([[createHash('sha256').update(new Uint8Array(32).fill(0, 0, 32)).digest('hex'), Uint8Array.from([1, ...new Array(31).fill(0)])]]), { now: Date.parse('2026-11-14T00:00:00Z') }); } catch (e) { weakKey = e.reason ?? e.name; }
 let badExpectId = 'accepted';
 try { await verifyManifest(manifest, new Map([[keyId, publicKey]]), { allowTestKeys: true, expectId: 'BAD ID' }); } catch (e) { badExpectId = e instanceof TypeError ? e.message : 'other error'; }
 // the worker-support exports load from the tarball and refuse what they must
@@ -286,7 +289,7 @@ try { installEgressGuard({ allowPathPrefixes: ['not-a-prefix'] }); workerSupport
 let moduleWorker = 'missing';
 try { startModuleWorker('https://evil.test/w.js', { policyName: 'x-policy', origin: 'https://app.test', baseURI: 'https://app.test/' }); moduleWorker = 'accepted'; } catch (e) { moduleWorker = e.code ?? e.name; }
 const tamperSignatures = tampered.signatures.map((s) => (s.valid ? 'valid' : s.reason));
-console.log(JSON.stringify({ valid: result.ok, unexpectedId: other.ok ? 'accepted' : other.reason, badExpectId, workerSupport, moduleWorker, tamper01: tamperReason, tamper01Signatures: tamperSignatures, specRelease: SPEC_RELEASE, specStatus: SPEC_STATUS, specVersions: SPEC_VERSIONS }));
+console.log(JSON.stringify({ valid: result.ok, weakKey, unexpectedId: other.ok ? 'accepted' : other.reason, badExpectId, workerSupport, moduleWorker, tamper01: tamperReason, tamper01Signatures: tamperSignatures, specRelease: SPEC_RELEASE, specStatus: SPEC_STATUS, specVersions: SPEC_VERSIONS }));
 `;
 writeFileSync(join(fresh, 'call.mjs'), callSource);
 const called = execFileSync(process.execPath, ['call.mjs'], {
@@ -305,14 +308,19 @@ ok(
   `verifyManifest() on tamper-01 prints ${parsed.tamper01} (${(parsed.tamper01Signatures ?? []).join(', ')})`,
 );
 ok(
-  parsed.specRelease === '0.5.0' &&
+  parsed.specRelease === '0.6.0' &&
     parsed.specStatus?.manifest === 'published' &&
-    parsed.specVersions?.manifest === '0.1.2' &&
-    parsed.specVersions?.event === '0.1.4' &&
-    parsed.specVersions?.storageApi === '0.3.0' &&
-    parsed.specVersions?.backendAdapter === '0.4.0' &&
+    parsed.specVersions?.manifest === '0.1.3' &&
+    parsed.specVersions?.capabilityProfile === '0.1.1' &&
+    parsed.specVersions?.event === '0.1.5' &&
+    parsed.specVersions?.storageApi === '0.4.0' &&
+    parsed.specVersions?.backendAdapter === '0.5.0' &&
     parsed.specVersions?.modelDescriptor === '0.2.1',
-  'the installed package carries spec release 0.5.0 (manifest 0.1.2 published, event 0.1.4, storage API 0.3.0, backend adapter 0.4.0, model descriptor 0.2.1)',
+  'the installed package carries spec release 0.6.0 (manifest 0.1.3 published, capability profile 0.1.1, event 0.1.5, storage API 0.4.0, backend adapter 0.5.0, model descriptor 0.2.1)',
+);
+ok(
+  parsed.weakKey === 'weak_key_refused',
+  `verifyManifest() with a trust set holding the identity key from the tarball: ${parsed.weakKey}`,
 );
 ok(
   parsed.unexpectedId === 'unexpected_id' && parsed.badExpectId === 'invalid expectId',

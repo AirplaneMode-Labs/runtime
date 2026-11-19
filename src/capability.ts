@@ -115,6 +115,9 @@ function safeGet<T>(fn: () => T): T | undefined {
 }
 
 /** Builds an env from globals, touching only the allow-listed navigator properties. */
+/** The largest ramGb a profile carries (schema maximum): navigator.deviceMemory is capped at 8 by browsers. */
+const MAX_RAM_GB = 8;
+
 export function envFromGlobals(g: GlobalLike = globalThis as unknown as GlobalLike): CapabilityEnv {
   const nav = (safeGet(() => g.navigator) ?? {}) as Record<string, unknown>;
   const gpu = safeGet(() => nav['gpu']) as GpuLike | undefined;
@@ -262,8 +265,12 @@ export async function detectCapabilities(
           ? 'wasm'
           : 'none';
 
+  // capability profile 0.1.1 (TD-57): navigator.deviceMemory as reported (a coarse power of two, 0.25 to 8 in
+  // Chrome), clamped to at most 8; 0 when it is not exposed (unknown: TD-84 treats it as not below a memory line)
   const ramGb =
-    typeof env.deviceMemory === 'number' && env.deviceMemory >= 0 ? env.deviceMemory : 0;
+    typeof env.deviceMemory === 'number' && env.deviceMemory >= 0
+      ? Math.min(env.deviceMemory, MAX_RAM_GB)
+      : 0;
   const cores =
     typeof env.hardwareConcurrency === 'number' &&
     Number.isInteger(env.hardwareConcurrency) &&

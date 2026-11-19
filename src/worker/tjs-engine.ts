@@ -28,6 +28,7 @@ import {
   embedTexts,
   expectedThreads,
   generateText,
+  memorySessionOptions,
   now,
   resolveEmbedOptions,
   usableModelId,
@@ -75,11 +76,35 @@ const defaultLoader = (): Promise<TransformersModule> =>
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * R18: is this an allocation failure? Read INSIDE the worker; only the verdict leaves it (the code enum), never
+ * the message. A RangeError that mentions memory or allocation (V8: "WebAssembly.Memory.grow(): Maximum memory
+ * size exceeded", "Array buffer allocation failed"), or an engine allocation error of any class (ONNX Runtime:
+ * "std::bad_alloc", "Aborted(OOM)", "out of memory"). A RangeError about something else ("Invalid string
+ * length") and an error that merely contains the word memory stay 'backend'.
+ */
+export function isAllocationFailure(e: unknown): boolean {
+  if (e === null || typeof e !== 'object') return false;
+  let name = '';
+  let message = '';
+  try {
+    name = String((e as { name?: unknown }).name ?? '');
+    message = String((e as { message?: unknown }).message ?? '');
+  } catch {
+    return false;
+  }
+  if (name === 'RangeError' && /memory|alloc/i.test(message)) return true;
+  return /bad_alloc|Aborted\(OOM\)|out of memory|failed to allocate|could not allocate|unable to allocate/i.test(
+    message,
+  );
+}
+
 function codeOf(e: unknown): AdapterErrorCode {
   if (e instanceof AdapterError) return e.code;
   // S1-073: an unreadable Blob (the OPFS snapshot changed) is an integrity failure
   if (e !== null && typeof e === 'object' && (e as { name?: unknown }).name === 'NotReadableError')
     return 'integrity';
+  if (isAllocationFailure(e)) return 'out_of_memory';
   return 'backend';
 }
 
@@ -94,6 +119,8 @@ export class TjsEngine {
   private descriptor: ModelDescriptor | undefined;
   private set: VerifiedFileSet | undefined;
   private current: { id: number; ctl: AbortController } | undefined;
+  /** The File snapshots that were hashed (R15): re-read once, a byte each, when the engine fails (R20). */
+  private hashedBlobs: Blob[] = [];
   private firstTokenPosted = false;
   private inited = false;
   private readonly probe: WasmMemoryProbe | undefined;
@@ -220,6 +247,7 @@ export class TjsEngine {
       // A failure throws 'integrity' and the engine has received 0 bytes.
       const tv = now();
       const verified = await verifyFiles(m.files, { keepBuffer: m.runtimeWasm });
+      this.hashedBlobs = verified.files.map((f) => f.blob);
       this.post({
         type: 'phase',
         phase: 'verify',
@@ -258,9 +286,33 @@ export class TjsEngine {
       this.postMemory('after_session');
       this.post({ type: 'ready' });
     } catch (e) {
+      const unreadable = await this.snapshotsUnreadable(e);
       this.cleanup();
-      this.fail(e);
+      this.fail(
+        unreadable ? new AdapterError('integrity', 'a hashed file can no longer be read') : e,
+      );
     }
+  }
+
+  /**
+   * R20: the engine reads each file through a Response over the very snapshot that was hashed, so a snapshot that
+   * changed after the shim's one-byte probe fails in the middle of the engine's own read and reaches this worker
+   * only as an opaque engine error. When the load fails with a plain engine error, one byte of every hashed
+   * snapshot is read again: a snapshot that can no longer be read is 'integrity', never 'backend' (and never
+   * retried). An error that already has a better code (integrity, out_of_memory, and the like) is left alone, and
+   * nothing is read when the engine did not fail.
+   */
+  private async snapshotsUnreadable(e: unknown): Promise<boolean> {
+    if (codeOf(e) !== 'backend') return false;
+    for (const blob of this.hashedBlobs) {
+      if (blob.size === 0) continue;
+      try {
+        await blob.slice(0, 1).arrayBuffer();
+      } catch {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async createSession(
@@ -286,10 +338,13 @@ export class TjsEngine {
       configureEnv(mod.env, envCtx);
       assertEnv(mod.env, envCtx);
 
-      const sessionOptions = buildSessionOptions(
+      // R17: the descriptor's graph level (when it names one) and, on wasm, the engine memory options
+      const level = buildSessionOptions(
         m.sessionOptions as Parameters<typeof buildSessionOptions>[0],
         d,
       );
+      const memory = memorySessionOptions(m.device);
+      const sessionOptions = level || memory ? { ...level, ...memory } : undefined;
       const t1 = now();
       this.generator = await mod.pipeline(d.task, m.descriptorEntryId, {
         device: m.device,
@@ -400,6 +455,7 @@ export class TjsEngine {
   private cleanup(): void {
     this.set?.release();
     this.set = undefined;
+    this.hashedBlobs = [];
   }
 
   async unload(): Promise<void> {

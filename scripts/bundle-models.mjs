@@ -90,6 +90,9 @@ const E5 = {
   licenceFile: 'LICENSE-multilingual-e5-small.txt',
 };
 
+/** The largest minProfile.ramGb a bundle may carry: navigator.deviceMemory is capped at 8 by browsers (TD-57). */
+export const MAX_RAM_GB = 8;
+
 /** The two sets (TD-33, TD-34, TD-35). */
 export const SETS = Object.freeze({
   dockit: {
@@ -235,6 +238,16 @@ export async function bundleModels(o, deps = {}) {
   if (!set) throw usage(`--set must be one of ${Object.keys(SETS).join(', ')}`);
   if (o.manifestId !== set.manifestId)
     throw usage(`--manifest-id for --set ${o.set} must be ${set.manifestId}`);
+  // capability profile 0.1.1 clamps ramGb to at most 8, so a minProfile.ramGb above 8 is schema-valid but can
+  // never be satisfied (MANIFEST.md, Manifest 0.1.3): the bundler refuses to emit one, before anything is read
+  for (const m of set.models)
+    if (!(
+      m.minProfile.ramGb === undefined ||
+      (Number.isFinite(m.minProfile.ramGb) && m.minProfile.ramGb <= MAX_RAM_GB)
+    ))
+      throw usage(
+        `${m.name}: minProfile.ramGb ${m.minProfile.ramGb} is above ${MAX_RAM_GB}, which no browser reports (capability profile 0.1.1)`,
+      );
   if (!MANIFEST_ID.test(o.manifestId)) throw usage('--manifest-id is not a manifest id');
   for (const k of ['out', 'root', 'ortDir', 'trustRootOut'])
     if (typeof o[k] !== 'string' || o[k] === '')

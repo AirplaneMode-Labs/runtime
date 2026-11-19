@@ -39,6 +39,7 @@ export {
   InMemoryManifestState,
   ManifestError,
   RFC8032_TEST_KEY_ID,
+  assertNoWeakKeys,
   assertTestKeysAllowed,
   isAllowedAssetUrl,
   isNonCanonicalS,
@@ -54,6 +55,7 @@ export {
   type VerifyOptions,
   type VerifyResult,
 } from './manifest';
+export { isWeakEd25519PublicKey } from './ed25519-point';
 export { CanonicalError, canonicalize, signedBytes, type CanonicalReason } from './canonical';
 export { compareSemver, parseSemver, type SemVer } from './semver';
 export { EventBus, newEvent, sessionId, type EventListener, type NewEventInput } from './events';

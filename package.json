@@ -1,6 +1,6 @@
 {
   "name": "@airplanemode/runtime",
-  "version": "0.3.0-beta.0",
+  "version": "0.3.0-beta.1",
   "description": "Offline-first browser runtime (beta): capability profile, verified asset manager, backend adapters with WebGPU to WASM fallback, embeddings through a worker host, observability events and open contracts (manifest, capability profile, event, storage API, backend adapter, model descriptor).",
   "license": "Apache-2.0",
   "type": "module",
@@ -62,7 +62,7 @@
     "devtools:build": "node devtools/build.mjs",
     "spec:vectors": "node test/tools/make-vectors.mjs",
     "spec:sign-example": "node test/tools/sign-example.mjs",
-    "ci": "npm run fmt:check && npm run typecheck && npm run test && npm run build",
+    "ci": "npm run fmt:check && npm run typecheck && npm run build && npm run test",
     "test:model": "playwright test -c test/browser/playwright.model.config.ts",
     "test:devtools": "playwright test -c test/browser/playwright.devtools.config.ts",
     "test:worker": "playwright test -c test/browser/playwright.worker.config.ts",
