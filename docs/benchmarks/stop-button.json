@@ -1,0 +1,44 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "stop-button",
+  "title": "Demo Stop button: time to stop with the test model on the worker host (Sprint 4)",
+  "measuredAt": "2026-11-14",
+  "commit": {
+    "recorded": false,
+    "base": "4338267",
+    "note": "No commit hash was recorded. The run was made on the Sprint 4 working tree on top of 4338267; that tree was committed on 2026-11-14 (9119b8d to 3bf53c6)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157 (installed, Playwright channel \"chrome\"); the exact build is not recorded in this file"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "stop.spec.ts loads the test model on the worker host in the demo built as pages.yml builds it and served under /runtime/, asks for a long answer (?maxTokens=400), clicks Stop and reads the page text. timeToStopMs is the figure the page prints as \"Time to stop\"; elapsedMs is recorded by the spec as well (see test/browser/stop.spec.ts).",
+  "commands": [
+    "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "RUNTIME_MODEL=1 RUNTIME_STOP_OUT=<dir> npm run test:demo -- stop.spec.ts"
+  ],
+  "files": [
+    {
+      "name": "stop-run.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-4/D1/demo/stop-run.json",
+      "sha256": "71e8a337cfe465145f4371468a3263a08816725636880f6a40bd560a182517c3",
+      "json": {
+        "generatedAt": "2026-11-14T14:19:09.432Z",
+        "states": [
+          "idle: run enabled, stop disabled",
+          "answering: run disabled, stop enabled",
+          "stopped: run enabled, stop disabled"
+        ],
+        "elapsedMs": 289,
+        "timeToStopMs": 253,
+        "timing": "Stopped. Time to stop: 253 ms. The answer so far stays above.",
+        "partialAnswerChars": 13,
+        "afterStop": "The engine was stopped to cancel the answer. Click \"Download test model and load\" again: the files are already stored, so nothing is downloaded."
+      }
+    }
+  ]
+}

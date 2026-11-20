@@ -1,0 +1,277 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "model-answer-smollm2",
+  "title": "SmolLM2-135M-Instruct (q4): one prompt answered on WebGPU and on forced WebAssembly (Sprint 2 done-when)",
+  "measuredAt": "2026-11-09",
+  "commit": {
+    "recorded": false,
+    "base": "c2b6166",
+    "note": "No commit hash was recorded. The run was made on the Sprint 2 working tree on top of c2b6166; that tree was committed the same evening (2987235 to 20c198f)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157 (installed, Playwright channel \"chrome\"); the exact build is not recorded in this file",
+    "note": "The capability profile inside the file reports ramGb 32, the value detectCapabilities produced at that commit; the machine has 48 GB installed."
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "test/browser/model.spec.ts, legs A (the default chain, WebGPU) and B (forceRung wasm), prompt \"What is the capital of France? Answer in one word.\", maxTokens 16, temperature 0, the test model served from the repository range server on 127.0.0.1 behind an aborting network gate. loadMs includes the verified download of every manifest entry; tokensPerSecond is completionTokens over decodeMs; peakJsHeapUsedSizeBytes is JSHeapUsedSize from CDP. One run per leg. The single-threaded WebAssembly path has no COOP and COEP headers.",
+  "commands": [
+    "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 RUNTIME_MODEL_OUT=<dir> npm run test:model"
+  ],
+  "files": [
+    {
+      "name": "model-run.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-2/D1/model-run.json",
+      "sha256": "804dd7fef56f0712a33dcba1fd2548e101a970a109cc20c560aa686060713383",
+      "json": {
+        "generatedAt": "2026-11-09T11:33:40.357Z",
+        "prompt": "What is the capital of France? Answer in one word.",
+        "maxTokens": 16,
+        "temperature": 0,
+        "model": "HuggingFaceTB/SmolLM2-135M-Instruct@12fd25f77366fa6b3b4b768ec3050bf629380bac onnx/model_q4.onnx",
+        "webgpu": {
+          "rung": "webgpu",
+          "executionProviders": ["webgpu"],
+          "dtype": "q4",
+          "attempts": [
+            {
+              "rung": "webgpu",
+              "adapter": "transformers-js",
+              "model": "smollm2-135m-instruct.descriptor",
+              "outcome": "selected",
+              "reason": "ok"
+            }
+          ],
+          "loadMs": 2667,
+          "prefillMs": 66,
+          "decodeMs": 51,
+          "tokensPerSecond": 155.9454192482662,
+          "usage": {
+            "promptTokens": 42,
+            "completionTokens": 8
+          },
+          "finishReason": "stop",
+          "bytesDownloaded": 211040709,
+          "peakJsHeapUsedSizeBytes": 23781052,
+          "outputText": "The capital of France is Paris.",
+          "parisSoftCheck": {
+            "containsParis": true,
+            "gating": false
+          },
+          "ortFilesRequested": [
+            "ort-wasm-simd-threaded.asyncify.mjs",
+            "ort-wasm-simd-threaded.asyncify.wasm"
+          ],
+          "verifyOk": [
+            "smollm2-135m-instruct.descriptor",
+            "smollm2-135m-instruct.config",
+            "smollm2-135m-instruct.generation-config",
+            "smollm2-135m-instruct.onnx-q4",
+            "ort.wasm",
+            "smollm2-135m-instruct.tokenizer",
+            "smollm2-135m-instruct.tokenizer-config"
+          ],
+          "requests": [
+            "GET http://127.0.0.1:8790/models.html?models=test",
+            "GET http://127.0.0.1:8790/app/models-BjdhVAra.js",
+            "GET http://127.0.0.1:8790/app/capability-DcSRtHaD.js",
+            "GET http://127.0.0.1:8790/app/capability-BdrEKp7V.css",
+            "GET http://127.0.0.1:8790/models/test-models/manifest.json",
+            "GET http://127.0.0.1:8790/models/test-models/smollm2-135m-instruct.descriptor.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/config.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/generation_config.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/onnx/model_q4.onnx",
+            "GET http://127.0.0.1:8790/models/ort/ort-wasm-simd-threaded.asyncify.wasm",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/tokenizer.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/tokenizer_config.json",
+            "GET http://127.0.0.1:8790/app/transformers.web-DI-__QqT.js",
+            "GET http://127.0.0.1:8790/app/ort/ort-wasm-simd-threaded.asyncify.mjs"
+          ],
+          "abortedRequests": [],
+          "cspViolations": [],
+          "workerTargets": 0,
+          "profile": {
+            "spec": "airplanemode.capability/0.1",
+            "gpu": "webgpu",
+            "ramGb": 32,
+            "storageFreeGb": 10,
+            "cores": 18,
+            "backendTier": "webgpu-f16",
+            "features": {
+              "webgpu": true,
+              "shaderF16": true,
+              "wasmSimd": true,
+              "wasmThreads": false,
+              "opfs": true,
+              "indexedDb": true,
+              "persistentStorage": false
+            },
+            "measuredAt": "2026-11-09T11:33:40Z",
+            "details": {
+              "vendor": "apple",
+              "architecture": "metal-3",
+              "maxBufferSize": 4294967292,
+              "maxStorageBufferBindingSize": 4294967292,
+              "maxComputeWorkgroupStorageSize": 32768,
+              "maxComputeInvocationsPerWorkgroup": 1024
+            }
+          }
+        },
+        "wasm": {
+          "rung": "wasm",
+          "executionProviders": ["wasm"],
+          "dtype": "q4",
+          "attempts": [
+            {
+              "rung": "webgpu",
+              "adapter": "transformers-js",
+              "model": null,
+              "outcome": "skipped",
+              "reason": "forced"
+            },
+            {
+              "rung": "wasm",
+              "adapter": "transformers-js",
+              "model": "smollm2-135m-instruct.descriptor",
+              "outcome": "selected",
+              "reason": "ok"
+            }
+          ],
+          "loadMs": 2592,
+          "prefillMs": 368,
+          "decodeMs": 732,
+          "tokensPerSecond": 10.930454980544614,
+          "usage": {
+            "promptTokens": 42,
+            "completionTokens": 8
+          },
+          "finishReason": "stop",
+          "bytesDownloaded": 211040709,
+          "peakJsHeapUsedSizeBytes": 26728356,
+          "outputText": "The capital of France is Paris.",
+          "parisSoftCheck": {
+            "containsParis": true,
+            "gating": false
+          },
+          "ortFilesRequested": [
+            "ort-wasm-simd-threaded.asyncify.mjs",
+            "ort-wasm-simd-threaded.asyncify.wasm"
+          ],
+          "verifyOk": [
+            "smollm2-135m-instruct.descriptor",
+            "smollm2-135m-instruct.config",
+            "smollm2-135m-instruct.generation-config",
+            "smollm2-135m-instruct.onnx-q4",
+            "ort.wasm",
+            "smollm2-135m-instruct.tokenizer",
+            "smollm2-135m-instruct.tokenizer-config"
+          ],
+          "requests": [
+            "GET http://127.0.0.1:8790/models.html?models=test",
+            "GET http://127.0.0.1:8790/app/models-BjdhVAra.js",
+            "GET http://127.0.0.1:8790/app/capability-DcSRtHaD.js",
+            "GET http://127.0.0.1:8790/app/capability-BdrEKp7V.css",
+            "GET http://127.0.0.1:8790/models/test-models/manifest.json",
+            "GET http://127.0.0.1:8790/models/test-models/smollm2-135m-instruct.descriptor.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/config.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/generation_config.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/onnx/model_q4.onnx",
+            "GET http://127.0.0.1:8790/models/ort/ort-wasm-simd-threaded.asyncify.wasm",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/tokenizer.json",
+            "GET http://127.0.0.1:8790/models/smollm2-135m-instruct/tokenizer_config.json",
+            "GET http://127.0.0.1:8790/app/transformers.web-DI-__QqT.js",
+            "GET http://127.0.0.1:8790/app/ort/ort-wasm-simd-threaded.asyncify.mjs"
+          ],
+          "abortedRequests": [],
+          "cspViolations": [],
+          "workerTargets": 0,
+          "profile": {
+            "spec": "airplanemode.capability/0.1",
+            "gpu": "webgpu",
+            "ramGb": 32,
+            "storageFreeGb": 10,
+            "cores": 18,
+            "backendTier": "webgpu-f16",
+            "features": {
+              "webgpu": true,
+              "shaderF16": true,
+              "wasmSimd": true,
+              "wasmThreads": false,
+              "opfs": true,
+              "indexedDb": true,
+              "persistentStorage": false
+            },
+            "measuredAt": "2026-11-09T11:33:43Z",
+            "details": {
+              "vendor": "apple",
+              "architecture": "metal-3",
+              "maxBufferSize": 4294967292,
+              "maxStorageBufferBindingSize": 4294967292,
+              "maxComputeWorkgroupStorageSize": 32768,
+              "maxComputeInvocationsPerWorkgroup": 1024
+            }
+          }
+        },
+        "egressProbe": {
+          "probe": "egress_refused",
+          "events": [
+            {
+              "adapter": "transformers-js",
+              "origin": "https://huggingface.co"
+            }
+          ]
+        },
+        "noGpu": {
+          "rung": "wasm",
+          "attempts": [
+            {
+              "rung": "webgpu",
+              "adapter": "transformers-js",
+              "model": null,
+              "outcome": "skipped",
+              "reason": "no_webgpu"
+            },
+            {
+              "rung": "wasm",
+              "adapter": "transformers-js",
+              "model": "smollm2-135m-instruct.descriptor",
+              "outcome": "selected",
+              "reason": "ok"
+            }
+          ],
+          "outputText": "The capital of France is Paris."
+        },
+        "bothDisabled": {
+          "userMessage": "No model could be started on this device. WebGPU: not available on this device. WebAssembly: this device is too limited for it. Chrome built-in model: not enabled. Nothing was downloaded.",
+          "attempts": [
+            {
+              "rung": "webgpu",
+              "adapter": "transformers-js",
+              "model": null,
+              "outcome": "skipped",
+              "reason": "no_webgpu"
+            },
+            {
+              "rung": "wasm",
+              "adapter": "transformers-js",
+              "model": null,
+              "outcome": "skipped",
+              "reason": "tier_too_low"
+            },
+            {
+              "rung": "builtin",
+              "adapter": "chrome-prompt-api",
+              "model": null,
+              "outcome": "skipped",
+              "reason": "not_allowed"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "worker-abort-long-task",
+  "title": "Engine worker: abort latency over five runs and the longest main-thread long task during an answer (Sprint 3)",
+  "measuredAt": "2026-11-14",
+  "commit": {
+    "recorded": false,
+    "base": "15c6d58",
+    "note": "No commit hash was recorded. The run was made on the Sprint 3 working tree on top of 15c6d58; that tree was committed on 2026-11-14 (021d03d to 0562f24)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157 (installed, Playwright channel \"chrome\"); the exact build is not recorded in this file"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "worker.spec.ts answers a 32-token prompt on the WebAssembly rung with the engine in the worker and records the longest main-thread long task the page reports (the file lists every one it saw: none). It then aborts five answers from a timer; latencyMs is the time from the abort to finishReason abort (the 250 ms grace, then the worker is terminated) and refcounts lists the hold counts of the asset entries after the abort (all 0).",
+  "commands": [
+    "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 RUNTIME_WORKER_OUT=<dir> npm run test:worker"
+  ],
+  "files": [
+    {
+      "name": "worker-run.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-3/D1/worker/worker-run.json",
+      "sha256": "494539d4062a70d3860a64d17c1f6dcfdce14c07fb10393016e3e9d02240767f",
+      "json": {
+        "generatedAt": "2026-11-14T03:07:19.632Z",
+        "prompt": "What is the capital of France? Answer in one word.",
+        "probes": {
+          "fetch": "refused:egress_refused",
+          "xhr": "refused:egress_refused",
+          "websocket": "refused:egress_refused",
+          "eventsource": "refused:egress_refused",
+          "webtransport": "refused:egress_refused",
+          "worker": "refused:egress_refused",
+          "sharedworker": "refused:Error",
+          "cache.add": "refused:egress_refused",
+          "cache.addAll": "refused:egress_refused",
+          "fontface": "refused:19",
+          "fetchLocked": "true",
+          "sentinel": "true",
+          "csp": "[\"font-src https://example.invalid/f\",\"font-src https://example.invalid/f\",\"script-src-elem https://example.invalid/x.js\"]",
+          "import": "refused:TypeError"
+        },
+        "cspInheritedByBlobWorker": true,
+        "cspBlockedByTheWorkerProbes": [
+          "https://example.invalid/f",
+          "https://example.invalid/f",
+          "https://example.invalid/x.js"
+        ],
+        "answer": {
+          "text": "The capital of France is Paris.",
+          "phases": [
+            ["acquire", "worker"],
+            ["verify", "worker"],
+            ["handoff", "worker"],
+            ["session", "worker"],
+            ["first_token", "worker"]
+          ],
+          "lifecycle": ["started", "ready"]
+        },
+        "longTaskDuringAnswer": {
+          "longestMs": 0,
+          "all": []
+        },
+        "abortRuns": [
+          {
+            "latencyMs": 252.2999999821186,
+            "finishReason": "abort",
+            "refcounts": [0, 0, 0, 0, 0, 0, 0],
+            "loaded": false
+          },
+          {
+            "latencyMs": 252.59999999403954,
+            "finishReason": "abort",
+            "refcounts": [0, 0, 0, 0, 0, 0, 0],
+            "loaded": false
+          },
+          {
+            "latencyMs": 253.09999999403954,
+            "finishReason": "abort",
+            "refcounts": [0, 0, 0, 0, 0, 0, 0],
+            "loaded": false
+          },
+          {
+            "latencyMs": 252.60000002384186,
+            "finishReason": "abort",
+            "refcounts": [0, 0, 0, 0, 0, 0, 0],
+            "loaded": false
+          },
+          {
+            "latencyMs": 252.80000001192093,
+            "finishReason": "abort",
+            "refcounts": [0, 0, 0, 0, 0, 0, 0],
+            "loaded": false
+          }
+        ]
+      }
+    }
+  ]
+}

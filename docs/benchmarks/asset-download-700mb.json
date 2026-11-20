@@ -1,0 +1,100 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "asset-download-700mb",
+  "title": "700 MB asset: full download and SHA-256 verify, OPFS and IndexedDB (Sprint 1 done-when, part 1)",
+  "measuredAt": "2026-11-09",
+  "commit": {
+    "recorded": false,
+    "base": null,
+    "note": "No commit hash was recorded. The run was made on the uncommitted Sprint 1 working tree; the first commit of this repository (ccf10b6) was made at 12:22 on 2026-11-09, after the run."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157.0.8103.38, Playwright 1.65.0 channel \"chrome\", Node v22.22.3"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "big.spec.ts downloads a synthetic 734003200-byte stream (xorshift64*) from the repository range server on 127.0.0.1 into the store, with a 50 ms progress interval. Wall time is Date.now() around ensure(), which downloads, hashes and commits the file, and mbPerSecond is bytes / 1e6 / seconds; peak JS heap is JSHeapUsedSize from the CDP Performance.getMetrics, sampled every 250 ms. The sha256 recorded by the page is compared with the independent digest of node test/tools/asset-digest.mjs big 734003200. run1 is the first run (the figures the README quotes); run2 is a re-run the same day on the same machine and server (the lane report calls it round 2) and is kept to show the run-to-run spread.",
+  "commands": [
+    "node test/browser/range-server.mjs --port 8787 --serve demo/dist --test-endpoints --asset big=734003200",
+    "RUNTIME_BIG=1 RUNTIME_BIG_OUT=<dir> npx playwright test -c test/browser/playwright.config.ts big.spec.ts",
+    "node test/tools/asset-digest.mjs big 734003200"
+  ],
+  "files": [
+    {
+      "name": "run1/download-big-opfs.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/download-big-opfs.json",
+      "sha256": "47b2f7df19e8ead3964a0213a432e8222fbfaa4cfd1fb1ab137ad4d4c01afd5b",
+      "json": {
+        "entryId": "big",
+        "store": "opfs",
+        "bytes": 734003200,
+        "wallMs": 4060,
+        "mbPerSecond": 180.8,
+        "peakJsHeapBytes": 2793500,
+        "sha256": "0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35"
+      }
+    },
+    {
+      "name": "run1/download-big-indexeddb.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/download-big-indexeddb.json",
+      "sha256": "ef1a45208614e3cb2f3ac3c9f2764cecab948b84b11ecef4351d54ccfe208f97",
+      "json": {
+        "entryId": "big",
+        "store": "indexeddb",
+        "bytes": 734003200,
+        "wallMs": 2561,
+        "mbPerSecond": 286.6,
+        "peakJsHeapBytes": 2795400,
+        "sha256": "0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35"
+      }
+    },
+    {
+      "name": "run1/asset-digest-big.txt",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/asset-digest-big.txt",
+      "sha256": "d5c090d4709f4001fa8072e24a6c342903266df2d54a2cb35df173eca1327b87",
+      "text": "0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35\nnode test/tools/asset-digest.mjs big 734003200  0.72s user 0.07s system 91% cpu 0.854 total\nserver a 153f58b2ed670a0e6f666129d0ae698935f22b575ee3b2c2dc5470e42d871549 734003200 chunk 8388608\nserver b fe06bc80f582fabef0addbb1582301e6edf0dff363361a56ae1cc61270402759 419430400 chunk 8388608\nserver big 0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35 734003200 chunk 8388608\nserver c d15b827e3ec477a4e2d9cc84d2cd08689496a5511ee19250110f58c088b7e7fa 524288000 chunk 8388608\n"
+    },
+    {
+      "name": "run2/download-big-opfs.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/retest2/download-big-opfs.json",
+      "sha256": "affd6c06e3af3bd05165f84eeb294dddd76d6c664456612dbe56ffefa8a718ee",
+      "json": {
+        "entryId": "big",
+        "store": "opfs",
+        "bytes": 734003200,
+        "wallMs": 4075,
+        "mbPerSecond": 180.1,
+        "peakJsHeapBytes": 2878988,
+        "sha256": "0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35"
+      }
+    },
+    {
+      "name": "run2/download-big-indexeddb.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/retest2/download-big-indexeddb.json",
+      "sha256": "c2a23ab68f166c889a81c32e0d67762a4b60865eeabb666227394fea12b6c065",
+      "json": {
+        "entryId": "big",
+        "store": "indexeddb",
+        "bytes": 734003200,
+        "wallMs": 2607,
+        "mbPerSecond": 281.6,
+        "peakJsHeapBytes": 2857824,
+        "sha256": "0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35"
+      }
+    },
+    {
+      "name": "run2/asset-digest-big.txt",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-1/T1/retest2/asset-digest-big.txt",
+      "sha256": "0e18ddec99f39266e61050152f2c3a43e009cc0f3fa3ed39cda809496f23494a",
+      "text": "cmd: node test/tools/asset-digest.mjs big 734003200\n0f0664c252212d3be1f6b783b42b8e3507ab9b218984dd25b52a2be561a9db35\nreal 0.70\nuser 0.69\nsys 0.00\n"
+    }
+  ]
+}

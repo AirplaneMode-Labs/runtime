@@ -1,0 +1,87 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "devtools-load-phases",
+  "title": "Model load phases and page heap as the Airplane Mode DevTools panel shows them (Sprint 3)",
+  "measuredAt": "2026-11-14",
+  "commit": {
+    "recorded": false,
+    "base": "15c6d58",
+    "note": "No commit hash was recorded. The run was made on the Sprint 3 working tree on top of 15c6d58; that tree was committed on 2026-11-14 (021d03d to 0562f24)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Chrome/157.0.8103.79 (installed, Playwright channel \"chrome\", headed DevTools window)"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "The spec loads SmolLM2-135M (q4) on forced WebAssembly with the engine in a worker, opens the real Chrome DevTools window with the unpacked extension, and reads the panel text. The five phase durations are the model.load.phase events under one load id; the page heap rows are performance.memory at before_load, after_session and after_first_token (the worker rows are null: Chrome exposes none). The acquire phase includes the download of 212,926,670 B from the loopback server.",
+  "commands": [
+    "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "RUNTIME_MODEL=1 RUNTIME_DEVTOOLS_HEADED=1 npm run test:devtools"
+  ],
+  "files": [
+    {
+      "name": "devtools-figures.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-3/D1/devtools/devtools-figures.json",
+      "sha256": "e29cd6350b1171fb8444b191e0300609f303d8c6d8671f6bb35c99c562bb9062",
+      "redactions": [
+        "The Chrome unpacked-extension id (derived from the local install path, which contains the user name) is replaced by <redacted-extension-id> in extensionId and panelSelection. The embedded json is that redacted copy; sha256 is the hash of the unredacted original bytes in the workspace, so it will not match the bytes shown here."
+      ],
+      "json": {
+        "chrome": "Chrome/157.0.8103.79",
+        "extensionId": "<redacted-extension-id>",
+        "failure": null,
+        "pageSnapshotLoadId": "d3395481badbb7db",
+        "pagePhases": {
+          "acquire": 1260.9000000059605,
+          "verify": 662.9999999701977,
+          "handoff": 7.5999999940395355,
+          "session": 481.19999998807907,
+          "first_token": 655.0999999940395
+        },
+        "devtoolsFrontendTargets": 1,
+        "panelSelection": "InspectorFrontendAPI.showPanel('chrome-extension://<redacted-extension-id>AirplaneMode')",
+        "panelText": "Session f9a2cb63-ed4a-400e-9f1c-631b4eb2b243, read at 03:06:53.046 UTC. Events the page left out: 0. Events dropped here as invalid: 0.\n\nLoads\n\nLoad d3395481badbb7db Adapter transformers-js Device wasm Host worker Model smollm2-135m-instruct.descriptor Outcome loaded\n\nPhase\tDuration\tBytes\nAcquire (download, 0 when cached)\t1260.9 ms\t212,926,670 B\nVerify (re-hash)\t663 ms\t212,926,670 B\nHand-off to the engine\t7.6 ms\t212,925,604 B\nSession create\t481.2 ms\t—\nFirst token\t655.1 ms\t—\nMemory\nScope\tPoint\tSource (api)\tJS heap used\tJS heap total\tJS heap limit\tWasm memory\npage\tbefore_load\tperformance.memory\t2,747,591 B\t4,172,527 B\t4,395,630,592 B\t—\npage\tafter_session\tperformance.memory\t79,554,898 B\t83,143,882 B\t4,395,630,592 B\t—\nworker\tafter_session\tnone\t—\t—\t—\t—\npage\tafter_first_token\tperformance.memory\t79,611,170 B\t83,144,034 B\t4,395,630,592 B\t—\nworker\tafter_first_token\tnone\t—\t—\t—\t—\n\nMemory figures are read from the browser, never estimated. Chrome’s performance.memory is coarse, Chrome-only and absent in workers; a dash means the browser did not expose it.\n\nRecent events\nTime (UTC)\tEvent\tLevel\tDetails\n03:06:48.723\tbackend.select\twarn\trung=webgpu adapter=transformers-js outcome=skipped reason=forced\n03:06:48.727\tmemory.sample\tinfo\tat=before_load loadId=d3395481badbb7db\n03:06:48.737\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.descriptor\n03:06:48.748\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.config\n03:06:48.761\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.generation-config\n03:06:49.797\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.onnx-q4\n03:06:49.958\tasset.verify.ok\tinfo\tentryId=ort.wasm\n03:06:49.981\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.tokenizer\n03:06:49.990\tasset.verify.ok\tinfo\tentryId=smollm2-135m-instruct.tokenizer-config\n03:06:49.990\tmodel.load.phase\tinfo\tphase=acquire adapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 1260.9 ms\n03:06:50.651\tmodel.load.phase\tinfo\tphase=verify adapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 663 ms\n03:06:50.652\tbackend.worker\tinfo\tstate=started adapter=transformers-js device=wasm reason=load\n03:06:50.663\tmodel.load.phase\tinfo\tphase=handoff adapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 7.6 ms\n03:06:51.161\tmodel.load.phase\tinfo\tphase=session adapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 481.2 ms\n03:06:51.161\tmemory.sample\tinfo\tat=after_session loadId=d3395481badbb7db\n03:06:51.161\tbackend.worker\tinfo\tstate=ready adapter=transformers-js device=wasm reason=load 508.8 ms\n03:06:51.161\tmemory.sample\tinfo\tat=after_session loadId=d3395481badbb7db\n03:06:51.161\tmodel.load\tinfo\tadapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 2434.3 ms\n03:06:51.161\tbackend.select\tinfo\trung=wasm adapter=transformers-js model=smollm2-135m-instruct.descriptor outcome=selected reason=ok\n03:06:53.033\tmodel.load.phase\tinfo\tphase=first_token adapter=transformers-js device=wasm model=smollm2-135m-instruct.descriptor loadId=d3395481badbb7db 655.1 ms\n03:06:53.033\tmemory.sample\tinfo\tat=after_first_token loadId=d3395481badbb7db\n03:06:53.033\tmemory.sample\tinfo\tat=after_first_token loadId=d3395481badbb7db\n03:06:53.033\tmodel.generate\tinfo\tadapter=transformers-js device=wasm 1872.2 ms",
+        "panelLoadId": "d3395481badbb7db",
+        "panelPhaseDurationsMs": {
+          "acquire": 1260.9,
+          "verify": 663,
+          "handoff": 7.6,
+          "session": 481.2,
+          "first_token": 655.1
+        },
+        "panelMemory": [
+          {
+            "at": "before_load",
+            "api": "performance.memory",
+            "used": "2,747,591 B"
+          },
+          {
+            "at": "after_session",
+            "api": "performance.memory",
+            "used": "79,554,898 B"
+          },
+          {
+            "at": "after_session",
+            "api": "none",
+            "used": "—"
+          },
+          {
+            "at": "after_first_token",
+            "api": "performance.memory",
+            "used": "79,611,170 B"
+          },
+          {
+            "at": "after_first_token",
+            "api": "none",
+            "used": "—"
+          }
+        ],
+        "screenshot": "devtools-window.png",
+        "result": "the real Airplane Mode tab inside an open Chrome DevTools window showed the load"
+      }
+    }
+  ]
+}

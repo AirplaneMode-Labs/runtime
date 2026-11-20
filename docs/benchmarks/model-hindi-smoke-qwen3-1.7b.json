@@ -1,0 +1,155 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "model-hindi-smoke-qwen3-1.7b",
+  "title": "Qwen3-1.7B (q4f16) on WebGPU: five synthetic Hindi prompts, unscored (Sprint 2 smoke run)",
+  "measuredAt": "2026-11-09",
+  "commit": {
+    "recorded": false,
+    "base": "c2b6166",
+    "note": "No commit hash was recorded. The run was made on the Sprint 2 working tree on top of c2b6166; that tree was committed the same evening (2987235 to 20c198f)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157 (installed, Playwright channel \"chrome\"); the exact build is not recorded in this file",
+    "note": "The profile inside the file reports ramGb 32, the value detectCapabilities produced at that commit; the machine has 48 GB installed."
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "test/browser/hindi-smoke.spec.ts loads the pinned Qwen3-1.7B q4f16 files (1.43 GB) through the signed manifest on the default chain (WebGPU selected), with graphOptimizationLevel disabled, and answers five synthetic Hindi prompts, up to 128 new tokens, temperature 0, thinking off. Outputs are recorded verbatim and were not scored. A local run only: not CI, not Pages. first-run-default-optimisation.log is the transcript of the first attempt of the same spec, before the session option existed: the default graph optimisation fails with std::bad_alloc after 15.5 s (the run's own log file was overwritten by the green run, so the transcript is what survives).",
+  "commands": [
+    "node test/tools/fetch-model.mjs qwen3-1.7b-webgpu-q4f16",
+    "RUNTIME_HINDI_SMOKE=1 RUNTIME_MODEL_OUT=<dir> npm run test:hindi-smoke"
+  ],
+  "files": [
+    {
+      "name": "hindi-smoke.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-2/D1/hindi-smoke.json",
+      "sha256": "64d408d123963dd6d5b5a3738c5dd9f7502603a3a80a3d2fff1507e231c71d31",
+      "json": {
+        "generatedAt": "2026-11-09T11:28:15.365Z",
+        "run": "local Hindi smoke run, unscored; not CI, not Pages, not a demo",
+        "model": "onnx-community/Qwen3-1.7B-ONNX@3231b522c6e703b2f9b3cd8ea27426a1289a02f2 onnx/model_q4f16.onnx",
+        "descriptor": "qwen3-1.7b.tjs-webgpu-q4f16 (enable_thinking false)",
+        "chain": {
+          "forceRung": null,
+          "selected": "webgpu",
+          "executionProviders": ["webgpu"],
+          "attempts": [
+            {
+              "rung": "webgpu",
+              "adapter": "transformers-js",
+              "model": "qwen3-1.7b.tjs-webgpu-q4f16",
+              "outcome": "selected",
+              "reason": "ok"
+            }
+          ]
+        },
+        "profile": {
+          "gpu": "webgpu",
+          "backendTier": "webgpu-f16",
+          "ramGb": 32
+        },
+        "loadMs": 16887,
+        "bytesDownloaded": 1462064779,
+        "peakJsHeapUsedSizeBytes": 76495528,
+        "tokensPerSecondMean": 28.177079362052204,
+        "maxTokens": 128,
+        "temperature": 0,
+        "abortedRequests": [],
+        "workerTargets": 0,
+        "requestCount": 15,
+        "prompts": [
+          {
+            "id": "p1",
+            "kind": "general knowledge",
+            "prompt": "भारत की राजधानी क्या है? एक वाक्य में उत्तर दें।",
+            "output": "भारत की राजधानी नई दिल्ली है।",
+            "finishReason": "stop",
+            "usage": {
+              "promptTokens": 57,
+              "completionTokens": 29
+            },
+            "timings": {
+              "prefillMs": 408.89999997615814,
+              "decodeMs": 1166.800000011921,
+              "tokensPerSecond": 24.85430236519002
+            }
+          },
+          {
+            "id": "p2",
+            "kind": "arithmetic",
+            "prompt": "५ और ७ का योग कितना होता है? उत्तर हिंदी में लिखें।",
+            "output": "5 + 7 = 12",
+            "finishReason": "stop",
+            "usage": {
+              "promptTokens": 60,
+              "completionTokens": 9
+            },
+            "timings": {
+              "prefillMs": 73.89999997615814,
+              "decodeMs": 286.60000002384186,
+              "tokensPerSecond": 31.40265177687126
+            }
+          },
+          {
+            "id": "p3",
+            "kind": "advice",
+            "prompt": "छोटे दुकानदार को बैंक से कर्ज़ लेने से पहले किन तीन बातों पर ध्यान देना चाहिए? संक्षेप में बताइए।",
+            "output": "छोटे दुकानदार कर्ज लेने पहले निम्नलिखित तीन बातों पर ध्यान देना चाहिए:\n\n1. **कर्ज की राशि और दिये गए दिशा** – अपने बैंक द्वारा दिए गए कर्ज",
+            "finishReason": "length",
+            "usage": {
+              "promptTokens": 102,
+              "completionTokens": 128
+            },
+            "timings": {
+              "prefillMs": 110.89999997615814,
+              "decodeMs": 4560.5,
+              "tokensPerSecond": 28.067097905931366
+            }
+          },
+          {
+            "id": "p4",
+            "kind": "BFSI-style summary (invented statement)",
+            "prompt": "इस वाक्य का एक पंक्ति में सार लिखिए: 'ऋण खाता संख्या XXXX-0042 पर मूल राशि ₹४,००,००० है, ब्याज दर ८.५% वार्षिक है, मासिक किस्त ₹८,२०० है और अगली किस्त की तिथि १५ दिसंबर २०२६ है।'",
+            "output": "ऋण खाता संख्या XXXX-0042 पर मूल राशि ₹4,00,000 है, ब्याज दर 8.5% वार्षिक है, मासिक किस्त ₹8,200 है और अगली किस्त की तिथि 15 दिसंबर 2026 है।",
+            "finishReason": "length",
+            "usage": {
+              "promptTokens": 192,
+              "completionTokens": 128
+            },
+            "timings": {
+              "prefillMs": 156.10000002384186,
+              "decodeMs": 4591.899999976158,
+              "tokensPerSecond": 27.875171497781874
+            }
+          },
+          {
+            "id": "p5",
+            "kind": "translation into Hindi",
+            "prompt": "इस वाक्य का हिंदी में अनुवाद कीजिए: 'Please keep your documents ready before visiting the branch.'",
+            "output": "प्लीज अपने दस्तावेज तैयाग कर जाओ ब्रांच के आवास में।",
+            "finishReason": "stop",
+            "usage": {
+              "promptTokens": 54,
+              "completionTokens": 50
+            },
+            "timings": {
+              "prefillMs": 71.60000002384186,
+              "decodeMs": 1743,
+              "tokensPerSecond": 28.68617326448652
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "first-run-default-optimisation.log",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-2/D1/red-D1-09.log",
+      "sha256": "01e1585442b413a6c866f6cc618085727a0e5959d2a72f8e00b3d5bbea20d707",
+      "text": "command: RUNTIME_HINDI_SMOKE=1 RUNTIME_MODEL_OUT=/private/tmp/airplanemode-team/sprint-2/D1 npm run test:hindi-smoke   (first run, before sessionOptions)\nstarted: 2026-11-09T11:24:37Z\nfinished: 2026-11-09T11:24:55Z\nexit code: 1\n--- failing test ---\nhindi-smoke.spec.ts: Qwen3-1.7B q4f16 loads on WebGPU through the default chain and answers five synthetic Hindi prompts (unscored): FAILED after 15.5 s\nreport.ok was false: userMessage \"No model could be started on this device. WebGPU: could not be started. WebAssembly: the model needs more than this device offers. Chrome built-in model: not enabled.\"; attempts webgpu failed/load_failed, wasm skipped/profile, builtin skipped/not_allowed\n--- diagnosis (window.__models.diagnose('webgpu'), engine message from Error.cause, loopback hook only) ---\ncode: backend; cause: Error: Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc\nexperiment: session_options graphOptimizationLevel 'disabled' loads in 15374 ms; 'basic' fails the same way (std::bad_alloc)\n(transcribed from the console output of that run; the run's own log file was overwritten by the green run)\n"
+    }
+  ]
+}

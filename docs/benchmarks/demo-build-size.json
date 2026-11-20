@@ -1,0 +1,31 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "demo-build-size",
+  "title": "Size of the DEMO_MODELS=1 demo build that npm run test:demo serves (Sprint 3)",
+  "measuredAt": "2026-11-14",
+  "commit": {
+    "recorded": false,
+    "base": "15c6d58",
+    "note": "No commit hash was recorded. The run was made on the Sprint 3 working tree on top of 15c6d58; that tree was committed on 2026-11-14 (021d03d to 0562f24)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "os": "macOS arm64"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "du over demo/dist after DEMO_MODELS=1 npm run demo:build: the total, then each model folder and each top-level entry, in MiB to one decimal. A file size, not a timing; the 8 GB column does not apply to it but is kept for uniformity.",
+  "commands": [
+    "node test/tools/fetch-model.mjs smollm2-135m-instruct",
+    "DEMO_MODELS=1 npm run demo:build",
+    "du -sk demo/dist  (and per entry)"
+  ],
+  "files": [
+    {
+      "name": "dist-size.txt",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-3/D1/dist-size.txt",
+      "sha256": "3973d502139dcd88a6f311747f35422810ab32006c7339b72b691994e2e96299",
+      "text": "# dist size of the DEMO_MODELS=1 build used by npm run test:demo, 2026-11-14T03:10:50Z\ntotal 233.8 MiB (239448 KiB)\n## per model (models/)\n     0.0 MiB  demo/dist/models/LICENSE-onnxruntime-web.txt\n     0.0 MiB  demo/dist/models/LICENSE-SmolLM2-135M-Instruct.txt\n     0.0 MiB  demo/dist/models/manifest.json\n    28.1 MiB  demo/dist/models/ort\n     0.0 MiB  demo/dist/models/PROVENANCE.json\n   178.1 MiB  demo/dist/models/smollm2-135m-instruct\n     0.0 MiB  demo/dist/models/smollm2-135m-instruct.descriptor.json\n     0.0 MiB  demo/dist/models/trust-root.json\n## top-level\n     1.4 MiB  demo/dist/app\n    26.2 MiB  demo/dist/fixture\n     0.0 MiB  demo/dist/index.html\n   206.2 MiB  demo/dist/models\n     0.0 MiB  demo/dist/models.html\n     0.0 MiB  demo/dist/THIRD-PARTY-NOTICES.txt\n"
+    }
+  ]
+}

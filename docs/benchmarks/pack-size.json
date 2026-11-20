@@ -1,0 +1,237 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "pack-size",
+  "title": "Packed tarball: file count, packed bytes and unpacked bytes (npm pack --dry-run)",
+  "measuredAt": "2026-11-20",
+  "commit": {
+    "recorded": true,
+    "sha": "b3bc39150586",
+    "dirty": true,
+    "note": "HEAD at the moment of the run, with uncommitted changes in the working tree (the change that stores this file), so sha is the parent of the commit that holds it."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "os": "macOS arm64"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "npm pack --dry-run --json lists what npm would put in the tarball: the file count, the sum of the file sizes (unpackedSize) and the gzip size (size). The file count and the unpacked bytes are exact and stable (every text file is LF, .gitattributes); the packed size is quoted to the nearest KiB because a gzip stream is not byte-stable across zlib builds. A file size, not a timing: the 8 GB column does not apply to it but is kept for uniformity.",
+  "commands": [
+    "npm run build",
+    "npm pack --dry-run --json --ignore-scripts",
+    "node scripts/bench-pack.mjs  (writes this file and rewrites the README figures)"
+  ],
+  "files": [
+    {
+      "name": "npm-pack.json",
+      "origin": "generated",
+      "source": "npm pack --dry-run --json --ignore-scripts, run by scripts/bench-pack.mjs",
+      "sha256": "35d39273163fe09a1706d47a58dd87df754adf2ade70500ced59c145f78d9bd9",
+      "json": [
+        {
+          "id": "@airplanemode/runtime@0.3.0-beta.2",
+          "name": "@airplanemode/runtime",
+          "version": "0.3.0-beta.2",
+          "size": 262673,
+          "unpackedSize": 897648,
+          "shasum": "6122711126098fcc99bb22c5e56984c6d7317369",
+          "integrity": "sha512-Xm7utfrZXDn3K0SpcwaAt6Gw5wI0uHmN/82uGLQxBqiuKITFoUKWfH2Ddfb63+WjSYPSWxFzgszHVGMt5Ms9+Q==",
+          "filename": "airplanemode-runtime-0.3.0-beta.2.tgz",
+          "files": [
+            {
+              "path": "LICENSE",
+              "size": 11358,
+              "mode": 420
+            },
+            {
+              "path": "NOTICE",
+              "size": 2036,
+              "mode": 420
+            },
+            {
+              "path": "README.md",
+              "size": 72706,
+              "mode": 420
+            },
+            {
+              "path": "dist/backends/index.d.ts",
+              "size": 37160,
+              "mode": 420
+            },
+            {
+              "path": "dist/backends/index.js",
+              "size": 96929,
+              "mode": 420
+            },
+            {
+              "path": "dist/chunk-5PCJOLHZ.js",
+              "size": 74114,
+              "mode": 420
+            },
+            {
+              "path": "dist/chunk-6ZNZVCRS.js",
+              "size": 4606,
+              "mode": 420
+            },
+            {
+              "path": "dist/chunk-HVF3DQ4J.js",
+              "size": 2917,
+              "mode": 420
+            },
+            {
+              "path": "dist/chunk-SB7U2DVW.js",
+              "size": 20041,
+              "mode": 420
+            },
+            {
+              "path": "dist/chunk-SSNMMDA5.js",
+              "size": 311,
+              "mode": 420
+            },
+            {
+              "path": "dist/index.d.ts",
+              "size": 57464,
+              "mode": 420
+            },
+            {
+              "path": "dist/index.js",
+              "size": 78699,
+              "mode": 420
+            },
+            {
+              "path": "dist/mock-BZip2in5.d.ts",
+              "size": 1367,
+              "mode": 420
+            },
+            {
+              "path": "dist/model-descriptor-CyVoLOHX.d.ts",
+              "size": 50523,
+              "mode": 420
+            },
+            {
+              "path": "dist/spec/index.d.ts",
+              "size": 31389,
+              "mode": 420
+            },
+            {
+              "path": "dist/spec/index.js",
+              "size": 1964,
+              "mode": 420
+            },
+            {
+              "path": "dist/worker-bootstrap-B7HH0CAU.d.ts",
+              "size": 3121,
+              "mode": 420
+            },
+            {
+              "path": "dist/worker-support.d.ts",
+              "size": 3416,
+              "mode": 420
+            },
+            {
+              "path": "dist/worker-support.js",
+              "size": 6084,
+              "mode": 420
+            },
+            {
+              "path": "dist/worker/engine-worker.js",
+              "size": 56074,
+              "mode": 420
+            },
+            {
+              "path": "package.json",
+              "size": 4009,
+              "mode": 420
+            },
+            {
+              "path": "spec/backend-adapter.md",
+              "size": 34434,
+              "mode": 420
+            },
+            {
+              "path": "spec/backend-adapter.ts",
+              "size": 9938,
+              "mode": 420
+            },
+            {
+              "path": "spec/capability-profile.schema.json",
+              "size": 3760,
+              "mode": 420
+            },
+            {
+              "path": "spec/capability-profile.ts",
+              "size": 3498,
+              "mode": 420
+            },
+            {
+              "path": "spec/CHANGELOG.md",
+              "size": 33561,
+              "mode": 420
+            },
+            {
+              "path": "spec/event.schema.json",
+              "size": 2744,
+              "mode": 420
+            },
+            {
+              "path": "spec/event.ts",
+              "size": 24051,
+              "mode": 420
+            },
+            {
+              "path": "spec/index.ts",
+              "size": 2005,
+              "mode": 420
+            },
+            {
+              "path": "spec/MANIFEST.md",
+              "size": 52988,
+              "mode": 420
+            },
+            {
+              "path": "spec/manifest.schema.json",
+              "size": 9282,
+              "mode": 420
+            },
+            {
+              "path": "spec/manifest.ts",
+              "size": 17398,
+              "mode": 420
+            },
+            {
+              "path": "spec/model-descriptor.schema.json",
+              "size": 7520,
+              "mode": 420
+            },
+            {
+              "path": "spec/model-descriptor.ts",
+              "size": 8121,
+              "mode": 420
+            },
+            {
+              "path": "spec/README.md",
+              "size": 22006,
+              "mode": 420
+            },
+            {
+              "path": "spec/release.ts",
+              "size": 6896,
+              "mode": 420
+            },
+            {
+              "path": "spec/storage-api.md",
+              "size": 23826,
+              "mode": 420
+            },
+            {
+              "path": "spec/storage-api.ts",
+              "size": 19332,
+              "mode": 420
+            }
+          ],
+          "entryCount": 38,
+          "bundled": []
+        }
+      ]
+    }
+  ]
+}

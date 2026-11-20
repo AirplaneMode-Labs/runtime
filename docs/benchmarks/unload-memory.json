@@ -1,0 +1,74 @@
+{
+  "schema": "airplanemode.runtime.benchmark/1",
+  "id": "unload-memory",
+  "title": "unload() frees the model: Chrome process-tree RSS before and after, with and without the R17 memory options (Sprint 6)",
+  "measuredAt": "2026-11-19",
+  "commit": {
+    "recorded": false,
+    "base": "4f5b011",
+    "note": "No commit hash was recorded. The runs were made on the Sprint 6 working tree on top of 4f5b011; that tree was committed on 2026-11-19 (0c002f4 to 7d3777b)."
+  },
+  "machine": {
+    "label": "Apple M5 Pro 48 GB",
+    "cores": 18,
+    "os": "macOS arm64",
+    "browser": "Google Chrome 157 (installed, Playwright channel \"chrome\"); the exact build is not recorded in this file"
+  },
+  "laptop8gb": "not measured on 8 GB",
+  "method": "The D1-04 (f) test in test/browser/model.spec.ts loads SmolLM2-135M (q4) on WebAssembly through the worker host, generates 8 tokens, reads the process-tree RSS (ps every 250 ms, test/browser/rss.ts; 7 processes), calls unload(), waits 3 s and reads it again. peak is the load model.memory (WebAssembly.Memory) figure. The runs: with-options-run1 is the working tree with the R17 options (the figures docs/memory-options.md quotes); without-options-run1 and run2 are a copy of HEAD (4f5b011) without them; final-run is a later run the same day (13:43 UTC) of the final working tree.",
+  "commands": [
+    "RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm RUNTIME_MODEL_OUT=<dir> npx playwright test -c test/browser/playwright.model.config.ts model.spec.ts -g \"D1-04 (f)\""
+  ],
+  "files": [
+    {
+      "name": "with-options-run1/model-unload-run1.log",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-6/D1/logs/model-unload-run1.log",
+      "sha256": "a08fc741a7db2be9be2d0b5ee648936f95ecbc883e678ecf81b13462536b5560",
+      "text": "[WebServer] \n[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:\n[WebServer] - Using dynamic import() to code-split the application\n[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\n\nRunning 1 test using 1 worker\n\nD1-04 (f) unload drop, 2026-11-19T13:21:47.213Z\nmachine: darwin arm64, 48 GB (NOT MEASURED ON 8 GB)\nmodel: SmolLM2-135M-Instruct q4, wasm, worker host; prompt answered: \"The capital of France is Paris.\"\nload model.memory peak (WebAssembly.Memory): 726.7 MiB\nprocess-tree RSS before unload: 2276.7 MiB (7 processes)\nprocess-tree RSS after unload + 3 s: 1331.8 MiB (7 processes)\ndrop: 944.9 MiB = 130 percent of the load peak (required: at least 50)\nworker targets before: 1, after: 0\nunload() took 3 ms\n  ✓  1 [chrome] › test/browser/model.spec.ts:690:1 › D1-04 (f): unload() frees the model: the process-tree RSS drops by at least half of the load peak and the engine worker is gone (7.8s)\n\n  1 passed (10.0s)\n"
+    },
+    {
+      "name": "without-options-run1/unload-drop.log",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-6/D1/logs/head-run1/unload-drop.log",
+      "sha256": "46087cf77662df7ddb0d75363af67d90455cd232a09ac1b7faa2b372dc02e167",
+      "text": "D1-04 (f) unload drop, 2026-11-19T13:22:23.107Z\nmachine: darwin arm64, 48 GB (NOT MEASURED ON 8 GB)\nmodel: SmolLM2-135M-Instruct q4, wasm, worker host; greedy answer (8 tokens): \"The capital of France is Paris.\"\nload model.memory peak (WebAssembly.Memory): 726.7 MiB\nprocess-tree RSS before unload: 2238.6 MiB (7 processes)\nprocess-tree RSS after unload + 3 s: 1285.5 MiB (7 processes)\ndrop: 953 MiB = 131 percent of the load peak (required: at least 50)\nworker targets before: 1, after: 0\nunload() took 4 ms\n"
+    },
+    {
+      "name": "without-options-run2/unload-drop.log",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-6/D1/logs/head-run2/unload-drop.log",
+      "sha256": "52c69ac27c85b4075eeffdd4a8fd5ca6e2e6c419c379edda70d09d0678ecfb01",
+      "text": "D1-04 (f) unload drop, 2026-11-19T13:22:33.875Z\nmachine: darwin arm64, 48 GB (NOT MEASURED ON 8 GB)\nmodel: SmolLM2-135M-Instruct q4, wasm, worker host; greedy answer (8 tokens): \"The capital of France is Paris.\"\nload model.memory peak (WebAssembly.Memory): 726.7 MiB\nprocess-tree RSS before unload: 2230.1 MiB (7 processes)\nprocess-tree RSS after unload + 3 s: 1285.4 MiB (7 processes)\ndrop: 944.7 MiB = 130 percent of the load peak (required: at least 50)\nworker targets before: 1, after: 0\nunload() took 3 ms\n"
+    },
+    {
+      "name": "final-run/unload-drop.log",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-6/D1/logs/model/unload-drop.log",
+      "sha256": "4786f54982569073d64c271c40a0919f1a2fcabecafcf748ab64b35e7b645a4d",
+      "text": "D1-04 (f) unload drop, 2026-11-19T13:43:22.376Z\nmachine: darwin arm64, 48 GB (NOT MEASURED ON 8 GB)\nmodel: SmolLM2-135M-Instruct q4, wasm, worker host; greedy answer (8 tokens): \"The capital of France is Paris.\"\nload model.memory peak (WebAssembly.Memory): 726.7 MiB\nprocess-tree RSS before unload: 2279.7 MiB (7 processes)\nprocess-tree RSS after unload + 3 s: 1334.8 MiB (7 processes)\ndrop: 944.9 MiB = 130 percent of the load peak (required: at least 50)\nworker targets before: 1, after: 0\nunload() took 3 ms\n"
+    },
+    {
+      "name": "final-run/unload-drop.json",
+      "origin": "workspace-evidence",
+      "source": "evidence/sprint-6/D1/logs/model/unload-drop.json",
+      "sha256": "3474936219ee470a276166ef78c387ff3ca30e3b53ec40e7e71afff769df5861",
+      "json": {
+        "peakBytes": 761987072,
+        "rssBefore": {
+          "bytes": 2390474752,
+          "processes": 7
+        },
+        "rssAfter": {
+          "bytes": 1399668736,
+          "processes": 7
+        },
+        "dropBytes": 990806016,
+        "dropPercentOfPeak": 130,
+        "workersBefore": 1,
+        "workersAfter": 0,
+        "unloadMs": 3
+      }
+    }
+  ]
+}
