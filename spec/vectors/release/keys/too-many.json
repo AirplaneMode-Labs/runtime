@@ -1,0 +1,41 @@
+{
+  "spec": "airplanemode.release-keys/0.1",
+  "keys": [
+    {
+      "keyId": "a566d28af4ee73084b98aa9d2462af1bb271c4e40c2634c4346216c81e1d7ebc",
+      "publicKey": "0C6XDRZxa9BIHf9lZl90pQHBDncTTbN+eXRonmoARl8="
+    },
+    {
+      "keyId": "67846f6f1edcfed35ff06291932f4f6e6874c813658a462ddb94746e315b513c",
+      "publicKey": "r9vuPtgph6yYa1R49A9SgpfWxsyuQ8KkXCWS/UJ63sY="
+    },
+    {
+      "keyId": "6c6fc533d8e33a360074d0c0125680d4e8cf1440184b3b341672ffb37861e936",
+      "publicKey": "X3joqg05WK09uCWGRTNlNDlTunqxdr+YlO+hhxKiOJA="
+    },
+    {
+      "keyId": "4598739076344a68f558208947674f409082155f99221777633729c7f30fec03",
+      "publicKey": "tP3GIo0modT62urAP4jNUqWznXe3tUzmJC5KMOHq9Lk="
+    },
+    {
+      "keyId": "0f6ae75b42a9c2f198905326d87f787ada75e332b1f6310238bfa84216c6bc44",
+      "publicKey": "BSnwMAzLxxrKmIZGr38z+p8MIFp0IbdZvR9G9d+f+AI="
+    },
+    {
+      "keyId": "68bc0ccfd1fc368ca04d58eaec270394be8bdd1c5832a501bf3b8823423f572b",
+      "publicKey": "wgtQEwRZ2GPtr36EVNrFcDEE8jJkiIBT/To7R5T7zEs="
+    },
+    {
+      "keyId": "a06623ccbe32f67661ba59ce5b4607b11cb0544a6f06759a49d98f2023e7b143",
+      "publicKey": "T0XdyD0OA7I8gzkkOBo5t3xqL+U/3KMrJ0JQx5Xgzxc="
+    },
+    {
+      "keyId": "fd1674be5fbac4f8d05ae557f83e1b133a601df54fb15703a1c8a8518264dc01",
+      "publicKey": "IEPW1e4ehf1+1VZRp9AwiK3cF4FChTpSoZ7zKs3AT6I="
+    },
+    {
+      "keyId": "b08826cbc533d581be6632a0dee511f326941b041346fed87359d2c27e8c4235",
+      "publicKey": "zaAu9TCycg8kOVh0NlgBaHESiyKHdoW5FJzKDVVGDYk="
+    }
+  ]
+}

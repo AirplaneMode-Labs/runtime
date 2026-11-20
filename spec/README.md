@@ -7,35 +7,37 @@ touching the open code. This directory is the source of truth; every other repo 
 `// Vendored from AirplaneMode-Labs/runtime spec/<file> @ <that contract's own version>; source of
 truth is runtime/spec; do not edit here`. Mismatches are fixed on the consumer side.
 
-Spec release **0.6.0** (2026-11-19, untagged) ships these versions together (each contract keeps its own
+Spec release **0.6.1** (2026-11-20, untagged) ships these versions together (each contract keeps its own
 version, so a vendored file carries the version of its own contract, not the release number):
-manifest 0.1.3: published; other contracts: draft. The plan's "manifest spec v0.1" is the manifest contract
-on wire `airplanemode.manifest/0.1`, published as manifest 0.1.3 in [`MANIFEST.md`](MANIFEST.md); it is
+manifest 0.1.4: published; other contracts: draft. The plan's "manifest spec v0.1" is the manifest contract
+on wire `airplanemode.manifest/0.1`, published as manifest 0.1.4 in [`MANIFEST.md`](MANIFEST.md); it is
 committed; public after the owner's push (release 0.4.0 with manifest 0.1.1 was pushed on 15 Nov 2026).
-Manifests 0.1.2 and 0.1.3 are additive patches: the manifest 0.1.1 wire format is unchanged, and a 0.1.2
-manifest stays valid.
+Manifests 0.1.2, 0.1.3 and 0.1.4 are additive patches: the manifest 0.1.1 wire format is unchanged, and a 0.1.2
+or 0.1.3 manifest stays valid. Release 0.6.1 is a patch release: no wire string changes, and every 0.6.0 vector is
+byte-identical.
 
 The contracts are published under Apache-2.0 and never move behind the control-plane licence.
 
-| Contract           | Files                                                     | Version | Status    |
-| ------------------ | --------------------------------------------------------- | ------- | --------- |
-| Manifest           | `MANIFEST.md`, `manifest.schema.json`, `manifest.ts`      | 0.1.3   | published |
-| Capability profile | `capability-profile.schema.json`, `capability-profile.ts` | 0.1.1   | draft     |
-| Event              | `event.schema.json`, `event.ts`                           | 0.1.5   | draft     |
-| Storage API        | `storage-api.ts` (normative), `storage-api.md`            | 0.4.0   | draft     |
-| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`    | 0.5.0   | draft     |
-| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`     | 0.2.1   | draft     |
+| Contract           | Files                                                              | Version | Status    |
+| ------------------ | ------------------------------------------------------------------ | ------- | --------- |
+| Manifest           | `MANIFEST.md`, `manifest.schema.json`, `manifest.ts`, `release.ts` | 0.1.4   | published |
+| Capability profile | `capability-profile.schema.json`, `capability-profile.ts`          | 0.1.1   | draft     |
+| Event              | `event.schema.json`, `event.ts`                                    | 0.1.6   | draft     |
+| Storage API        | `storage-api.ts` (normative), `storage-api.md`                     | 0.4.1   | draft     |
+| Backend adapter    | `backend-adapter.ts` (normative), `backend-adapter.md`             | 0.5.0   | draft     |
+| Model descriptor   | `model-descriptor.schema.json`, `model-descriptor.ts`              | 0.2.1   | draft     |
 
 `index.ts` re-exports everything and carries `SPEC_RELEASE`, `SPEC_VERSIONS` and `SPEC_STATUS` (one key per
 contract). Examples live in `examples/`, the shared vectors in `vectors/` (canonicalisation, negative,
-`tamper/`, `tamper-assets/`, `descriptor/`, `expect-id/`, `state-ids/`, `weak-keys/`), and the change history in
-`CHANGELOG.md`.
+`tamper/`, `tamper-assets/`, `descriptor/`, `expect-id/`, `state-ids/`, `weak-keys/`, `release/`), the reference
+release tool in `spec/tools/release-tool.mjs` (built from `src/release/`; see `tools/README.md`) and the change history
+in `CHANGELOG.md`.
 
 ## Versioning
 
 Each schema has `"$schema": "https://json-schema.org/draft/2020-12/schema"` and
 `"$id": "urn:airplanemode:spec:<name>:<full version>"` (the manifest schema is
-`urn:airplanemode:spec:manifest:0.1.3`, the capability-profile schema `urn:airplanemode:spec:capability-profile:0.1.1` and the event schema `urn:airplanemode:spec:event:0.1.5`); each instance carries a `spec` discriminator
+`urn:airplanemode:spec:manifest:0.1.4`, the capability-profile schema `urn:airplanemode:spec:capability-profile:0.1.1` and the event schema `urn:airplanemode:spec:event:0.1.6`); each instance carries a `spec` discriminator
 `airplanemode.<name>/<major>.<minor>` (patch never changes the wire format; the model descriptor's is
 `airplanemode.model/0.2`, and consumers also accept `airplanemode.model/0.1`). Consumers reject unknown spec strings. All object keys match
 `^[A-Za-z_][A-Za-z0-9_]{0,63}$` (never digit-leading; see canonicalisation);
@@ -50,7 +52,7 @@ alias.
 
 Each contract has a status, "draft" or "published". "published" means frozen on its wire string: later
 changes are additive patches that change no accepted or refused input, or a new wire string. "draft" may
-change in a minor version. Release 0.6.0: manifest 0.1.3 is published; every other contract is a draft.
+change in a minor version. Release 0.6.1: manifest 0.1.4 is published; every other contract is a draft.
 
 ### Release numbering
 
@@ -62,9 +64,11 @@ and keep their wire strings. The planned 0.3.1 patch release was folded into 0.4
 Release 0.5.0 bumps the minor again, because storage API 0.3.0 and backend adapter 0.4.0 are minor changes;
 manifest 0.1.2 and event 0.1.4 are patches and keep their wire strings. Release 0.6.0 bumps the minor once
 more: the minor rises because storage API 0.4.0 and backend adapter 0.5.0 are minor changes; manifest 0.1.3,
-capability profile 0.1.1 and event 0.1.5 are patches and keep their wire strings.
+capability profile 0.1.1 and event 0.1.5 are patches and keep their wire strings. Release 0.6.1 is a patch release:
+manifest 0.1.4, event 0.1.6 and storage API 0.4.1 are patches (wording and documentation only for the storage API),
+so the release patch rises and no minor does.
 
-## Manifest 0.1.3 ("manifest spec v0.1", published)
+## Manifest 0.1.4 ("manifest spec v0.1", published)
 
 A `Manifest` lists each model or data file with its SHA-256, size, version, licence and minimum
 capability profile, and is signed with Ed25519. The runtime verifies the signature and every hash before
@@ -85,6 +89,13 @@ reason `weak_key_refused`, before the manifest is parsed and with no opt-out; th
 (at least sixteen refused rows and the accepted ones). MANIFEST.md gains the normative Weak keys section, the
 informative Pinned entries note (TD-54) and the ramGb sentence (TD-57). The wire format is unchanged and a
 0.1.2 manifest stays valid.
+
+0.1.4 (spec release 0.6.1) is an additive patch (TD-103, TD-121, S1-127): MANIFEST.md gains the normative section
+Release manifests (the ids `<package>-release` and `<package>-rehearsal`, SHA256SUMS, the release-keys file, and
+rules R1 to R5: a test key never signs a -release id; a release verification never allows test keys and needs
+`--expect-id`; the allow flag exists only on the command line; a release key signs only -release ids and is never in
+an application trust set; no `expiresAt`). `release.ts` carries the constants, `vectors/release/` the cases and
+`tools/release-tool.mjs` the reference tool. The wire format and the schema body are unchanged; only the `$id` moves.
 
 Summary:
 
@@ -130,7 +141,7 @@ the tamper vectors. All five are published, non-secret vectors that must never b
 `cp-sign` refuses their seeds unless `--allow-test-key`. The signed example `sig` is reproduced byte for
 byte by `cp-sign sign --allow-test-key --no-expiry`.
 
-## Capability profile 0.1.0
+## Capability profile 0.1.1
 
 `{ gpu, ramGb, storageFreeGb, cores, backendTier, features, measuredAt, details? }`, computed once
 per page load by `detectCapabilities()`. `BackendTier` ranks `webgpu-f16` (4) > `webgpu-f32` (3) >
@@ -138,9 +149,10 @@ per page load by `detectCapabilities()`. `BackendTier` ranks `webgpu-f16` (4) > 
 `architecture`, `maxBufferSize`, `maxStorageBufferBindingSize`, `maxComputeWorkgroupStorageSize`
 and `maxComputeInvocationsPerWorkgroup`; adapter description and device strings are dropped
 (driver-version fingerprint); `navigator.userAgent` and `navigator.userAgentData` are never read;
-no personal data. `satisfies(profile, minProfile)` implements the MinProfile rule above.
+no personal data. `satisfies(profile, minProfile)` implements the MinProfile rule above. 0.1.1 (spec release 0.6.0)
+clamps `ramGb` to at most 8 and reads 0 as unknown, never as too small (TD-57, TD-84).
 
-## Event 0.1.4
+## Event 0.1.6
 
 One JSON shape for logs, timings, memory, model-load and asset records. `attrs` is flat, at most
 32 keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`, string values at most 1024 UTF-16 units, never
@@ -188,9 +200,22 @@ adds the attr `budget` to `model.generate` (and `finishReason` 'abort'), the rea
 `PIPELINE_STAGES` and `PIPELINE_REASONS`. The localdata SDK emits a namespace registered with
 `redactNamespacePrefix(prefix)` as `prefix + '*'`, so a per-document namespace never reveals a document id.
 
-## Storage API 0.3.0
+0.1.5 is a patch (spec release 0.6.0): `model.unload`, `storage.index.build` (`STORAGE_EVENT_NAMES` grows from ten to
+eleven), the attrs `requested`, `index`, `fallback` and `ef` on `storage.query`, and the pipeline reasons
+`stream_limit` and `out_of_memory`.
 
-See `storage-api.md` and the normative `storage-api.ts`. 0.3.0 is a minor change (draft): the documents API
+0.1.6 is a patch (the wire string stays `airplanemode.event/0.1`; only the schema `$id` moves to
+`urn:airplanemode:spec:event:0.1.6`; spec release 0.6.1): `storage.index.build` gains the attr `duplicateRows`
+(live rows whose vector bytes equal an earlier live row), and the `storage.query` fallback set gains `duplicates`,
+emitted when localdata's degenerate rule fires (TD-109 plan B, which is active); the `storage.index.open` reasons list gains `params`.
+
+## Storage API 0.4.1
+
+See `storage-api.md` and the normative `storage-api.ts`. 0.4.1 (spec release 0.6.1) is a wording patch: idle graph
+eviction at the cap of resident graphs, what `dropIndex` frees, the once-per-generation rebuild of an older graph
+format and the params check before any reservation (TD-109, TD-110, TD-111). 0.4.0 was a minor change (draft): the
+approximate vector index (HNSW; `buildIndex`, `dropIndex`, `QueryOptions.index` and `ef`). 0.3.0 was a minor change
+(draft): the documents API
 (`putDocument`, `getDocument`, `listDocuments`, `deleteDocument`, `queryChunks` and `redactNamespacePrefix`):
 a document and its text chunks with vectors are written all-or-nothing under the reserved driver
 namespace `'__ld_doc.' + ns`, queried by a brute-force top-k, and `clear(ns)` physically removes them.
@@ -200,9 +225,10 @@ are new, a vector index sits beside the key-value data in each namespace, writes
 `UsageResult` gains `vectorRows` and `vectorBytes`, and the error code `corrupt` is new. The prefix `__ld_`
 is reserved for the SDK's own driver namespaces. The on-disk format is localdata-internal.
 
-## Backend adapter 0.4.0
+## Backend adapter 0.5.0
 
-0.4.0 is a minor change (draft): `embed(texts, opts?)` with `EmbedOptions` (`pooling`, `normalize`),
+0.5.0 is a minor change (draft, spec release 0.6.0): `unload()`, the error code `out_of_memory` and the rules R16 to
+R20. It is unchanged in release 0.6.1. 0.4.0 was a minor change (draft): `embed(texts, opts?)` with `EmbedOptions` (`pooling`, `normalize`),
 `EMBED_MAX_TEXTS` and `EMBED_TEXT_MAX`, `EmbedResult.truncated` and `timings`, the error code
 `context_overflow`, `GenerateResult.budget`, and the rules R4b (token budget, `context_overflow`, Stop),
 R14 (embeddings through the worker host, with host-side validation of the worker's answer) and R15

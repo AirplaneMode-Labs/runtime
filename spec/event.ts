@@ -1,9 +1,17 @@
 /**
- * Event contract 0.1.5 (airplanemode.event/0.1; the wire string never changes on a patch).
+ * Event contract 0.1.6 (airplanemode.event/0.1; the wire string never changes on a patch).
  *
- * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.5).
+ * Normative JSON Schema: event.schema.json ($id urn:airplanemode:spec:event:0.1.6).
  *
- * 0.1.5 (wire-compatible, spec release 0.6.0; B1 memory hardening and the HNSW index kind): reserves
+ * 0.1.6 (wire-compatible, spec release 0.6.1; TD-109): storage.index.build gains the attr duplicateRows, an
+ * integer of at least 0 that counts the live rows whose vector bytes equal those of an earlier live row,
+ * computed within the existing max_index_bytes and quota bounds; and the storage.query fallback set gains
+ * 'duplicates'. 'duplicates' is emitted when localdata's degenerate rule fires (TD-109 plan B, which is active:
+ * a degenerate graph answers with the flat scan). The storage.index.open reasons gain 'params' (a stored graph
+ * whose header parameters differ from the stored params record is refused before any reservation). The schema
+ * body is unchanged: only its $id moves.
+ *
+ * Event contract 0.1.5 (wire-compatible, spec release 0.6.0; B1 memory hardening and the HNSW index kind): reserves
  * model.unload (RUNTIME_EVENT_NAMES, backend adapter R16); model.generate is emitted on a Stop after the first
  * token with finishReason 'abort' (a Stop after the first token) carrying outTokens and a numeric firstTokenMs
  * (S1-119), and when finishReason is 'error' it gains an optional attr code, an AdapterErrorCode;
@@ -296,11 +304,13 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * the filterPrefix, a key, a score or a value.
    *
    * Since 0.1.5 (storage API 0.4.0) also: requested 'flat' | 'hnsw', index 'flat' | 'hnsw' (the index that
-   * answered), fallback '' | 'absent' | 'stale' | 'filter' | 'metric' | 'short' | 'refused' | 'trap' and ef (integer or
-   * null). `requested` is QueryOptions.index as the caller gave it (default 'flat'); `fallback` is '' when the
+   * answered), fallback '' | 'absent' | 'stale' | 'filter' | 'metric' | 'short' | 'refused' | 'trap' | 'duplicates' and
+   * ef (integer or null). `requested` is QueryOptions.index as the caller gave it (default 'flat'); `fallback` is '' when the
    * index that answered is the one requested, otherwise why the flat scan answered a request for 'hnsw'; `ef`
    * is the effective ef of an hnsw answer and null for a flat one. 'short' (fix round 1) means the HNSW path returned fewer than
-   * min(k, live rows) hits, so the flat scan answered.
+   * min(k, live rows) hits, so the flat scan answered. 'duplicates' (0.1.6) is emitted when localdata's degenerate rule fires
+   * (TD-109 plan B, which is active): the graph was built over so many duplicate or near-duplicate vectors that it
+   * is degenerate, and the flat scan answered.
    */
   'storage.query',
   /**
@@ -309,7 +319,7 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
    * 'simd' | 'scalar' | 'none'; bytes (index bytes) and durationMs.
    *
    * Since 0.1.5: kind 'flat' | 'hnsw' (which index file was opened) and, for a refused graph (kind 'hnsw'),
-   * reason 'magic' | 'version' | 'length' | 'dim' | 'ns' | 'generation' | 'bounds' | 'links' | 'crc'.
+   * reason 'magic' | 'version' | 'length' | 'dim' | 'ns' | 'generation' | 'bounds' | 'links' | 'crc' | 'params'.
    */
   'storage.index.open',
   /**
@@ -341,7 +351,9 @@ export const STORAGE_EVENT_NAMES = Object.freeze([
   'storage.doc.query',
   /**
    * 0.1.5. kind timing; attrs: ns, kind 'hnsw', reason 'build' | 'rebuild' | 'replace', outcome 'ok' or a
-   * StorageErrorCode, rows, liveRows, dim, m, efConstruction; top-level bytes = graph bytes written; durationMs;
+   * StorageErrorCode, rows, liveRows, dim, m, efConstruction, duplicateRows (0.1.6: an integer of at least 0, the live
+   * rows whose vector bytes equal those of an earlier live row, computed within the existing max_index_bytes and
+   * quota bounds); top-level bytes = graph bytes written; durationMs;
    * level debug, warn on failure. 'build' is a buildIndex() call on a namespace without a graph, 'replace' one
    * over an existing graph, 'rebuild' the SDK's rebuild of a refused graph (storage API 0.4.0). Never a key, a
    * vector, a score or the seed.

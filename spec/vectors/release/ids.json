@@ -1,0 +1,266 @@
+[
+  {
+    "id": "runtime-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "runtime-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "localdata-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "localdata-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "glyphsift-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "glyphsift-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "pagetriage-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "pagetriage-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "control-plane-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "control-plane-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "example-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "example-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "x-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "x-release\n",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "x-rehearsal\n",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "X-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-releasex",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "-rehearsal",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a.b-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a_b-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a b-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-release ",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": " a-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-Release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-release-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a-rehearsal-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a-release-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-rehearsal",
+    "release": false,
+    "rehearsal": true,
+    "manifestId": true
+  },
+  {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-rehearsal",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "é-release",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "0-release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a--release",
+    "release": true,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a-release\u0000",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-release\r\n",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "a-releasee",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "a-rehearsal-",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  },
+  {
+    "id": "ab",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": false
+  },
+  {
+    "id": "dev.airplanemode.runtime-models",
+    "release": false,
+    "rehearsal": false,
+    "manifestId": true
+  }
+]

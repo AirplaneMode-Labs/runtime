@@ -1,0 +1,40 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "example-release",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs REHEARSAL: signed with the published RFC 8032 test key; not a release",
+  "createdAt": "2026-11-20T00:00:00Z",
+  "entries": [
+    {
+      "id": "example-a.bin",
+      "kind": "other",
+      "url": "example-a.bin",
+      "sha256": "fd2f727e4dec896015992e6c74825b419d67350b3b3781cfc6114eb8d78b66a5",
+      "size": 64,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "mediaType": "application/octet-stream"
+    },
+    {
+      "id": "example-b.txt",
+      "kind": "other",
+      "url": "example-b.txt",
+      "sha256": "d730f5c75edb757a98e5921a36bd251e8f170a15d0304611c9d14b4d34649c61",
+      "size": 81,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "mediaType": "application/octet-stream"
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "fca3170acc03d0c4b6acd7c94e16432d9bb0bb34ef49b77960dbf94c91c3ce51",
+      "publicKey": "OIaEU6NodBvu07OOiLSRtqQ8Qssaedg8rHVvrPY74PM=",
+      "sig": "g2+I+eAw8KYF+RPYgAvHfy9NQ+1Z45Z8sA/vt7LwyfSrzRH051YWor1zXLf18pVjuqew24IgKjFb1KmjZj5eBg==",
+      "signedAt": "2026-11-20T00:00:00Z"
+    }
+  ]
+}

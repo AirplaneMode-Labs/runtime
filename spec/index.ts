@@ -1,15 +1,16 @@
 /**
- * @airplanemode/runtime/spec: the five open contracts, released together as spec release 0.6.0:
- * manifest 0.1.3 (status published: "manifest spec v0.1"; an additive patch, the manifest 0.1.1 wire format
- * is unchanged; weak trust keys refused), capability profile 0.1.1, event 0.1.5, storage API 0.4.0, backend
- * adapter 0.5.0 plus its model descriptor 0.2.1 (every other contract is a draft). Committed; public after
- * the owner's push.
+ * @airplanemode/runtime/spec: the five open contracts, released together as spec release 0.6.1:
+ * manifest 0.1.4 (status published: "manifest spec v0.1"; an additive patch, the manifest 0.1.1 wire format
+ * is unchanged; adds the normative Release manifests section and release.ts), capability profile 0.1.1, event
+ * 0.1.6, storage API 0.4.1, backend adapter 0.5.0 plus its model descriptor 0.2.1 (every other contract is a
+ * draft). Committed; public after the owner's push.
  *
  * Source of truth for every AirplaneMode-Labs repo. Other repos vendor these files under
  * src/contracts/ and never edit them there.
  */
 
 export * from './manifest';
+export * from './release';
 export * from './capability-profile';
 export * from './event';
 export * from './storage-api';
@@ -17,13 +18,13 @@ export * from './backend-adapter';
 export * from './model-descriptor';
 
 /** The spec release these contract versions ship in (README Versioning: the release numbering rule). */
-export const SPEC_RELEASE = '0.6.0' as const;
+export const SPEC_RELEASE = '0.6.1' as const;
 
 export const SPEC_VERSIONS = Object.freeze({
-  manifest: '0.1.3',
+  manifest: '0.1.4',
   capabilityProfile: '0.1.1',
-  event: '0.1.5',
-  storageApi: '0.4.0',
+  event: '0.1.6',
+  storageApi: '0.4.1',
   backendAdapter: '0.5.0',
   modelDescriptor: '0.2.1',
 } as const);

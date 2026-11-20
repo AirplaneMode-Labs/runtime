@@ -1,9 +1,15 @@
-# Storage API 0.4.0
+# Storage API 0.4.1
 
 Normative definition: `storage-api.ts`. This page is the prose companion and carries the normative
 semantics of the vector index, of the documents API and of the approximate index. Implemented by
 `@airplanemode/localdata` over OPFS with an IndexedDB fallback (and an in-memory driver for tests). Status:
-draft (spec release 0.6.0, committed; public after the owner's push).
+draft (spec release 0.6.1, committed; public after the owner's push).
+
+0.4.1 is a wording patch over 0.4.0 (spec release 0.6.1; TD-109, TD-110, TD-111): no type, constant or method
+changes. It states what the approximate index does at the cap of resident graphs (idle eviction, TD-110), what
+`dropIndex` frees, how a graph written in an older internal format is replaced (TD-109) and that a graph whose
+header disagrees with the stored params is refused before anything is reserved (TD-111). See Approximate index
+(0.4.0) below, the bullets marked 0.4.1.
 
 0.4.0 is a minor change over 0.3.0: the approximate vector index, HNSW, with the index kind chosen by the
 caller (`buildIndex`, `dropIndex`, `QueryOptions.index` and `ef`, `VectorIndexInfo.ann`,
@@ -357,8 +363,11 @@ Semantics (normative):
 - `buildIndex` builds over the live rows in stored order, deterministically for (rows, order, metric, m,
   efConstruction, seed); replaces an existing graph in one commit, under the writer lock; throws
   quota_exceeded (reason 'quota' | 'max_index_bytes' | 'wasm_memory' | 'max_graphs') before writing; and is
-  allowed on an empty namespace. At most HNSW_MAX_GRAPHS (64) graphs are loaded per open store; a build that
-  would exceed the cap is quota_exceeded with reason 'max_graphs'.
+  allowed on an empty namespace. At most HNSW_MAX_GRAPHS (64) graphs are resident (loaded in memory) per
+  open store. 0.4.1: at HNSW_MAX_GRAPHS resident graphs, buildIndex first releases the in-memory instance (never the
+  stored bytes) of the least-recently-used idle graph: no operation running or queued, and not being built. That is
+  the TD-94 rule. It throws max_graphs only when every resident graph is busy; a build that would exceed the cap
+  with every resident graph busy is quota_exceeded with reason 'max_graphs'.
 - With a current graph, `putVectors` inserts new rows (a replaced row's old node is marked deleted) and
   `delete(ns, key)` marks the node deleted, both inside the same writer lock and commit as the flat change.
 - Graph bytes count toward the pre-write quota check, so a namespace with a graph can refuse a `putVectors`
@@ -366,11 +375,18 @@ Semantics (normative):
 - If a graph write fails after the flat commit, the graph stays at the old generation and becomes 'stale'.
 - The graph lives in the SDK-reserved driver namespace ANN_NS_PREFIX + ns, where ANN_NS_PREFIX = '__ld_ann.'
   and sits next to '__ld_vec.' and '__ld_doc.'. It holds a 'graph' record and a separate 'params' record.
+- 0.4.1: dropIndex frees a slot only if the graph was resident. Dropping the graph of a namespace that is not resident
+  removes its stored bytes and frees no slot, because it held none.
 - Every path that removes a namespace's vectors (clear, deleting the last row, dropNamespace or destroy) also
   removes the ANN namespace. `usage()` counts it. Public set, get and delete on a '__ld_' namespace is refused
   by the existing reserved-prefix check.
 - A refused graph is removed and rebuilt from the stored vectors with the stored params, under the writer lock,
-  before the query answers (`storage.index.build` reason 'rebuild').
+  before the query answers (`storage.index.build` reason 'rebuild'). 0.4.1: a graph refused for an older internal
+  format (reason 'version') is rebuilt from the stored vectors at most once per generation, guarded by a persisted
+  marker, and the rebuild goes through the same quota, max_index_bytes and wasm_memory refusals as a fresh build.
+- 0.4.1: a stored graph whose header params differ from the stored params record is refused (reason 'params')
+  before any reservation: the header is compared with the stored params (m, efConstruction, metric, dim) and with
+  every limit before any memory sized by a header field is reserved.
 - At most one rebuild runs per (ns, HEAD generation) per open store. If the rebuilt graph or the params are
   refused, the index is dropped and queries fall back to flat with fallback 'refused'. There is no rebuild loop.
 - A WebAssembly.RuntimeError from the kernel discards and re-instantiates the module and fails the HNSW path.
@@ -381,8 +397,9 @@ Semantics (normative):
 - The on-disk format is localdata-internal (docs/hnsw-format.md); the contract promises the behaviour. The
   graph file holds no vectors and no keys. It binds the namespace by UTF-8 length plus bytes (at most 64), not
   by a CRC.
-- Events: `storage.index.build` (Event 0.1.5), and the attrs `requested`, `index`, `fallback` and `ef` on
-  `storage.query`. Never a key, a vector, a score or the seed.
+- Events: `storage.index.build` (Event 0.1.5; 0.1.6 adds `duplicateRows`), and the attrs `requested`, `index`,
+  `fallback` and `ef` on `storage.query` (0.1.6 adds the fallback 'duplicates', emitted when localdata's degenerate rule fires: TD-109
+  plan B, which is active). Never a key, a vector, a score or the seed.
 
 Not in 0.4.0: quantisation, compaction, encryption at rest, and HNSW for `queryChunks`.
 

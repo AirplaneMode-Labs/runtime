@@ -1,0 +1,690 @@
+[
+  {
+    "name": "rehearsal-ok-with-flags",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 0,
+      "reason": null,
+      "testKey": true
+    }
+  },
+  {
+    "name": "test-key-refused-without-flag",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "test_key_refused"
+    }
+  },
+  {
+    "name": "trust-file-empty",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/empty.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "no_trusted_key"
+    }
+  },
+  {
+    "name": "trust-file-test-key",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/test-key.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "test_key_refused"
+    }
+  },
+  {
+    "name": "trust-file-weak",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/weak.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "weak_key_refused"
+    }
+  },
+  {
+    "name": "trust-file-duplicate-member",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/duplicate-member.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "bad_release_keys"
+    }
+  },
+  {
+    "name": "trust-file-keyid-mismatch",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/keyid-mismatch.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "bad_release_keys"
+    }
+  },
+  {
+    "name": "trust-file-duplicate-keyid",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/duplicate-keyid.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "bad_release_keys"
+    }
+  },
+  {
+    "name": "trust-file-too-many",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/too-many.json",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "bad_release_keys"
+    }
+  },
+  {
+    "name": "unexpected-id",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "other-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "unexpected_id"
+    }
+  },
+  {
+    "name": "no-expect-id",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "expect_id_required"
+    }
+  },
+  {
+    "name": "release-id-trust-test-key-allow",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "release-id",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-release"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "test_key_flag_misuse"
+    }
+  },
+  {
+    "name": "release-id-trust-test-key-no-flag",
+    "level": "directory",
+    "command": "verify",
+    "dir": "release-id",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--expect-id",
+      "example-release"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "test_key_flag_misuse"
+    }
+  },
+  {
+    "name": "release-id-trust-file-test-key",
+    "level": "directory",
+    "command": "verify",
+    "dir": "release-id",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/test-key.json",
+      "--expect-id",
+      "example-release"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "test_key_refused"
+    }
+  },
+  {
+    "name": "trust-file-with-allow-flag",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/vector-key.json",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "test_key_flag_misuse"
+    }
+  },
+  {
+    "name": "vk-release-ok",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "vk-release",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/vector-key.json",
+      "--expect-id",
+      "example-release"
+    ],
+    "expect": {
+      "exit": 0,
+      "reason": null,
+      "testKey": false
+    }
+  },
+  {
+    "name": "vk-publisher-mismatch",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "vk-publisher",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/vector-key.json",
+      "--expect-id",
+      "example-release"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "publisher_mismatch"
+    }
+  },
+  {
+    "name": "tk-publisher-mismatch",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "tk-publisher",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "publisher_mismatch"
+    }
+  },
+  {
+    "name": "artifact-byte-flipped",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "flip-byte",
+      "file": "example-a.bin",
+      "offset": 0
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "artifact_hash_mismatch"
+    }
+  },
+  {
+    "name": "artifact-truncated",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "truncate",
+      "file": "example-a.bin",
+      "bytes": 1
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "artifact_size_mismatch"
+    }
+  },
+  {
+    "name": "artifact-removed",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "remove",
+      "file": "example-b.txt"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "artifact_missing"
+    }
+  },
+  {
+    "name": "artifact-extra-file",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "add-file",
+      "file": "extra.txt",
+      "content": "an extra file\n"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "artifact_extra"
+    }
+  },
+  {
+    "name": "sums-line-changed",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "sums-edit",
+      "line": 0
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "sums_mismatch"
+    }
+  },
+  {
+    "name": "sums-crlf",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "sums-crlf"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "sums_mismatch"
+    }
+  },
+  {
+    "name": "sums-reordered",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "sums-reorder"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "sums_mismatch"
+    }
+  },
+  {
+    "name": "manifest-publisher-edited",
+    "level": "manifest",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "manifest-publisher-edit"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "no_valid_signature"
+    }
+  },
+  {
+    "name": "symlinked-artifact",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "symlink-artifact",
+      "file": "example-a.bin"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "not_regular_file"
+    }
+  },
+  {
+    "name": "symlinked-dir",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "symlink-dir"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "not_regular_file"
+    }
+  },
+  {
+    "name": "subdirectory",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "subdir",
+      "name": "sub"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "not_regular_file"
+    }
+  },
+  {
+    "name": "junction-artifact",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "junction-artifact",
+      "file": "example-a.bin"
+    },
+    "args": [
+      "--trust-test-key",
+      "--allow-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 3,
+      "reason": "not_regular_file"
+    },
+    "platform": "win32"
+  },
+  {
+    "name": "sign-release-id",
+    "level": "manifest",
+    "command": "sign",
+    "dir": "release-id",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--test-key",
+      "rfc8032-1"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "test_key_release_id"
+    }
+  },
+  {
+    "name": "sign-already-signed",
+    "level": "directory",
+    "command": "sign",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--test-key",
+      "rfc8032-1"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "already_signed"
+    }
+  },
+  {
+    "name": "sign-other-test-key",
+    "level": "directory",
+    "command": "sign",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--test-key",
+      "rfc8032-2"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "test_key_flag_misuse"
+    }
+  },
+  {
+    "name": "verify-bad-release-id",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/vector-key.json",
+      "--expect-id",
+      "not-a-release-id"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "bad_release_id"
+    }
+  },
+  {
+    "name": "verify-both-trust-sources",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--trust-file",
+      "@keys/vector-key.json",
+      "--trust-test-key",
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "bad_trust_source"
+    }
+  },
+  {
+    "name": "verify-no-trust-source",
+    "level": "directory",
+    "command": "verify",
+    "dir": "base",
+    "mutation": {
+      "op": "none"
+    },
+    "args": [
+      "--expect-id",
+      "example-rehearsal"
+    ],
+    "expect": {
+      "exit": 2,
+      "reason": "bad_trust_source"
+    }
+  }
+]

@@ -3,12 +3,13 @@
 The open, signed model-asset manifest of Airplane Mode Labs. This document is normative and standalone:
 an implementation can be written from it, the schema and the vectors alone. It is the plan's "manifest
 spec v0.1": the manifest contract on the wire string `airplanemode.manifest/0.1`, published as manifest
-0.1.3 in spec release 0.6.0, status: published (committed; public after the owner's push; manifest 0.1.1
+0.1.4 in spec release 0.6.1, status: published (committed; public after the owner's push; manifest 0.1.1
 was pushed on 15 Nov 2026). Published means frozen on its wire string: later changes are additive patches
-that change no accepted or refused input, or a new wire string. Manifest 0.1.2 and 0.1.3 are such patches
-(see Manifest 0.1.2 and Manifest 0.1.3 below): the wire format of manifest 0.1.1 is unchanged.
+that change no accepted or refused input, or a new wire string. Manifest 0.1.2, 0.1.3 and 0.1.4 are such
+patches (see Manifest 0.1.2, Manifest 0.1.3 and Manifest 0.1.4 below): the wire format of manifest 0.1.1 is
+unchanged.
 
-Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.3`),
+Files: `manifest.schema.json` (JSON Schema 2020-12, `$id urn:airplanemode:spec:manifest:0.1.4`),
 `manifest.ts` (the TypeScript mirror and the shared constants), `vectors/` (positive, negative and
 tamper vectors), `examples/` (a signed and an unsigned example, `TEST-KEY.md`). The key words MUST,
 MUST NOT, SHOULD and MAY are used as in RFC 2119.
@@ -396,7 +397,10 @@ vectors/tamper/tamper.json (15) its expected result, skipping only requiresState
 downgrade state. tamper-assets is runtime-specific: its normative fields apply to any implementation that
 fetches assets. Since 0.1.3 it also gives every row of `vectors/weak-keys/weak-keys.json` its verdict
 (`weak_key_refused` for every refused class, accepted for every `ok` row) and every row of
-`vectors/weak-keys/verify.json` its expected throw.
+`vectors/weak-keys/verify.json` its expected throw. A tool that verifies or signs release directories (see
+Release manifests) also gives every case of `vectors/release/release.json` its exit code and reason, and
+every row of `vectors/release/ids.json` its answer for the two id patterns; a signer or verifier that takes a
+manifest file runs the cases marked `level: manifest`.
 
 "Accepts the 5 positive vectors byte-for-byte" means: `canonical()` of each `vectors/0n-*.json` equals its
 `.canonical.txt`, and the Ed25519 signature of those bytes under the TEST 1 seed equals its `.sig.txt`.
@@ -524,3 +528,121 @@ among them `forged-identity.manifest.json` (a signature with R = identity and S 
 Every hex value is derived by computation in `test/tools/make-weak-key-vectors.mjs`, which asserts each class
 (for `ok` rows [L]P = O and P is not O; for `mixed_order` [8]P is not O and [L]P is not O). The libsodium
 blocklist of small-order points is informative only.
+
+## Manifest 0.1.4
+
+Manifest 0.1.4 is an additive patch of 0.1.3 (spec release 0.6.1; team decisions TD-103 and TD-121, findings
+S1-127 and S1-129). The wire string stays `airplanemode.manifest/0.1`, the shape and the canonical bytes are
+unchanged, the schema body is byte-identical, and `verifyManifest` gives the same verdict as before on every
+input. The `$id` of the schema moves to `urn:airplanemode:spec:manifest:0.1.4`. What it adds is the normative
+section Release manifests below and the constants of `release.ts` (re-exported from `index.ts`): the two id
+patterns, the two publisher strings, the release-keys file format, the reason tokens of a release tool and its
+exit codes. The vectors are `vectors/release/`.
+
+## Release manifests
+
+A release manifest is an ordinary manifest that lists the artefacts of one package release. It has the id
+`<package>-release`, and a rehearsal manifest, which proves the release path in CI and is signed with a published
+RFC 8032 test key, has the id `<package>-rehearsal`. `<package>` is one of runtime, localdata, glyphsift,
+pagetriage and control-plane (`PACKAGE_IDS`). The patterns are `RELEASE_ID_PATTERN`
+(`^[a-z0-9][a-z0-9-]{0,118}-release$`) and `REHEARSAL_ID_PATTERN` (`^[a-z0-9][a-z0-9-]{0,116}-rehearsal$`). They
+use `$` without the multiline flag: a trailing line feed never matches (`x-release` followed by a line feed is
+neither id), whatever the regular-expression engine; in Rust that is `\z`. `vectors/release/ids.json` is the shared
+table.
+
+**Body.** `id` is `<package>-release` or `<package>-rehearsal`. `version` is the package version. `publisher` is
+`RELEASE_PUBLISHER` ('Airplane Mode Labs') for a -release id and `REHEARSAL_PUBLISHER` for a -rehearsal id; any other
+pairing is `publisher_mismatch`. `createdAt` comes from SOURCE_DATE_EPOCH (a decimal integer, 0 to 253402300799)
+when it is set and from the clock otherwise, so a rehearsal is reproducible. There is no `expiresAt` (R5).
+Entries: one per artefact, `id` and `url` both the file's basename, which must already be lowercase and match the
+entry id grammar; `kind` is 'other'; `version` is the package version; `licence` is the repository's SPDX
+expression (pagetriage 'MIT OR Apache-2.0', control-plane 'FSL-1.1-ALv2'); `minProfile` is `{}`; `mediaType` is
+application/gzip for .tgz, .tar.gz and .crate, application/zip for .whl and .zip and application/octet-stream
+otherwise (`RELEASE_MEDIA_TYPES`). Entries are sorted by id and `signatures` is `[]` until the manifest is signed.
+
+**Release directory.** One flat directory (`dist-release/`) holds only the artefacts, `release-manifest.json`
+(`RELEASE_MANIFEST_NAME`; 2-space JSON with a final line feed) and `SHA256SUMS`. Reports go to the sibling
+`dist-release-report/` (`RELEASE_REPORT_DIR`), never inside.
+
+**SHA256SUMS.** ASCII, one line per manifest entry, `<64 lowercase hex>`, two spaces, the basename and a line feed.
+Lines are sorted by basename in byte order; the line ending is LF only and there is a final line feed.
+SHA256SUMS covers the artefacts only, never the manifest itself. It is authenticated only through the signed
+manifest: a verifier regenerates it from the manifest entries and requires the bytes to be equal
+(`sums_mismatch`). It is `-text` wherever it is committed, and so are `spec/vectors/**` and
+`spec/tools/**` (a checkout must never convert line endings of a hashed file).
+
+**The release-keys file** (`docs/release-keys.json` in each repository) is
+`{"spec":"airplanemode.release-keys/0.1","keys":[{"keyId":"<hex>","publicKey":"<canonical padded base64>"}]}`. It has exactly
+the members `spec` and `keys`, each key has exactly `keyId` and `publicKey`, and there are at most 8 keys
+(`RELEASE_KEYS_MAX`). A reader parses it with the strict scan of the manifest parser (no repeated member, no lone
+surrogate, no float), never with a bare JSON.parse. Each `publicKey` is normalised to its 32 bytes, then
+checked against the test keys (`test_key_refused`), then against the weak-key rule (`weak_key_refused`); then a
+`keyId` that is not the SHA-256 of the key, a repeated `keyId`, a bad encoding, an unknown member or more than 8 keys
+is `bad_release_keys`. A file with no keys is `no_trusted_key`. It is committed with `keys: []` until the owner adds
+the real public key.
+
+**R1: an RFC 8032 test key never signs an id that matches RELEASE_ID_PATTERN.** The reference tool refuses with
+usage error `test_key_release_id` (exit 2). cp-sign sign refuses with exit 1 and the stderr line
+`test_key_release_id: refusing to sign a release id with a published RFC 8032 test key`. cp-sign recognises the test
+key from the public key derived from the seed, whatever the key file is called and with or without --allow-test-key.
+
+**R2: a release verification never allows test keys, and --expect-id is mandatory.** A release tool refuses to verify
+without an expected id (`expect_id_required`, exit 2). The flag that allows a test key (--allow-test-key, or
+--trust-test-key, which puts TEST 1 in the trust set) is accepted only together with an --expect-id that matches
+REHEARSAL_ID_PATTERN, and --allow-test-key never together with a trust file: anything else is
+`test_key_flag_misuse` (exit 2). cp-sign verify with --allow-test-key and a release-pattern --expect-id is
+`test_key_flag_misuse` too.
+
+**R3: the allow flag exists only as a command-line flag.** It is never read from the environment, a manifest, a URL,
+a file or stored state.
+
+**R4: a release key signs only -release ids and is never placed in an application trust set.** Applications that
+verify model or data bundles (dockit, the runtime demo, the asset manager configurations) always pass expectId,
+and the release key is a separate key from any bundle-signing key.
+
+**R5: release manifests carry no expiresAt.** The owner signs a -release id with `cp-sign sign --no-expiry`, and a
+rehearsal has none either. The artefact hashes bind the manifest to one version, the registry refuses a
+republish, and the publish job refuses a version that is already there, so an expiry adds nothing; an expiring
+manifest would stop verifying in an archive.
+
+**The reference tool** is runtime's own verifier, bundled as `spec/tools/release-tool.mjs` by
+`npm run spec:release-tool` from `src/release/` (it imports the real `verifyManifest`, `canonical` and weak-key
+code, so a verdict can never differ from the library's). It is committed with its `.sha256` and is not in the npm
+package. Public CI never checks out the private control-plane: the rehearsal signs and verifies with this tool,
+the owner signs the real release with cp-sign offline, and the two are checked against each other on the shared
+vectors. The commands are `manifest`, `sums`, `sign` (only `--test-key rfc8032-1`) and `verify`. A command refuses a
+symlinked `--dir`, and refuses any member of the directory that is not a regular file (a symbolic link, a junction or
+other reparse point, a directory, a FIFO): every directory and member is checked with lstat, a file is opened
+afterwards, and its identity and size are re-checked on the open handle.
+
+**Verify, in order.** (0) usage: `expect_id_required`, then `bad_trust_source` (exactly one of --trust-file and
+--trust-test-key), then `test_key_flag_misuse`, then `bad_release_id` (the expected id matches neither pattern); then
+the `--dir` check. (1) `manifest_missing`, then `sums_missing`. (2) the trust source: `bad_release_keys`,
+`no_trusted_key`, after the keys file's own `test_key_refused` and `weak_key_refused`. (3) `verifyManifest` with
+`expectId`: every manifest reason passes through unchanged, including `test_key_refused` when the trust set holds a
+test key and the flag was not given. (4) after acceptance: `test_key_release_id` if the signature that verified
+belongs to a test key and the id does not match REHEARSAL_ID_PATTERN (unreachable from the command line by
+construction, covered by a unit test), then `publisher_mismatch`. (5) the members: `not_regular_file`; then, entry by
+entry, `artifact_missing`, `artifact_size_mismatch`, `artifact_hash_mismatch`; then `artifact_extra`. (6)
+`sums_mismatch`. The first stderr line of a refusal is `refused: <reason>`. A run keeps no state.
+
+**Exit codes.** 0 accepted: stdout `{"verdict":"ok","id","version","entries","testKey"}`, where `testKey` comes from
+the keyId of the signature that verified, never from a flag, and stderr carries
+`VERIFIED WITH THE PUBLISHED RFC 8032 TEST KEY: rehearsal only, not a release` when it is true. 3 refused: stdout
+`{"verdict":"refused","reason"}`, stderr `refused: <reason>` first; the reasons are `RELEASE_REJECT_REASONS`
+(`manifest_missing`, `sums_missing`, `not_regular_file`, `bad_release_keys`, `no_trusted_key`,
+`test_key_release_id`, `publisher_mismatch`, `artifact_missing`, `artifact_extra`, `artifact_size_mismatch`,
+`artifact_hash_mismatch`, `sums_mismatch`) and the manifest reasons. 2 usage error: `usage: <token>: <message>` on
+stderr; the tokens are `RELEASE_USAGE_REASONS` (`expect_id_required`, `test_key_flag_misuse`,
+`test_key_release_id`, `bad_release_id`, `bad_artifact_name`, `not_regular_file`, `publisher_mismatch`,
+`already_signed`, `bad_trust_source`) and `bad_arguments` for command-line syntax. 1 an I/O error: an I/O error is
+exit 1 and never counts as a refusal, and neither does a crash, a signal or a missing tool.
+
+**Signing a rehearsal.** `sign --dir D --test-key rfc8032-1` accepts only that literal value, an id that matches
+REHEARSAL_ID_PATTERN and a manifest with no signature (`already_signed`). It prints
+`TEST KEY SIGNATURE (RFC 8032 TEST 1, published): rehearsal only, NOT A RELEASE` on stderr and adds one signature
+with `signedAt` equal to `createdAt`; Ed25519 is deterministic, so the output is. It reads no key file and has no
+option to name one.
+
+**Conformance (release).** `vectors/release/release.json` lists every case with its directory, mutation, arguments,
+exit code and reason; the vocabulary of mutations is in `vectors/release/README.md`.

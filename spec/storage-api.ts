@@ -1,8 +1,17 @@
 /**
- * Storage API contract 0.4.0 (draft; normative; see storage-api.md for prose).
+ * Storage API contract 0.4.1 (draft; normative; see storage-api.md for prose).
  *
  * Implemented by @airplanemode/localdata over OPFS with an IndexedDB fallback. The SDK does
  * validation, codec and quota accounting above a StorageDriver.
+ *
+ * 0.4.1 (wording patch, spec release 0.6.1; TD-109, TD-110, TD-111): no type, constant or method changes.
+ * At HNSW_MAX_GRAPHS resident graphs, buildIndex first releases the in-memory instance (never the stored bytes) of
+ * the least-recently-used idle graph: no operation running or queued, and not being built. That is the TD-94 rule.
+ * It throws max_graphs only when every resident graph is busy. dropIndex frees a slot only if the graph was resident.
+ * Format: a graph refused for an older internal format (reason 'version') is rebuilt from the stored vectors at most once per
+ * generation, guarded by a persisted marker; the rebuild goes through the same quota, max_index_bytes and wasm_memory
+ * refusals as a fresh build. Params: a stored graph whose header params differ from the stored params record is refused
+ * (reason 'params') before any reservation.
  *
  * 0.4.0 (minor, spec release 0.6.0) adds the approximate vector index (HNSW), with the index kind chosen by
  * the caller: `buildIndex()` and `dropIndex()`, `QueryOptions.index` and `QueryOptions.ef`,

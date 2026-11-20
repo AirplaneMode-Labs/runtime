@@ -1,0 +1,40 @@
+{
+  "spec": "airplanemode.manifest/0.1",
+  "id": "example-release",
+  "version": "1.0.0",
+  "publisher": "Airplane Mode Labs",
+  "createdAt": "2026-11-20T00:00:00Z",
+  "entries": [
+    {
+      "id": "example-a.bin",
+      "kind": "other",
+      "url": "example-a.bin",
+      "sha256": "fd2f727e4dec896015992e6c74825b419d67350b3b3781cfc6114eb8d78b66a5",
+      "size": 64,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "mediaType": "application/octet-stream"
+    },
+    {
+      "id": "example-b.txt",
+      "kind": "other",
+      "url": "example-b.txt",
+      "sha256": "d730f5c75edb757a98e5921a36bd251e8f170a15d0304611c9d14b4d34649c61",
+      "size": 81,
+      "version": "1.0.0",
+      "licence": "Apache-2.0",
+      "minProfile": {},
+      "mediaType": "application/octet-stream"
+    }
+  ],
+  "signatures": [
+    {
+      "alg": "ed25519",
+      "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "sig": "oLaiSZfN9CZFyGb0dN3ytS/IcjLlTd6HtkOQqhlYF+3YIdtyEOCrc1rpcM2bCnTJIYBHoSPzkqgSTA0QfMJtAw==",
+      "signedAt": "2026-11-20T00:00:00Z"
+    }
+  ]
+}

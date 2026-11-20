@@ -1,8 +1,17 @@
 /**
- * Manifest contract 0.1.3 (airplanemode.manifest/0.1), status "published": this is the plan's
+ * Manifest contract 0.1.4 (airplanemode.manifest/0.1), status "published": this is the plan's
  * "manifest spec v0.1" (pushed 15 Nov 2026 as 0.1.1).
  *
- * 0.1.3 (spec release 0.6.0) is an additive patch of 0.1.2 (TD-68, TD-82, S1-113). A trusted key must be the
+ * 0.1.4 (spec release 0.6.1) is an additive patch of 0.1.3 (TD-103, TD-121, S1-127, S1-129). The wire string is
+ * unchanged, the schema body is byte-identical (only its $id moves, to urn:airplanemode:spec:manifest:0.1.4) and
+ * verifyManifest gives the same verdict as before on every input. MANIFEST.md gains the normative section
+ * Release manifests (rules R1 to R5: a test key never signs a -release id, a release verification never allows
+ * test keys and needs an expected id, the allow flag exists only on the command line, a release key signs only
+ * -release ids and never sits in an application trust set, release manifests carry no expiresAt) and release.ts
+ * (re-exported from index.ts) carries the constants: the two id patterns, the publisher strings, the
+ * release-keys file format and the reason tokens of a release tool.
+ *
+ * Manifest contract 0.1.3 (spec release 0.6.0) was an additive patch of 0.1.2 (TD-68, TD-82, S1-113). A trusted key must be the
  * canonical 32-byte encoding of a point of the prime-order subgroup other than the identity: a trust set
  * holding any other 32-byte key (not a curve point, a non-canonical encoding, the identity, any other
  * small-order point, a mixed-order point) is refused with the new reason `weak_key_refused`, raised BEFORE
@@ -23,8 +32,8 @@
  *
  * Normative prose: MANIFEST.md (scope, shape, canonicalisation, duplicate members, signing, trust
  * roots, verification order, reason precedence, downgrade, test keys, tamper vectors, security
- * considerations, conformance). Normative JSON Schema: manifest.schema.json ($id
- * urn:airplanemode:spec:manifest:0.1.3; the body is unchanged since 0.1.0). This file is the
+ * considerations, conformance, release manifests). Normative JSON Schema: manifest.schema.json ($id
+ * urn:airplanemode:spec:manifest:0.1.4; the body is unchanged since 0.1.0). This file is the
  * TypeScript mirror of the schema plus the constants every implementation shares.
  *
  * 0.1.1 is an additive patch of 0.1.0 (spec release 0.4.0): it changes no input that 0.1.0 accepted
@@ -110,7 +119,8 @@ export interface Manifest {
   createdAt: Rfc3339Utc;
   /**
    * Authenticated expiry. A verifier rejects the manifest after this instant.
-   * A manifest without expiresAt never expires; publishers SHOULD set it (cp-sign does by default).
+   * A manifest without expiresAt never expires; publishers SHOULD set it (cp-sign does by default),
+   * except release manifests, which carry none (R5, MANIFEST.md Release manifests).
    */
   expiresAt?: Rfc3339Utc;
   /** At least one entry; ids unique; sorted by id in byte order. */
