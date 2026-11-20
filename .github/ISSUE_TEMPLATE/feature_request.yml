@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a change or an addition
+title: '[feature] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Say what you are trying to do rather than only what you would like built; a small, concrete need is easiest to act on.
+        **Never attach a real, confidential or personal document** to this issue. Contracts under `spec/` change only with a version bump
+        and a changelog entry, so a request that touches them is a discussion first.
+  - type: checkboxes
+    id: no-real-documents
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have not attached any real, confidential or personal document (bank, legal, medical, identity). Any sample is synthetic or public.
+          required: true
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: Optional. A sketch of the API or the behaviour, and any alternative you considered.

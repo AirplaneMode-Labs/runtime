@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-| Version | Supported                                          |
-| ------- | -------------------------------------------------- |
-| none    | Nothing has been released yet (0.1.0-dev, no tag). |
+| Version | Supported                                             |
+| ------- | ----------------------------------------------------- |
+| none    | Nothing has been released yet (0.3.0-beta.2, no tag). |
 
 ## Reporting a vulnerability
 
@@ -13,7 +13,8 @@ You will get an acknowledgement within 7 days. We follow a **90-day coordinated 
 we aim to fix and publish within 90 days of the report and ask reporters to hold details until a fix
 is available or the window ends, whichever comes first. Credit is given unless you prefer otherwise.
 
-Please do not open public issues for security reports.
+Report vulnerabilities privately, by email as above, and never in a public issue, a pull request or a discussion. The issue forms
+link here for that reason. (GitHub private vulnerability reporting is an owner setting that is not enabled yet; until it is, email.)
 
 ## Test key material
 
@@ -21,6 +22,12 @@ The Ed25519 key material that appears in this repository (`spec/examples/TEST-KE
 example, `spec/vectors/*.sig.txt` and the test files) is the **RFC 8032 section 7.1 test vector**,
 public data that anyone can reproduce. It is not a secret and must never be trusted outside tests;
 `verifyManifest` refuses a trust set containing it unless `allowTestKeys` is set.
+
+## Release path
+
+A release manifest is signed offline by the owner with a key that this repository never holds; the verifier refuses the published RFC
+8032 test keys for a release id, and the publish workflow runs only by hand, on `main`, after the owner approves it
+(`docs/RELEASING.md`, `spec/MANIFEST.md` section "Release manifests"). A finding in that path is a vulnerability: report it as above.
 
 ## Telemetry
 

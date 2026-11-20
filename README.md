@@ -5,17 +5,23 @@ device can run, runs a model on the best backend the device has (WebGPU, then We
 if you opt in, the Chrome built-in model) and publishes the open contracts the rest of Airplane Mode
 Labs is built on.
 
+Live demo: https://airplanemode-labs.github.io/runtime/
+
 Package names use the placeholder scope `@airplanemode` / crate names `<repo>` until the handles are
 reserved; nothing is published yet.
 
 ## Status
 
-Sprint 6 (19 Nov 2026): Working: runtime beta 0.3.0-beta.1 on spec release 0.6.0: a trust set that holds a weak Ed25519 public key is refused before anything is parsed, and the Tamper lab now has fifteen cases (case 15 shows the exact reason, weak_key_refused, with 0 requests after the refusal); the engine can be unloaded and its WebAssembly memory is returned by ending the worker (an Unload button shows the model.unload event and the engine worker count before and after; in installed Chrome on an Apple M5 Pro 48 GB the process tree shrank by more than the load peak, not measured on 8 GB); an out-of-memory failure in the engine is a plain refusal of its own; a Stop after the first token is logged as an aborted generation. Not yet: WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB), key revocation, a real signing key, a transparency log.
+Sprint 7 (20 Nov 2026): Working: runtime beta 0.3.0-beta.2 on spec release 0.6.1, a release path you can rehearse: the package builds, packs and installs from its tarball into an empty directory and makes one asserted call (green on macOS; the CI job for Linux and Windows first runs after the push); the release tool signs a rehearsal manifest with the published RFC 8032 test key and verifies it only when the test-key flag is given, and the same files are refused without the flag (test_key_refused), against an empty release-keys file (no_trusted_key), after any changed byte (artifact_hash_mismatch, sums_mismatch, no_valid_signature) and when the id is a release id (test_key_release_id); a publish workflow exists, cannot start by accident, needs the owner's approval and has never been run. The Tamper lab still has fifteen cases (weak_key_refused among them). Not yet: a real signing key, a published package, reserved names, key revocation, a transparency log, WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB).
 
 Done-when (TD-51): build done on Apple M5 Pro 48 GB; 8 GB Windows done-when NOT met (owner runbook step 5).
 
-**Runtime `0.3.0-beta.1`: beta, not tagged, not tag-ready (TD-30): no breaking change within 0.3.x.** It
-is the second beta (TD-69). Sprint 6 adds spec release 0.6.0 (manifest 0.1.3, an additive patch of the published
+**Runtime `0.3.0-beta.2`: beta, not tagged, not tag-ready (TD-30): no breaking change within 0.3.x.** It
+is the third beta (TD-69, TD-107). Sprint 7 adds spec release 0.6.1 (a patch release: manifest 0.1.4 with the normative
+Release manifests section and its rules R1 to R5, event 0.1.6, storage API 0.4.1; no wire string changes), the release tool
+(`spec/tools/release-tool.mjs`, runtime's own verifier bundled for the rehearsal, not part of the npm package), the
+release rehearsal (`npm run release:rehearse`, the CI job `release-rehearsal (<os>)`), an owner-only `publish.yml` and
+the release steps in `docs/RELEASING.md`. Sprint 6 added spec release 0.6.0 (manifest 0.1.3, an additive patch of the published
 0.1.2: a trust set that holds a weak Ed25519 public key is refused with `weak_key_refused` before anything is
 parsed; capability profile 0.1.1; event 0.1.5; storage API 0.4.0, the HNSW index kind; backend adapter 0.5.0, R16 to
 R20), `unload()` that resolves only after the worker is terminated and emits `model.unload`, an `out_of_memory`
@@ -32,8 +38,8 @@ reserved. Not measured on 8 GB: every figure in this README comes from an Apple 
 - **The promise** is limited to this: no breaking change within 0.3.x of the exports of
   `@airplanemode/runtime`, `/backends`, `/worker`, `/worker-support` and `/spec`. Draft contracts may still
   change in a minor release of their own.
-- **Still draft contracts:** storage API 0.4.0, backend adapter 0.5.0 and event 0.1.5 (capability profile
-  0.1.1 and model descriptor 0.2.1 are drafts too). Manifest 0.1.3 is published: its wire format is frozen, and a
+- **Still draft contracts:** storage API 0.4.1, backend adapter 0.5.0 and event 0.1.6 (capability profile
+  0.1.1 and model descriptor 0.2.1 are drafts too). Manifest 0.1.4 is published: its wire format is frozen, and a
   0.1.2 manifest stays valid.
 - **Feature-complete for the dockit path:** capability profile, manifest verify with expectId, the asset
   manager, the worker host with generate (Stop, budget) and embed, in-worker integrity, the worker-support
@@ -67,6 +73,103 @@ of those cases (the 14th, Sprint 5: a validly signed manifest of another product
 no worker-supplied text reaches any event (S1-074). WebLLM: not yet (cut from Sprint 4); nothing is
 published, tagged or reserved.
 
+## Try it in two minutes
+
+No model is downloaded and no test key is involved. The setup block needs the npm registry once, for `npm ci`; the install and
+run blocks run offline (`npm_config_offline=true`). This builds the package exactly as a release would, installs the
+tarball (not the source tree) into an empty directory and does the one thing the package is for: signs a manifest with a key that exists only for this run, verifies it, then changes one number after signing and
+watches the verifier refuse it. Every block below is executed by `test/quickstart.test.ts` (in the CI job
+`release-rehearsal (<os>)` on Linux, macOS and Windows), so this section cannot drift from the code. On Windows run the shell
+blocks in Git Bash.
+
+```sh
+git clone https://github.com/AirplaneMode-Labs/runtime.git
+```
+
+Build the tarball, from the root of the clone:
+
+```sh quickstart:setup
+npm ci --ignore-scripts && npm run build && npm pack
+```
+
+Install it into a fresh empty directory (`$REPO` is the path of the clone):
+
+```sh quickstart:install
+npm init -y
+npm i "$REPO"/airplanemode-runtime-0.3.0-beta.2.tgz --ignore-scripts --offline --no-audit --no-fund
+```
+
+Save this as `try.mjs` in that directory:
+
+```js quickstart:file=try.mjs
+import { createHash } from 'node:crypto';
+import { signedBytes, verifyManifest } from '@airplanemode/runtime';
+
+// A key that exists for this run only: nothing is read from disk and nothing is kept.
+const { subtle } = globalThis.crypto;
+const pair = await subtle.generateKey('Ed25519', true, ['sign', 'verify']);
+const publicKey = new Uint8Array(await subtle.exportKey('raw', pair.publicKey));
+const keyId = createHash('sha256').update(publicKey).digest('hex');
+
+const manifest = {
+  spec: 'airplanemode.manifest/0.1',
+  id: 'quick-start',
+  version: '1.0.0',
+  publisher: 'try it in two minutes (synthetic)',
+  createdAt: '2026-11-20T00:00:00Z',
+  entries: [
+    {
+      id: 'hello.txt',
+      kind: 'other',
+      url: 'hello.txt',
+      sha256: createHash('sha256').update('hello\n').digest('hex'),
+      size: 6,
+      version: '1.0.0',
+      licence: 'Apache-2.0',
+      minProfile: {},
+    },
+  ],
+  signatures: [],
+};
+const sig = new Uint8Array(await subtle.sign('Ed25519', pair.privateKey, signedBytes(manifest)));
+manifest.signatures = [
+  {
+    alg: 'ed25519',
+    keyId,
+    publicKey: Buffer.from(publicKey).toString('base64'),
+    sig: Buffer.from(sig).toString('base64'),
+    signedAt: manifest.createdAt,
+  },
+];
+
+// The trust set is application configuration; the expected id is pinned.
+const trust = new Map([[keyId, publicKey]]);
+const ok = await verifyManifest(manifest, trust, { expectId: 'quick-start' });
+console.log('verified:', ok.ok ? 'ok' : ok.reason);
+
+const tampered = structuredClone(manifest);
+tampered.entries[0].size = 7; // one number changed after signing
+const bad = await verifyManifest(tampered, trust, { expectId: 'quick-start' });
+console.log('tampered:', bad.ok ? 'accepted' : bad.reason);
+```
+
+Run it:
+
+```sh quickstart:run
+node try.mjs
+```
+
+It prints exactly:
+
+```text quickstart:expect
+verified: ok
+tampered: no_valid_signature
+```
+
+That is the whole contract of the manifest: one valid signature from a key you trust, for the id you expect, over every
+byte of the list; anything else is refused with a reason. The release path that uses the same verifier is in
+[`docs/RELEASING.md`](docs/RELEASING.md) and [`spec/tools/README.md`](spec/tools/README.md).
+
 ## Install
 
 Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.
@@ -79,12 +182,12 @@ installs it into a fresh empty directory and calls it:
 ```sh
 npm run pack:check                       # builds, packs, installs offline, calls verifyManifest()
 # or by hand, from this clone:
-npm pack                                 # airplanemode-runtime-0.3.0-beta.1.tgz
+npm pack                                 # airplanemode-runtime-0.3.0-beta.2.tgz
 mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
-npm i /path/to/airplanemode-runtime-0.3.0-beta.1.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
+npm i /path/to/airplanemode-runtime-0.3.0-beta.2.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
 ```
 
-Packed size about 240 KiB in 37 files (845,851 B unpacked) on macOS arm64 (pinned to a fresh `npm pack --dry-run` by `test/pack-figure.test.ts`, which `npm run ci` runs after the build; the file count and the unpacked bytes are exact, the packed size is within 1 KiB; not measured on 8 GB); `node_modules` then holds exactly
+Packed size about 256 KiB in 38 files (895,951 B unpacked) on macOS arm64 (pinned to a fresh `npm pack --dry-run` by `test/pack-figure.test.ts`, which `npm run ci` runs after the build; the file count and the unpacked bytes are exact, the packed size is within 1 KiB; not measured on 8 GB); `node_modules` then holds exactly
 `@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
 
 **After the owner publishes** (not possible today; the scope is not reserved):
@@ -427,7 +530,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 | Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured on 8 GB |
 | Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured on 8 GB |
 | A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured on 8 GB |
-| Packed tarball `airplanemode-runtime-0.3.0-beta.1.tgz` (pack-check.json)                                                            | about 240 KiB in 37 files (845,851 B unpacked), installed offline into a fresh empty directory                                                               | not measured on 8 GB |
+| Packed tarball `airplanemode-runtime-0.3.0-beta.2.tgz` (pack-check.json)                                                            | about 256 KiB in 38 files (895,951 B unpacked), installed offline into a fresh empty directory                                                               | not measured on 8 GB |
 | `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured on 8 GB |
 
 ## Limitations
@@ -438,6 +541,19 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
   resident set of the test Chrome's process tree; the worker's wasm memory and the page's JS heap are
   reported only under their own names. The owner's runbook (PLAN.md) measures the same things on an 8 GB
   Windows laptop.
+- **The release path is rehearsed, not run (Sprint 7).** Nothing is published, tagged or reserved. The rehearsal
+  (`npm run release:rehearse`, the CI job `release-rehearsal (<os>)`) signs with the published RFC 8032 test key, which
+  proves the tooling and the refusals, not a real key, and the job first runs on GitHub after the owner's next push: until
+  then it is proven on macOS only, and the Windows junction and symlink refusals are proven nowhere on Windows. The publish
+  workflow (`.github/workflows/publish.yml`) has never been run by anyone. No real signing key exists
+  (`docs/release-keys.json` holds no key), `SHA256SUMS` is authenticated only through the signed manifest, and the first
+  publish will use a short-lived npm token because npm trusted publishing needs an npm newer than Node 22 ships (TD-122).
+  The release tool (`spec/tools/release-tool.mjs`) checks every directory member with lstat and again on the open handle
+  with fstat; that closes the swap of a file for a link, and is not a defence against another process that can write in the
+  release directory while it runs. `docs/RELEASING.md` lists what only the owner can do.
+- **The quick start needs the registry once.** "Try it in two minutes" builds the tarball from a clone, so its first block
+  runs `npm ci` and needs the npm registry or a warm npm cache; the install and run blocks are offline. It proves the manifest
+  verifier from a packed install, not a model: no model is downloaded and none runs.
 - **Re-hashing, by host.** The worker adapter hashes every file inside the worker (R15) and the page does not
   re-hash on the load path (only the 64 KiB descriptor is hash-checked on the page, because the page parses
   it before a worker exists); the main-thread adapter (no `workerUrl`) still re-hashes on the main thread
@@ -488,8 +604,8 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 - Chrome only this sprint. Firefox and Safari are not tested (OPFS `createWritable`, Web Locks and
   WebCrypto Ed25519 availability differ).
 - The IndexedDB fallback keeps chunked Blobs; it exists for browsers or contexts without OPFS.
-  Chrome under-reports IndexedDB usage in `navigator.storage.estimate()` (T1 measured 0.627 of the
-  stored bytes) and did not throw `QuotaExceededError` for IndexedDB under a 1.5 GiB CDP override,
+  Chrome under-reports IndexedDB usage in `navigator.storage.estimate()` (a Chrome browser check
+  measured 0.627 of the stored bytes) and did not throw `QuotaExceededError` for IndexedDB under a 1.5 GiB CDP override,
   so on that store the manager's own accounting (index rows plus in-flight parts, see Eviction) and a
   configured `quotaBytes` are the only pressure it sees; the real IndexedDB ceiling on the 8 GB
   Windows laptop is not measured.
@@ -630,9 +746,15 @@ npm run devtools:build                                          # devtools/dist,
 npm run pack:check                                              # pack, check, install offline into a fresh directory, call
 npm run test:install                                            # the packed tarball imported by a bundler-free page
 npm run spec:vectors   # regenerate spec/vectors from test/tools/make-vectors.mjs
+npm run spec:release-vectors                                  # regenerate spec/vectors/release (add --check to compare)
+npm run spec:release-tool                                     # rebuild spec/tools/release-tool.mjs and its .sha256 from src/release/
+npm run release:rehearse                                      # build, pack, clean install, test-key rehearsal and refusal proofs (dist-release/, dist-release-report/)
+node scripts/release/rehearse.mjs --self-test                 # prove the refusal proofs can fail
+node scripts/check-lock-optionals.mjs --install-scripts      # every native optional is locked for linux-x64, darwin-arm64, win32-x64
 node test/tools/make-tamper-vectors.mjs --check               # the tamper and tamper-assets vectors (add no flag to regenerate)
 npm run test:demo -- tamper.spec.ts                           # the Tamper lab in Chrome (no model needed)
 RUNTIME_MODEL=1 npm run test:demo -- stop.spec.ts             # the Stop button in Chrome, with the test model
+npm run test:demo -- non-loopback.spec.ts                    # the demo on a non-loopback origin refuses the test key (no model needed)
 npm run spec:sign-example
 npm run deps:scripts   # which packages carry install scripts (none are run)
 node test/tools/gen-ort-pins.mjs --check   # src/backends/ort-pins.ts against node_modules/onnxruntime-web
@@ -644,14 +766,14 @@ node test/tools/dist-url-inventory.mjs demo/dist      # every library URL string
 node test/tools/make-descriptor-vectors.mjs --check   # the shared descriptor vectors under spec/vectors/descriptor
 ```
 
-Vitest is pinned at 4.1.12. With npm 10.9.8, adding or upgrading a package reports a peer-dependency conflict, so run `npm install --legacy-peer-deps` for that one command. `npm ci` from the committed lockfile needs no flag. We revisit this when vitest's peer range is updated.
+Vite is pinned at 8.3.8 and Vitest at 5.1.0 (Sprint 7, TD-112). With npm 10.9.8 (the npm of Node 22), `npm install vitest@5.1.0` fails inside npm (Arborist, "Cannot read properties of null (reading 'edgesOut')"); the lockfile was written with `npx --yes npm@11 i --save-exact --ignore-scripts`, and `npm ci` from the committed lockfile needs no flag on npm 10.9.8 (proved in a scratch copy). Run `node scripts/check-lock-optionals.mjs` after any dependency change: it fails when a native optional package lacks `resolved` or `integrity`, or a build for linux-x64, darwin-arm64 or win32-x64. TypeScript 7, @types/node 26 and tsup 9 are deferred (TD-112).
 
 CI runs the same `npm run ci` on Ubuntu, macOS and Windows; browser tests run on Linux with the
 Google Chrome preinstalled on ubuntu-latest (Playwright channel "chrome"; the job logs
 `google-chrome --version` and fails when Chrome is missing, and no Chrome is installed from a
 package repository). This first ran on GitHub on 9 Nov 2026. A separate, non-required job
 `model-wasm (ubuntu-latest)` fetches the test model (cached, every file re-hashed) and runs the
-WebAssembly leg of `test:model` behind the aborting network gate. A Hugging Face outage never turns `check (<os>)` red. CI status: pushed 15 Nov 2026 at 3bf53c6; CI at that head red: run 43667709960 (check windows-latest, model-wasm ubuntu-latest); open until the owner pushes the Sprint 5 fixes and reads green runs. Local macOS is green; nothing here claims three-OS CI green. New npm dependencies must have been
+WebAssembly leg of `test:model` behind the aborting network gate. A Hugging Face outage never turns `check (<os>)` red. CI status: at 7d3777b (19 Nov 2026) `check (<os>)` on all three operating systems, `model-wasm (ubuntu-latest)` and the Pages deploy were green (CI run 44580189216, pages run 44580189184). Sprint 7 adds the job `release-rehearsal (<os>)`; it first runs after the owner's next push, and nothing here claims it green until then. New npm dependencies must have been
 published at least 14 days before they are installed (younger transitives are pinned through
 `overrides`), come from registry.npmjs.org with sha512 integrity, and pass `npm audit signatures`.
 

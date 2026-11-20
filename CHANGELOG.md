@@ -3,7 +3,113 @@
 All notable changes to `@airplanemode/runtime` are recorded here. The format is based on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/). Nothing is released yet; the package version is
-`0.3.0-beta.1` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+`0.3.0-beta.2` and no tag exists. The open contracts have their own log in `spec/CHANGELOG.md`.
+
+## [0.3.0-beta.2] - 2026-11-20 (untagged)
+
+Runtime `0.3.0-beta.2` on spec release 0.6.1 (Sprint 7, an addition the owner asked for on 19 Nov 2026; theme: release
+readiness, so that tagging and publishing become a short list of owner-only steps). Nothing is tagged or published (no
+tag, no publish); it is still not tag-ready (TD-30): the 8 GB benchmark, a real signing key, reserved names, the
+configured publish environment and the publish itself are the owner's. Every figure comes from one Apple M5 Pro with 48 GB:
+not measured on 8 GB. Version decided in TD-107. Sprint 7 creates no gate-1 evidence.
+
+### Added
+
+- Spec release 0.6.1 (D1-01; `spec/CHANGELOG.md` has the detail): manifest 0.1.4 with the normative Release manifests
+  section and rules R1 to R5 (TD-103, TD-121, S1-127, S1-129), `spec/release.ts` (ids, publishers, release-keys format,
+  reason tokens, exit codes), event 0.1.6 (`duplicateRows`, the reserved fallback 'duplicates') and storage API 0.4.1 (wording
+  for TD-109 to TD-111). The vectors `spec/vectors/release/` (five directories, eight release-keys files, a 44-id pattern
+  table and 36 cases) come from `test/tools/make-release-vectors.mjs` on the independent oracle `test/tools/lib.mjs`; every
+  0.6.0 vector is byte-identical (`test/fixtures/spec-0.6.0.sha256.txt`).
+- The release tool (D1-02): `src/release/` bundled into `spec/tools/release-tool.mjs` (`npm run spec:release-tool`), runtime's
+  own verifier with `manifest`, `sums`, `sign` and `verify`. `--expect-id` is mandatory, a test key signs rehearsals only (R1),
+  the allow flags exist only on the command line (R3), every member is checked with lstat and fstat so a symbolic link, a
+  junction or a directory is `not_regular_file`, and the bundle imports only six `node:` modules (an allowlist test counts
+  them, the environment reads and the 64-hex constants). It is not in the npm package.
+- The release rehearsal (D1-03; TD-106, TD-118): `scripts/release/rehearse.mjs` (`npm run release:rehearse`) and the CI job
+  `release-rehearsal (<os>)` on Linux, macOS and Windows: build, pack, install the tarball into a fresh directory outside the
+  checkout and make one asserted call, then manifest, SHA256SUMS, a test-key signature and nine refusal proofs, each with the
+  exact exit code, first stderr line and JSON reason; a self-test proves the proofs can fail. Two runs with the same
+  SOURCE_DATE_EPOCH give byte-identical SHA256SUMS, manifest and tarball. `docs/release-keys.json` (keys `[]`).
+- The owner-only publish workflow (D1-04; TD-105, TD-119, TD-122): `.github/workflows/publish.yml`, `workflow_dispatch` only, with
+  the six locks, the version, tag and registry bindings, provenance, and a dry run that CI rehearses
+  (`scripts/release/publish-dry-run.mjs`); `docs/RELEASING.md` lists the owner steps in order. It has never been run.
+- `scripts/check-lock-optionals.mjs` (D1-05): fails when a native optional package lacks `resolved` or `integrity`, or a build
+  for linux-x64, darwin-arm64 or win32-x64 (S1 supply-chain condition).
+- A `## Try it in two minutes` section in the README (D1-06; TD-115, TD-116): no model download, no test key, executed by
+  `test/quickstart.test.ts` against a tarball built from a copy of the checkout; the `Live demo:` line within the first 12 lines;
+  issue forms with a required no-real-documents checkbox and a SECURITY.md contact link (TD-117); good-first-issue drafts.
+- A release write-up draft (D1-08), marked draft, not published.
+
+### Changed
+
+- vite 8.3.8 and vitest 5.1.0 (D1-05, TD-112; Dependabot PRs 5 and 2): configuration unchanged, the lockfile written with npm
+  11 because npm 10.9.8 fails on vitest 5's peer set, `npm ci` proved on npm 10.9.8; rolldown, lightningcss and their platform
+  packages arrive, 11 packages leave, no new package with an install script. TypeScript 7, @types/node 26 and tsup 9 stay
+  deferred (TD-112).
+- `docs/release.md`: every team row of the tag-blockers table is closed with its commit group and test; what is left is the
+  owner's (D1-07).
+- The README's CI status paragraph states what was read with gh on 20 Nov 2026 (the Sprint 6 head 7d3777b green on three
+  operating systems) instead of the Sprint 5 red run it carried.
+- The demo's status line and not-yet box show Sprint 7; its CSP and its origins are unchanged.
+
+### Fixed
+
+- Fix round 1 (BUG-T2-S7-04): `release-tool sign` lists `--dir` with the same lstat check as `manifest` and `sums`; a symlink, a
+  subdirectory or a FIFO, listed or extra, is `usage: not_regular_file` (exit 2) and nothing is signed.
+- Fix round 1 (BUG-T2-S7-05): files are opened `O_RDONLY | O_NONBLOCK | O_NOFOLLOW` (each flag only where the platform defines
+  it), so a file swapped for a FIFO between the lstat and the open ends in exit 3 `not_regular_file` within a bounded time instead
+  of blocking; `test/release-tool-filehandling.test.ts` proves it with a preload hook under a 10 s timeout.
+- Fix round 1 (TD-125, BUG-T3-S7-08, S1-132b): the publish job has no `vars.` in any job-level `if`; `RELEASE_PUBLISH_ARMED` and
+  `RELEASE_KEY_ID` are variables of the `release` environment read in step `env`, the arming check is the first step after
+  checkout, and a step after verify refuses a manifest that carries `expiresAt` (TD-121). The version is validated as strict
+  SemVer before it is written to `GITHUB_ENV`, and the tag-to-commit comparison moved into `scripts/release/publish-guard.mjs`
+  (unit-tested: lightweight tag, annotated tag dereferenced, mismatch refused, `GITHUB_REF` never read). `docs/RELEASING.md` arms
+  the workflow in step 12, just before the approval, and disarms it in step 13.
+- Fix round 1 (BUG-T3-S7-05): the quick-start test runs its static pre-check before any block is written or executed.
+- Fix round 1 (BUG-T1-S7-01): the README quick start no longer says no network is used after the clone; its setup block needs the
+  npm registry once, its install and run blocks run offline.
+- Fix round 2 (BUG-T3-S7-13): the command in `docs/RELEASING.md` step 3 that turns `key.pub` into the `publicKey` base64 printed an
+  empty string, because `cp-sign keygen` writes a comment line first and the key on the `ed25519-public` line. It now picks that
+  line, refuses with exit 1 unless the hex is exactly 32 bytes, and prints the base64; `test/docs.test.ts` extracts the
+  documented command, runs it on a synthetic `key.pub` holding the RFC 8032 TEST 1 public key (LF and CRLF) and compares the output
+  with the `publicKey` of `spec/vectors/release`, and checks that a file without that line, a truncated key and a non-hex key exit 1.
+- Fix round 2 (BUG-T3-S7-17, S1-129, S1-130): the lock-6 comparison (`RELEASE_KEY_ID` equals the single committed key), the
+  registry-absent check (`npm view` must answer E404; every other answer, including a network error, refuses) and the
+  exactly-one-tarball check moved out of inline shell and node in `.github/workflows/publish.yml` into
+  `scripts/release/publish-guard.mjs` (`key-id`, `registry-absent`, `tarball`), each unit-tested for its behaviour in
+  `test/publish-guard.test.ts` (match, mismatch, zero keys, two keys, malformed file, published version, E404, network error, a
+  real symlink). The registry lookup runs with the public registry and no user config, so no token is sent. The policy test
+  `test/workflows-release.test.ts` now forbids `continue-on-error` anywhere, any step-level `if:`, a job-level `if:` other than the
+  main-and-repository guard, a shell override and any `|| true`, `set +e` or `exit 0`; it pins the three calls and the whole
+  non-comment text of the file (`test/fixtures/publish.yml.golden`). The step order is unchanged. A mutation run over 54 step-bypass
+  and neutralised-check mutations, including the eight that earlier passed the policy test, is red on every one.
+- Fix round 2 (BUG-T3-S7-23): the `evidence-rsync.sh` line numbers cited in `docs/security/FINDINGS.md` for S1-115 and S1-122 name
+  the lines that hold the quoted text (l.10-11, l.13-14, l.16-17, l.22); a test compares them with the script.
+- Fix round 2 (wording): the README no longer names a tester role as the subject of a sentence; a test keeps README, CHANGELOG and
+  `docs/*.md` free of it.
+- `spec/event.ts` 0.1.6, comment text only: `storage.index.open` reasons gain 'params'; the 'duplicates' fallback is emitted when
+  localdata's degenerate rule fires (TD-109 plan B). No wire string, schema body or `$id` changes; the bundled release tool is
+  rebuilt (sha256 81583057...b667387).
+- The spec README's section headings carried stale contract versions (capability profile 0.1.0, event 0.1.4, storage API
+  0.3.0, backend adapter 0.4.0); they now carry the current ones.
+
+### Security
+
+- R1 to R5 and the release tool's file handling (S1-127, S1-129): a test key never signs a release id, a release verification
+  never allows test keys and needs an expected id, the key purpose is separated (R4), release manifests carry no expiry (R5).
+- Nothing in the demo, the packed tarball or the bundle sets `allowTestKeys` from the environment, a manifest, a URL, a file or
+  stored state; on a non-loopback origin the demo cannot enable the test key.
+- The publish workflow carries NPM_TOKEN only in the step env of the one publish step, `id-token` and `attestations` only in the
+  publish job, no `pull_request_target`, no `workflow_run`, no input and no event payload; CI and the policy test
+  `test/workflows-release.test.ts` assert it.
+- Every native optional package in the lockfile has `resolved` and a sha512 `integrity` for the three CI platforms; the packages
+  with install scripts are the same four as before.
+
+### Deferred
+
+- TypeScript 7, @types/node 26 and tsup 9 (TD-112); npm trusted publishing (TD-122: it needs npm 11.5.1 or later); an SBOM in the
+  rehearsal; the 8 GB measurement, a real key, reserved names, the publish and the tag are the owner's, so: no tag, no publish.
 
 ## [0.3.0-beta.1] - 2026-11-19 (untagged)
 
