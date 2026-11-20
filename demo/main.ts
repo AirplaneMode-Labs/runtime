@@ -59,6 +59,13 @@ const RFC8032_TEST_PUBLIC_HEX = 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa6232
 const trustRoot: TrustRoot = JSON.parse(__DEMO_TRUST_ROOT__) as TrustRoot;
 const FIXTURE_URL = new URL('./fixture/manifest.json', location.href).href;
 const RFC_EXAMPLE_URL = new URL('./fixture/rfc8032-signed-example.json', location.href).href;
+
+// R4 (manifest 0.1.4, Release manifests): an application that verifies a bundle always passes the id it expects. The three
+// manifests this page ships have fixed ids, so the paths that load them pin each one; the "paste a manifest" path is the one
+// place the page verifies something it does not ship, against trust roots the visitor pastes, and it shows the id it found.
+const FIXTURE_MANIFEST_ID = 'dev.airplanemode.demo.fixture';
+const RANGE_MANIFEST_ID = 'dev.airplanemode.range-server';
+const RFC_EXAMPLE_MANIFEST_ID = 'dev.airplanemode.examples.tiny';
 // Range test server manifest: same origin, at the root. Loopback only (see `source`).
 const RANGE_URL = new URL('/manifest.json', location.href).href;
 
@@ -436,7 +443,7 @@ const gatedFetch: typeof fetch = async (input, init) => {
  */
 let storeFallback: string | null = null;
 
-function makeManager(): AssetManager {
+function makeManager(expectManifestId?: string): AssetManager {
   const quotaBytes = numberOrUndefined(inQuota);
   const headroomBytes = numberOrUndefined(inHeadroom);
   quotaSource = quotaBytes !== undefined ? 'quotaBytes' : 'estimate';
@@ -445,6 +452,7 @@ function makeManager(): AssetManager {
     allowedOrigins: allowedOrigins(),
     events: sink,
     allowTestKeys: source === 'range',
+    ...(expectManifestId !== undefined ? { expectManifestId } : {}),
     progressIntervalMs,
     fetch: gatedFetch,
     ...(quotaBytes !== undefined ? { quotaBytes } : {}),
@@ -516,6 +524,7 @@ async function verifyAndReport(
   obj: unknown,
   load: boolean,
   baseUrl?: string,
+  expectId?: string,
 ): Promise<VerifyReport> {
   const trust = await trustSet();
   const allowTestKeys = source === 'range';
@@ -527,7 +536,7 @@ async function verifyAndReport(
     loadedIntoManager: false,
   };
   try {
-    const result = await verifyManifest(obj, trust, { allowTestKeys });
+    const result = await verifyManifest(obj, trust, { allowTestKeys, expectId });
     report.ok = result.ok;
     report.signatures = result.signatures;
     if (result.signatures.some((s) => s.valid)) reportEd25519(true);
@@ -561,16 +570,25 @@ async function verifyAndReport(
   return report;
 }
 
+/** The id the shipped manifest of the current source must carry (R4). */
+const pinnedId = (): string => (source === 'range' ? RANGE_MANIFEST_ID : FIXTURE_MANIFEST_ID);
+
 async function loadFixture(): Promise<VerifyReport> {
-  manager = makeManager();
+  manager = makeManager(pinnedId());
   const url = manifestUrl();
   const obj = await fetchJson(url);
-  return verifyAndReport(sourceLabel(), obj, true, url);
+  return verifyAndReport(sourceLabel(), obj, true, url, pinnedId());
 }
 
 async function verifyRfcExample(): Promise<VerifyReport> {
   const obj = await fetchJson(RFC_EXAMPLE_URL);
-  return verifyAndReport('RFC 8032 test-signed example (not loaded into the manager)', obj, false);
+  return verifyAndReport(
+    'RFC 8032 test-signed example (not loaded into the manager)',
+    obj,
+    false,
+    undefined,
+    RFC_EXAMPLE_MANIFEST_ID,
+  );
 }
 
 // --- entries table -----------------------------------------------------------------------------------

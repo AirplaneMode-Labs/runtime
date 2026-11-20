@@ -29,16 +29,18 @@
         source: <code id="quota-source">?</code>.
       </p>
       <p id="status-line" class="status-line">
-        Sprint 6 (19 Nov 2026): Working: runtime beta 0.3.0-beta.1 on spec release 0.6.0: a trust
-        set that holds a weak Ed25519 public key is refused before anything is parsed, and the
-        Tamper lab now has fifteen cases (case 15 shows the exact reason, weak_key_refused, with 0
-        requests after the refusal); the engine can be unloaded and its WebAssembly memory is
-        returned by ending the worker (an Unload button shows the model.unload event and the engine
-        worker count before and after; in installed Chrome on an Apple M5 Pro 48 GB the process tree
-        shrank by more than the load peak, not measured on 8 GB); an out-of-memory failure in the
-        engine is a plain refusal of its own; a Stop after the first token is logged as an aborted
-        generation. Not yet: WebLLM (cut), Windows and 8 GB measurements (not measured on 8 GB), key
-        revocation, a real signing key, a transparency log.
+        Sprint 7 (20 Nov 2026): Working: runtime beta 0.3.0-beta.2 on spec release 0.6.1, a release
+        path you can rehearse: the package builds, packs and installs from its tarball into an empty
+        directory and makes one asserted call (green on macOS; the CI job for Linux and Windows
+        first runs after the push); the release tool signs a rehearsal manifest with the published
+        RFC 8032 test key and verifies it only when the test-key flag is given, and the same files
+        are refused without the flag (test_key_refused), against an empty release-keys file
+        (no_trusted_key), after any changed byte (artifact_hash_mismatch, sums_mismatch,
+        no_valid_signature) and when the id is a release id (test_key_release_id); a publish
+        workflow exists, cannot start by accident, needs the owner's approval and has never been
+        run. The Tamper lab still has fifteen cases (weak_key_refused among them). Not yet: a real
+        signing key, a published package, reserved names, key revocation, a transparency log, WebLLM
+        (cut), Windows and 8 GB measurements (not measured on 8 GB).
       </p>
       <p id="range-note" class="note hidden">
         The <code>?manifest=range</code> parameter is honoured only on 127.0.0.1 or localhost (it
@@ -104,7 +106,8 @@
             <li>
               Not yet: WebLLM (cut; revisit after the 8 GB measurement), Windows and 8 GB no-GPU
               measurements (not measured on 8 GB), revocation of a signing key, a real signing key,
-              a transparency log.
+              a published package (the names are not reserved and nothing is published), a
+              transparency log.
             </li>
             <li>
               A web page cannot read free memory. The capability profile carries

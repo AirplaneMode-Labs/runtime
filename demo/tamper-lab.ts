@@ -1,4 +1,4 @@
-// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.6.0): fifteen buttons, each one
+// The Tamper lab of the runtime demo (manifest spec v0.1, spec release 0.6.1): fifteen buttons, each one
 // runs the real verifier or the real asset manager over bytes copied verbatim from spec/vectors/tamper
 // and spec/vectors/tamper-assets (demo/tools/tamper-fixture.mjs fails the build if a copy differs), and
 // shows the verdict, the reason code, the per-signature reasons and the stage exactly as the library
