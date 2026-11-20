@@ -11,3 +11,7 @@ spec/vectors/*.txt
 test/fixtures/*.txt
 dist-pack/
 *.tgz
+spec/vectors/release/
+spec/tools/
+dist-release/
+dist-release-report/

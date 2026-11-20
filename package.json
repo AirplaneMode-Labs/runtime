@@ -1,6 +1,6 @@
 {
   "name": "@airplanemode/runtime",
-  "version": "0.3.0-beta.1",
+  "version": "0.3.0-beta.2",
   "description": "Offline-first browser runtime (beta): capability profile, verified asset manager, backend adapters with WebGPU to WASM fallback, embeddings through a worker host, observability events and open contracts (manifest, capability profile, event, storage API, backend adapter, model descriptor).",
   "license": "Apache-2.0",
   "type": "module",
@@ -48,7 +48,8 @@
     "NOTICE",
     "README.md",
     "!spec/vectors",
-    "!spec/examples"
+    "!spec/examples",
+    "!spec/tools"
   ],
   "scripts": {
     "build": "tsup",
@@ -62,6 +63,9 @@
     "devtools:build": "node devtools/build.mjs",
     "spec:vectors": "node test/tools/make-vectors.mjs",
     "spec:sign-example": "node test/tools/sign-example.mjs",
+    "spec:release-vectors": "node test/tools/make-release-vectors.mjs",
+    "spec:release-tool": "tsup --config tsup.release-tool.config.ts && node scripts/release/hash-tool.mjs",
+    "release:rehearse": "node scripts/release/rehearse.mjs",
     "ci": "npm run fmt:check && npm run typecheck && npm run build && npm run test",
     "test:model": "playwright test -c test/browser/playwright.model.config.ts",
     "test:devtools": "playwright test -c test/browser/playwright.devtools.config.ts",
@@ -87,8 +91,8 @@
     "prettier": "3.9.10",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "7.3.7",
-    "vitest": "4.1.12"
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
   },
   "overrides": {
     "global-agent": "4.1.6",

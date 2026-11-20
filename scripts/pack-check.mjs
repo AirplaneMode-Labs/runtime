@@ -308,15 +308,15 @@ ok(
   `verifyManifest() on tamper-01 prints ${parsed.tamper01} (${(parsed.tamper01Signatures ?? []).join(', ')})`,
 );
 ok(
-  parsed.specRelease === '0.6.0' &&
+  parsed.specRelease === '0.6.1' &&
     parsed.specStatus?.manifest === 'published' &&
-    parsed.specVersions?.manifest === '0.1.3' &&
+    parsed.specVersions?.manifest === '0.1.4' &&
     parsed.specVersions?.capabilityProfile === '0.1.1' &&
-    parsed.specVersions?.event === '0.1.5' &&
-    parsed.specVersions?.storageApi === '0.4.0' &&
+    parsed.specVersions?.event === '0.1.6' &&
+    parsed.specVersions?.storageApi === '0.4.1' &&
     parsed.specVersions?.backendAdapter === '0.5.0' &&
     parsed.specVersions?.modelDescriptor === '0.2.1',
-  'the installed package carries spec release 0.6.0 (manifest 0.1.3 published, capability profile 0.1.1, event 0.1.5, storage API 0.4.0, backend adapter 0.5.0, model descriptor 0.2.1)',
+  'the installed package carries spec release 0.6.1 (manifest 0.1.4 published, capability profile 0.1.1, event 0.1.6, storage API 0.4.1, backend adapter 0.5.0, model descriptor 0.2.1)',
 );
 ok(
   parsed.weakKey === 'weak_key_refused',

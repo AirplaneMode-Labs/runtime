@@ -27,3 +27,7 @@ coverage/
 dist-pack/
 *.tgz
 demo/.generated/
+
+# release rehearsal outputs (scripts/release/rehearse.mjs): never committed
+dist-release/
+dist-release-report/

@@ -17,3 +17,10 @@
 *.ttf binary
 *.zip binary
 *.gz binary
+
+# Spec 0.6.1 (TD-103): files whose bytes are hashed, signed or compared byte for byte are stored and checked out
+# exactly as committed, whatever core.autocrlf says: the shared vectors (SHA256SUMS, release manifests, artefacts)
+# and the bundled release tool. A CRLF checkout of either would change a sha256 that a test or a signature pins.
+spec/vectors/** -text
+spec/tools/** -text
+dist-release/** -text
