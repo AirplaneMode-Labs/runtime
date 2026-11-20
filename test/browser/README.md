@@ -71,8 +71,10 @@ ahead of the last sample. After the reload exactly one `/assets/<id>` request is
 ## Quota proof: why OPFS and IndexedDB differ
 
 Measured on Chrome for macOS (stable channel, Playwright 1.65, November 2026). Raw figures: the
-`quota-<store>.json` reports written by `quotaEviction`, T1's `t1-quota-indexeddb.json`, and
-`evidence/sprint-1/D3/evidence/idb-usage-diag.log` in the workspace folder.
+`quota-<store>.json` reports written by `quotaEviction`, and, committed with their date, commit and method,
+[`docs/benchmarks/idb-usage-reporting.json`](../../docs/benchmarks/idb-usage-reporting.json) (the IndexedDB usage
+readings) and [`docs/benchmarks/asset-quota-eviction-700mb.json`](../../docs/benchmarks/asset-quota-eviction-700mb.json)
+(the 700 MB eviction runs).
 
 - `Storage.overrideQuotaForOrigin` (CDP) is enforced for OPFS: writes past it throw
   `QuotaExceededError`, and `Storage.getUsageAndQuota` reports the override. The OPFS proof uses

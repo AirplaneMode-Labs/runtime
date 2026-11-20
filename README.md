@@ -187,7 +187,7 @@ mkdir /tmp/fresh && cd /tmp/fresh && npm init -y
 npm i /path/to/airplanemode-runtime-0.3.0-beta.2.tgz --ignore-scripts --offline --no-audit --no-fund --cache /tmp/npm-cache-empty
 ```
 
-Packed size about 256 KiB in 38 files (895,951 B unpacked) on macOS arm64 (pinned to a fresh `npm pack --dry-run` by `test/pack-figure.test.ts`, which `npm run ci` runs after the build; the file count and the unpacked bytes are exact, the packed size is within 1 KiB; not measured on 8 GB); `node_modules` then holds exactly
+Packed size about 257 KiB in 38 files (897,648 B unpacked) on macOS arm64 (pinned to a fresh `npm pack --dry-run` by `test/pack-figure.test.ts`, which `npm run ci` runs after the build; the file count and the unpacked bytes are exact, the packed size is within 1 KiB; not measured on 8 GB); `node_modules` then holds exactly
 `@airplanemode/runtime`; `npm ls --all` also prints the optional Transformers.js peer as UNMET OPTIONAL DEPENDENCY, which is not installed.
 
 **After the owner publishes** (not possible today; the scope is not reserved):
@@ -436,7 +436,7 @@ third-party scripts or fonts, and a strict meta CSP with no inline script or sty
   **Allow Chrome built-in model** is off by default. A prompt box shows the answer, the rung, the
   execution providers, timings and bytes, a **Stop** button (enabled only while the model answers; the
   read-out says "Stopped" with the time to stop, 253 ms in the Chrome run of
-  evidence/sprint-4/D1/demo/stop-run.json), and a **Load timing and memory** read-out shows the load's five
+  docs/benchmarks/stop-button.json), and a **Load timing and memory** read-out shows the load's five
   phase durations under one load id and the memory figures Chrome exposes (the same model and view as the
   DevTools panel; the page calls `exposeDevtoolsHook()`). The page text states the done-when and the model
   card: "Same prompt answered on WebGPU and on WebAssembly with the test model SmolLM2-135M-Instruct
@@ -448,9 +448,20 @@ third-party scripts or fonts, and a strict meta CSP with no inline script or sty
 
 ## Benchmarks
 
-Measured on 2026-11-09 by the test lane (T1) on an Apple-silicon development machine (18 cores)
-with Google Chrome 157 via Playwright channel "chrome" against the repository range server on
-127.0.0.1, using the repository commands
+Every figure in this section comes from a file in [`docs/benchmarks/`](docs/benchmarks/README.md): one JSON file per
+benchmark with its date, commit, machine, method, exact command and the raw output, copied unchanged. The two tables below
+are generated from those files by `node scripts/bench-readme.mjs`; `node scripts/bench-readme.mjs --check` (run by
+`test/bench-readme.test.ts` in `npm run ci`) fails when a table differs from the files or when a timing figure in the prose
+has no raw data behind it. A figure the files cannot back says "raw data not kept". Nothing in `docs/benchmarks/` was
+measured on an 8 GB laptop, and the 8 GB column of every row says so.
+
+The machine is one Apple M5 Pro with 48 GB (18 cores, macOS arm64) with the installed Google Chrome 157 through Playwright
+channel "chrome", against the repository range server on 127.0.0.1. Every run before Sprint 7 was made on a sprint's working
+tree before it was committed, so no commit hash was recorded; each file says so and names the last earlier commit
+and the commits that later held the tree. Every row is an **Apple-silicon development machine, placeholder; 8 GB Windows
+no-GPU laptop not yet measured**.
+
+The 700 MB rows were measured on 2026-11-09 by the test lane (T1) with the repository commands
 
 ```sh
 node test/browser/range-server.mjs --port 8787 --serve demo/dist --test-endpoints --asset big=734003200
@@ -458,22 +469,14 @@ RUNTIME_BIG=1 RUNTIME_BIG_OUT=<dir> npx playwright test -c test/browser/playwrig
 node test/tools/asset-digest.mjs big 734003200     # the independent digest
 ```
 
-Raw outputs, relative to the workspace folder that holds the repositories:
-`evidence/sprint-1/T1/download-big-opfs.json`, `download-big-indexeddb.json`,
-`resume-big-opfs.json`, `resume-big-indexeddb.json` and `asset-digest-big.txt`. The two quota rows
-cite T1's retests, run with `npx playwright test -c specs/playwright.retest1.config.ts
-specs/t1-retest1.spec.ts` (round 1, OPFS) and `npx playwright test -c
-specs/playwright.retest2.config.ts specs/t1-retest2.spec.ts specs/t1-runtime-retest2.spec.ts`
-(round 2, IndexedDB; the specs are kept in `evidence/sprint-1/T1/specs/`) against the same range
-server started with `--asset a=734003200 --asset b=419430400 --asset c=524288000`: the OPFS row sets
-the origin quota to 1.5 GiB through CDP `Storage.overrideQuotaForOrigin` (no `quotaBytes`
-injection), the IndexedDB row injects `quotaBytes` of 1.5 GiB because Chrome ignores the CDP
-override for that store. Raw output: `evidence/sprint-1/T1/retest1/t1-retest1-quota-opfs.json` and
-`evidence/sprint-1/T1/retest2/t1-retest2-quota-indexeddb.json`. Every row is an **Apple-silicon
-development machine, placeholder; 8 GB Windows no-GPU laptop not yet measured**.
+Raw outputs: `docs/benchmarks/asset-download-700mb.json`, `asset-resume-700mb.json` and
+`asset-quota-eviction-700mb.json`; each also holds a second run of the same day. The two quota rows come from the test
+lane's own scripts, which are not in this repository (`big.spec.ts` runs the same sequence), against the same range server
+started with `--asset a=734003200 --asset b=419430400 --asset c=524288000`: the OPFS row sets the origin quota to 1.5 GiB
+through CDP `Storage.overrideQuotaForOrigin` (no `quotaBytes` injection), the IndexedDB row injects `quotaBytes` of 1.5 GiB
+because Chrome ignores the CDP override for that store (`docs/benchmarks/idb-usage-reporting.json`).
 
-The Sprint 2 rows come from this repository's own commands, run on 9 Nov 2026 on the same
-Apple-silicon machine (18 cores, 32 GB) with Google Chrome through Playwright channel "chrome":
+The Sprint 2 rows come from this repository's own commands, run on 9 Nov 2026 on the same machine:
 
 ```sh
 node test/tools/fetch-model.mjs smollm2-135m-instruct            # once, into the gitignored .cache/
@@ -482,56 +485,67 @@ node test/tools/fetch-model.mjs qwen3-1.7b-webgpu-q4f16          # once; 1.43 GB
 RUNTIME_HINDI_SMOKE=1 RUNTIME_MODEL_OUT=<dir> npm run test:hindi-smoke
 ```
 
-Raw outputs, relative to the workspace folder that holds the repositories:
-`evidence/sprint-2/D1/model-run.json` and `evidence/sprint-2/D1/hindi-smoke.json` (the full request
-lists, the ORT files requested per leg and the verbatim outputs are in them). The done-when
+Raw outputs: `docs/benchmarks/model-answer-smollm2.json` and `docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json` (the full
+request lists, the ORT files requested per leg and the verbatim outputs are in them; the second also holds the transcript of
+the first attempt, which failed with `std::bad_alloc` after 15.5 s). The done-when
 sentence these rows support: "Same prompt answered on WebGPU and on WebAssembly with the test model
 SmolLM2-135M-Instruct (q4), in Chrome on an Apple-silicon Mac only. This is not the Hindi production
 model; Windows and the 8 GB no-GPU laptop are not measured." Throughput varies from run to run (the
-WebGPU leg measured 48.1 tokens/s in an earlier run on the same machine), so treat every figure as a
+WebGPU leg measured 48.1 tokens/s in an earlier run on the same machine; raw data not kept; the other recorded WebGPU runs,
+in `model-answer-smollm2.json` and `model-rss-smollm2.json`, read 155.9 to 162.3 tokens/s), so treat every figure as a
 placeholder.
 
 The peak JS heap figures are `JSHeapUsedSize` from Chrome's `Performance.getMetrics`. The JS heap
 excludes WebAssembly linear memory, Blob backing stores and GPU memory, and Chrome exposes no
 GPU-memory figure, so it understates what a model session needs; the renderer process RSS row below
-is a coarse proxy that does include WebAssembly memory. It comes from T1's independent harness,
-`node /…/T1/runtime-legs.mjs webgpu wasm` (evidence/sprint-2/T1/runtime-legs.mjs), which samples the
-processes of the browser while the legs run; the data is in
-evidence/sprint-2/T1/legs/rep1-webgpu.json to rep3-webgpu.json and evidence/sprint-2/T1/legs/rep1-wasm.json to rep3-wasm.json
-(three repetitions were taken, the range below covers all of them).
+is a coarse proxy that does include WebAssembly memory. It comes from an independent harness,
+`node runtime-legs.mjs webgpu wasm`, a workspace script that is not committed here, which samples the processes of the
+browser while the legs run; the data is in `docs/benchmarks/model-rss-smollm2.json` (three repetitions per path, the range
+below covers all of them).
 
-| Scenario                                                                                                                                                                             | Result                                                                                                                                                                                                                                                                                                                                     | 8 GB laptop          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
-| 700 MB (734003200 B) full download and SHA-256 verify, OPFS                                                                                                                          | 4060 ms, 180.8 MB/s, peak JS heap 2.79 MB; sha256 equals `node test/tools/asset-digest.mjs big 734003200`                                                                                                                                                                                                                                  | not measured on 8 GB |
-| 700 MB full download and SHA-256 verify, IndexedDB                                                                                                                                   | 2561 ms, 286.6 MB/s, peak JS heap 2.80 MB; same sha256                                                                                                                                                                                                                                                                                     | not measured on 8 GB |
-| 700 MB, OPFS: reload at 37.7 % (276824064 B written) then resume                                                                                                                     | exactly one `Range: bytes=276824064-` request with `If-Range` = strong ETag, 206, 457179136 B sent; wall time of the resume leg not measured                                                                                                                                                                                               | not measured on 8 GB |
-| 700 MB, IndexedDB: reload at 38.9 % (285212672 B written) then resume                                                                                                                | exactly one `Range: bytes=285212672-` request, 206, 448790528 B sent; resume leg 2805 ms including the reload                                                                                                                                                                                                                              | not measured on 8 GB |
-| `detectCapabilities()` wall time in Chrome                                                                                                                                           | under 2 s (test/browser/capability.spec.ts passes; exact figure not measured)                                                                                                                                                                                                                                                              | not measured on 8 GB |
-| Quota eviction at a 1.5 GiB origin quota (CDP `Storage.overrideQuotaForOrigin`), OPFS                                                                                                | 9582 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, a and c verified, index exactly a and c, no `.part` left (t1-retest1-quota-opfs.json)                                                                                                                        | not measured on 8 GB |
-| Quota eviction at a 1.5 GiB `quotaBytes`, IndexedDB                                                                                                                                  | 6252 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, `asset.quota` usage 1153433600 B with `usageSource` `accounted` (estimate 723398656 B, ratio 0.627), a and c verified, 1258291200 B left stored (t1-retest2-quota-indexeddb.json); Apple-silicon placeholder | not measured on 8 GB |
-| Sprint 2 done-when: SmolLM2-135M-Instruct (q4), prompt "What is the capital of France? Answer in one word.", maxTokens 16, temperature 0, **WebGPU** path, Chrome (channel "chrome") | load 2667 ms including the verified download of 211,040,709 B (7 signed entries) over loopback; prefill 66 ms, decode 51 ms, 155.9 tokens/s; 8 tokens generated; peak JS heap 23,781,052 B; output "The capital of France is Paris." (`model-run.json`, key `webgpu`); one run, Apple-silicon placeholder                                  | not measured on 8 GB |
-| the same, forced **WebAssembly** path (`forceRung: 'wasm'`, executionProviders `['wasm']`)                                                                                           | load 2592 ms (same download); prefill 368 ms, decode 732 ms, 10.9 tokens/s; peak JS heap 26,728,356 B; output "The capital of France is Paris." (`model-run.json`, key `wasm`); one thread, no COOP/COEP; Apple-silicon placeholder                                                                                                        | not measured on 8 GB |
-| Local Hindi smoke run: Qwen3-1.7B q4f16 on WebGPU, five synthetic Hindi prompts, up to 128 new tokens, temperature 0, thinking off (`hindi-smoke.json`)                              | load 16887 ms including the verified download of 1,462,064,779 B; mean 28.2 tokens/s; peak JS heap 76,495,528 B; outputs recorded verbatim and **unscored**; only with `graphOptimizationLevel: 'disabled'` (the default level fails with `std::bad_alloc`); Apple-silicon placeholder                                                     | not measured on 8 GB |
-| renderer process RSS peak (proxy, placeholder)                                                                                                                                       | SmolLM2-135M q4, same prompt: about 1.9 GiB on the WebGPU path and about 1.6 GiB on the WebAssembly path (renderer process); GPU process 0.35-0.42 GiB on the WebGPU path. Includes WebAssembly memory, not a GPU-memory figure; Apple-silicon placeholder (`rep1-webgpu.json` to `rep3-webgpu.json`, `rep1-wasm.json`)                    | not measured on 8 GB |
+<!-- bench:start table-a -->
+
+| Scenario                                                                                                                                                                             | Result                                                                                                                                                                                                                                                                                                                                            | 8 GB laptop          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| 700 MB (734003200 B) full download and SHA-256 verify, OPFS                                                                                                                          | 4060 ms, 180.8 MB/s, peak JS heap 2.79 MB; sha256 equals `node test/tools/asset-digest.mjs big 734003200`                                                                                                                                                                                                                                         | not measured on 8 GB |
+| 700 MB full download and SHA-256 verify, IndexedDB                                                                                                                                   | 2561 ms, 286.6 MB/s, peak JS heap 2.80 MB; same sha256                                                                                                                                                                                                                                                                                            | not measured on 8 GB |
+| 700 MB, OPFS: reload at 37.7 % (276824064 B written) then resume                                                                                                                     | exactly one `Range: bytes=276824064-` request with `If-Range` = strong ETag, 206, 457179136 B sent; wall time of the resume leg not measured                                                                                                                                                                                                      | not measured on 8 GB |
+| 700 MB, IndexedDB: reload at 38.9 % (285212672 B written) then resume                                                                                                                | exactly one `Range: bytes=285212672-` request, 206, 448790528 B sent; resume leg 2805 ms including the reload                                                                                                                                                                                                                                     | not measured on 8 GB |
+| `detectCapabilities()` wall time in Chrome                                                                                                                                           | under 2 s (test/browser/capability.spec.ts passes; exact figure not measured)                                                                                                                                                                                                                                                                     | not measured on 8 GB |
+| Quota eviction at a 1.5 GiB origin quota (CDP `Storage.overrideQuotaForOrigin`), OPFS                                                                                                | 9582 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, a and c verified, index exactly a and c, no `.part` left (asset-quota-eviction-700mb.json)                                                                                                                          | not measured on 8 GB |
+| Quota eviction at a 1.5 GiB `quotaBytes`, IndexedDB                                                                                                                                  | 6252 ms wall for 700 MB (a) + 400 MB (b), `getBlob(a)`, then 500 MB (c): exactly one `asset.evict` for b with reason `quota`, `asset.quota` usage 1153433600 B with `usageSource` `accounted` (estimate 723398656 B, ratio 0.627), a and c verified, 1258291200 B left stored (asset-quota-eviction-700mb.json); Apple-silicon placeholder        | not measured on 8 GB |
+| Sprint 2 done-when: SmolLM2-135M-Instruct (q4), prompt "What is the capital of France? Answer in one word.", maxTokens 16, temperature 0, **WebGPU** path, Chrome (channel "chrome") | load 2667 ms including the verified download of 211,040,709 B (7 signed entries) over loopback; prefill 66 ms, decode 51 ms, 155.9 tokens/s; 8 tokens generated; peak JS heap 23,781,052 B; output "The capital of France is Paris." (`model-answer-smollm2.json`, key `webgpu`); one run, Apple-silicon placeholder                              | not measured on 8 GB |
+| the same, forced **WebAssembly** path (`forceRung: 'wasm'`, executionProviders `['wasm']`)                                                                                           | load 2592 ms (same download); prefill 368 ms, decode 732 ms, 10.9 tokens/s; peak JS heap 26,728,356 B; output "The capital of France is Paris." (`model-answer-smollm2.json`, key `wasm`); one thread, no COOP/COEP; Apple-silicon placeholder                                                                                                    | not measured on 8 GB |
+| Local Hindi smoke run: Qwen3-1.7B q4f16 on WebGPU, five synthetic Hindi prompts, up to 128 new tokens, temperature 0, thinking off (`model-hindi-smoke-qwen3-1.7b.json`)             | load 16887 ms including the verified download of 1,462,064,779 B; mean 28.2 tokens/s; peak JS heap 76,495,528 B; outputs recorded verbatim and **unscored**; only with `graphOptimizationLevel: 'disabled'` (the default level fails with `std::bad_alloc`); Apple-silicon placeholder                                                            | not measured on 8 GB |
+| renderer process RSS peak (proxy, placeholder)                                                                                                                                       | SmolLM2-135M q4, same prompt: about 1.9 GiB on the WebGPU path and about 1.6 GiB on the WebAssembly path (renderer process); GPU process 0.35-0.42 GiB on the WebGPU path. Includes WebAssembly memory, not a GPU-memory figure; Apple-silicon placeholder (`model-rss-smollm2.json`: `rep1-webgpu.json` to `rep3-webgpu.json`, `rep1-wasm.json`) | not measured on 8 GB |
+
+<!-- bench:end table-a -->
 
 Sprint 3 rows, measured on 14 Nov 2026 on the same Apple-silicon machine with Chrome 157 (installed, Playwright
 channel "chrome") by this repository's own commands: `RUNTIME_MODEL=1 RUNTIME_DEVTOOLS_HEADED=1 npm run test:devtools`
 (the load timing in the real DevTools window), `RUNTIME_MODEL=1 RUNTIME_REQUIRE_WEBGPU=1 npm run test:worker`,
-`npm run test:demo` and `npm run pack:check`. Raw outputs, relative to the workspace folder that holds the
-repositories: `evidence/sprint-3/D1/devtools/devtools-figures.json` and `devtools-window.png`,
-`evidence/sprint-3/D1/worker/worker-run.json`, `evidence/sprint-3/D1/demo/demo-run.json`,
-`evidence/sprint-3/D1/pack/pack-check.json` and `evidence/sprint-3/D1/dist-size.txt`. Every Apple-silicon
-figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
+`DEMO_MODELS=1 npm run demo:build` and `npm run pack:check`. Raw outputs: `docs/benchmarks/devtools-load-phases.json`,
+`worker-abort-long-task.json` and `demo-build-size.json`, and `pack-size.json`, which was measured again on 20 Nov 2026 for
+the current tarball (`node scripts/bench-pack.mjs`). Every Apple-silicon figure is a placeholder; the 8 GB Windows no-GPU
+laptop is not measured.
+
+<!-- bench:start table-b -->
 
 | Scenario                                                                                                                            | Apple silicon                                                                                                                                                | 8 GB laptop          |
 | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
-| Load of SmolLM2-135M (q4) on forced WebAssembly, engine in a worker, phases shown by the DevTools panel (devtools-figures.json)     | acquire 1260.9 ms (212,926,670 B over loopback), verify 663 ms, hand-off 7.6 ms, session 481.2 ms, first token 655.1 ms, under one load id                   | not measured on 8 GB |
+| Load of SmolLM2-135M (q4) on forced WebAssembly, engine in a worker, phases shown by the DevTools panel (devtools-load-phases.json) | acquire 1260.9 ms (212,926,670 B over loopback), verify 663 ms, hand-off 7.6 ms, session 481.2 ms, first token 655.1 ms, under one load id                   | not measured on 8 GB |
 | Page JS heap at before-load, after-session and after-first-token, same load (`performance.memory`, coarse; worker figures are null) | 2,747,591 B, 79,554,898 B, 79,611,170 B                                                                                                                      | not measured on 8 GB |
-| Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-run.json)                  | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured on 8 GB |
-| Abort from a timer on the WebAssembly rung, 5 runs (worker-run.json)                                                                | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured on 8 GB |
+| Longest main-thread long task during a 32-token WebAssembly answer with the engine in the worker (worker-abort-long-task.json)      | none over 50 ms reported (longest 0 ms); the Sprint 2 main-thread adapter froze the tab for the whole answer                                                 | not measured on 8 GB |
+| Abort from a timer on the WebAssembly rung, 5 runs (worker-abort-long-task.json)                                                    | 252.3, 252.6, 253.1, 252.6 and 252.8 ms to `finishReason: 'abort'` (the 250 ms grace, then the worker is terminated); the asset holds were released in all 5 | not measured on 8 GB |
 | A WebGPU rung that fails after its worker started (malformed ONNX), then a WebAssembly answer in the same page                      | answered without a reload, two worker lifecycles, no reload sentence                                                                                         | not measured on 8 GB |
-| Packed tarball `airplanemode-runtime-0.3.0-beta.2.tgz` (pack-check.json)                                                            | about 256 KiB in 38 files (895,951 B unpacked), installed offline into a fresh empty directory                                                               | not measured on 8 GB |
-| `DEMO_MODELS=1` demo build (dist-size.txt)                                                                                          | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured on 8 GB |
+| Packed tarball `airplanemode-runtime-0.3.0-beta.2.tgz` (pack-size.json)                                                             | about 257 KiB in 38 files (897,648 B unpacked), installed offline into a fresh empty directory                                                               | not measured on 8 GB |
+| `DEMO_MODELS=1` demo build (demo-build-size.json)                                                                                   | 233.8 MiB in total: 178.1 MiB of model weights, 28.1 MiB of ONNX Runtime wasm, 26.2 MiB of synthetic fixture streams                                         | not measured on 8 GB |
+
+<!-- bench:end table-b -->
+
+Quoted outside the tables: the Stop button's time to stop (`docs/benchmarks/stop-button.json`), the OPFS snapshot read-back
+(`docs/benchmarks/opfs-snapshot-readback.json`) and the unload memory drop (`docs/benchmarks/unload-memory.json`). The
+index in `docs/benchmarks/README.md` says what each file is and how to reproduce it.
 
 ## Limitations
 
@@ -569,7 +583,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
   Benchmarks rows read "not measured on 8 GB").
 - **No Hindi model is hosted or bundled.**
   Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
-  Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
+  Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json).
   The q8 WebAssembly path of that model was not run. See [`docs/model-choice.md`](docs/model-choice.md).
   The q4f16 session only builds with graphOptimizationLevel 'disabled' because the default fails with std::bad_alloc in the 4 GB wasm32 heap; since model descriptor 0.2.0 the q4f16 descriptor carries sessionOptions { graphOptimizationLevel: 'disabled' }, so createDefaultAdapters() loads it without the application passing sessionOptions. The sessionOptions allow-list stays at that one key.
 - **WebLLM: not yet (cut from Sprint 4).** The descriptor and the spec describe it (`engine: 'webllm'`,
@@ -605,7 +619,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
   WebCrypto Ed25519 availability differ).
 - The IndexedDB fallback keeps chunked Blobs; it exists for browsers or contexts without OPFS.
   Chrome under-reports IndexedDB usage in `navigator.storage.estimate()` (a Chrome browser check
-  measured 0.627 of the stored bytes) and did not throw `QuotaExceededError` for IndexedDB under a 1.5 GiB CDP override,
+  measured 0.627 of the stored bytes, `docs/benchmarks/idb-usage-reporting.json`) and did not throw `QuotaExceededError` for IndexedDB under a 1.5 GiB CDP override,
   so on that store the manager's own accounting (index rows plus in-flight parts, see Eviction) and a
   configured `quotaBytes` are the only pressure it sees; the real IndexedDB ceiling on the 8 GB
   Windows laptop is not measured.
@@ -655,15 +669,15 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 - **Re-hash on the main thread**: the main thread re-hashes during load. Every verified file is read once and SHA-256 hashed there (the verify phase), so a large model takes seconds, and moving the re-hash into a worker is a Sprint 5 follow-up (S1-070).
 - **Worker egress relies on the guard plus the inherited CSP, and Pages sends no headers.** Inside the worker `fetch`, XHR, WebSocket, EventSource, WebTransport, `new Worker` and `Cache.add` are refused by the guard, but dynamic `import()` and FontFace loads cannot be intercepted in JavaScript: the Content Security Policy the blob worker inherits stops them (measured in Chrome 157: `script-src-elem` and `font-src` violations, no request left the browser). A page without that policy has no such stop, and a host that cannot send headers (Pages) can only use a `<meta>` policy. The worker host re-hashes nothing itself: the page re-hashes, then hands over the same Blobs, so an OPFS snapshot can still change between the re-hash and the engine's read (a Sprint 5 follow-up, S1-070).
 - **The worker host has no embeddings yet** (embeddings through the worker host are a Sprint 5 item): `embed()` rejects `unsupported_operation`; use the main-thread adapter for feature extraction.
-- **An abort terminates the worker** when the engine does not answer within 250 ms, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded). The demo's Stop button uses that abort: after a Stop the page says the engine was stopped and asks you to click "Download test model and load" again (the files are already stored).
+- **An abort terminates the worker** when the engine does not answer within 250 ms, so the next question reloads the model from the cache (about 2.4 s on Apple silicon, 0 bytes downloaded; raw data not kept). The demo's Stop button uses that abort: after a Stop the page says the engine was stopped and asks you to click "Download test model and load" again (the files are already stored).
 - **Per-rung isolation is per adapter instance**: each load() starts a new worker, but two loads on one adapter are serialised, and an abort that the engine does not answer within 250 ms terminates the worker, so the model must be loaded again.
 - **Out of memory is a plain refusal, not a retry.** An allocation failure inside the engine is reported as
   `out_of_memory`: the worker is ended, the holds are released and nothing is retried by the library. Whether a
   given 8 GB laptop reaches that point is not measured on 8 GB; the application decides what to tell the user.
 - **Unloading costs the next load a full verification.** `unload()` ends the worker, which is the only thing that returns
-  its WebAssembly memory to the browser (measured on the Apple M5 Pro: the Chrome process tree shrank by more than the
+  its WebAssembly memory to the browser (measured on the Apple M5 Pro, `docs/benchmarks/unload-memory.json`: the Chrome process tree shrank by more than the
   load's peak). The next `load()` is a first load: it re-acquires the stored files, re-hashes every one in the worker
-  and starts a fresh engine (about 1.8 s for the 0.6B answer model on this Mac, TD-64). There is no "already verified" shortcut.
+  and starts a fresh engine (about 1.8 s for the 0.6B answer model on this Mac, TD-64; a dockit measurement, raw data not kept). There is no "already verified" shortcut.
 - **A web page cannot read free memory.** The capability profile carries `navigator.deviceMemory` as the browser
   reports it, a coarse power of two clamped to at most 8, and 0 when the browser does not say (unknown is not
   "too small"). It is user-controlled, so it is a usability guard and never a security control; nothing in this library
@@ -671,7 +685,7 @@ figure is a placeholder; the 8 GB Windows no-GPU laptop is not measured.
 - **The memory options of the WebAssembly session change nothing measurable** (R17): they reach ONNX Runtime and the
   output is token-identical, but onnxruntime-web already treats both as off (`docs/memory-options.md`).
 - **The engine-load retry is not explained.** A model file written less than about a second ago once failed its first
-  engine read in dockit; 83 immediate snapshots of 64 MiB and 3 of 600 MiB read back whole in Chrome, so the OPFS-flush
+  engine read in dockit; 80 immediate snapshots of 64 MiB and 3 of 600 MiB (83 in all, `docs/benchmarks/opfs-snapshot-readback.json`) read back whole in Chrome, so the OPFS-flush
   hypothesis is refuted and the cause is not established (`docs/engine-load-retry.md`).
 - **Not measured on 8 GB.** Every timing, memory and size figure in this README is from one Apple-silicon Mac; nothing was measured on an 8 GB Windows laptop (the Benchmarks columns read "not measured on 8 GB").
 - **No key revocation, no transparency log, one signature is enough** (MANIFEST.md, Security considerations). A signed manifest stays valid until its `expiresAt`, and a manifest without one can be replayed on a fresh profile, so publishers should set `expiresAt`.
@@ -762,6 +776,8 @@ npm run demo:build     # demo/dist: generates and signs the fixture, then vite b
 DEMO_MODELS=1 npm run demo:build           # also bundles the test model (what pages.yml runs)
 node demo/tools/make-fixture.mjs                      # fixture only: demo/public/fixture (git-ignored)
 node test/tools/asset-digest.mjs hello-data 1048576   # sha256 of a synthetic asset
+node scripts/bench-readme.mjs                         # rewrite the Benchmarks tables from docs/benchmarks/ (add --check to compare)
+npm run build && node scripts/bench-pack.mjs          # re-measure the tarball into docs/benchmarks/pack-size.json and refresh the README figures
 node test/tools/dist-url-inventory.mjs demo/dist      # every library URL string in a build, attributed
 node test/tools/make-descriptor-vectors.mjs --check   # the shared descriptor vectors under spec/vectors/descriptor
 ```

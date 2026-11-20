@@ -41,10 +41,12 @@ cannot be mistaken for a release.
 - The packed tarball installs offline and the installed copy is the one that runs: its module path sits under the fresh
   directory's `node_modules` ([rehearsal report](../scripts/release/rehearse.mjs), step 2).
 - Large files: a 700 MB (734,003,200 B) download with SHA-256 verification took 4060 ms on OPFS and 2561 ms on IndexedDB, and a
-  reload at about 38 % resumed with exactly one `Range` request ([README, Benchmarks](../README.md#benchmarks); Apple M5 Pro 48 GB,
-  not measured on 8 GB).
+  reload at about 38 % resumed with exactly one `Range` request ([README, Benchmarks](../README.md#benchmarks); raw data in
+  [asset-download-700mb.json](benchmarks/asset-download-700mb.json) and [asset-resume-700mb.json](benchmarks/asset-resume-700mb.json);
+  Apple M5 Pro 48 GB, not measured on 8 GB).
 - A model answers in the browser with the network gated: SmolLM2-135M-Instruct on forced WebAssembly loaded in 2592 ms and
   decoded at 10.9 tokens/s, and a Stop from a timer ended the answer in about 253 ms ([README, Benchmarks](../README.md#benchmarks);
+  raw data in [model-answer-smollm2.json](benchmarks/model-answer-smollm2.json) and [stop-button.json](benchmarks/stop-button.json);
   Apple M5 Pro 48 GB, not measured on 8 GB).
 
 ## What did not

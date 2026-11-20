@@ -38,8 +38,9 @@ records the error name if the read failed.
 | 64 MiB, chunked, snapshot immediately, read 1.5 s later                                               | 10         | 0                   | 0           | 0               | 0              | 112 ms       | 35 ms               |
 | 600 MiB (model size), chunked, snapshot immediately, read twice (the hash read, then the engine read) | 3          | 0                   | 0           | 0               | 0              | 1,441 ms     | 837 ms (both reads) |
 
-Result: 83 snapshots of 64 MiB and 3 of 600 MiB, taken the instant the write closed, were all the right size and read
-back byte for byte. The flush-versus-snapshot hypothesis is refuted for this write path in this Chrome.
+Result: 80 snapshots of 64 MiB (50 + 20 + 10) and 3 of 600 MiB, 83 in all, taken the instant the write closed, were all the
+right size and read back byte for byte. Raw data: [`benchmarks/opfs-snapshot-readback.json`](benchmarks/opfs-snapshot-readback.json)
+(its first run is the one the table quotes, a later run of the same day is beside it). The flush-versus-snapshot hypothesis is refuted for this write path in this Chrome.
 
 A last test pins the platform fact that R15 and R20 rely on: after a file is rewritten (same size, other bytes), the OLD
 snapshot is unreadable (`NotReadableError`, for the full read and for a one-byte slice); it never serves the new bytes.

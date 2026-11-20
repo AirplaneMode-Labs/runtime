@@ -40,6 +40,18 @@ not measured on 8 GB. Version decided in TD-107. Sprint 7 creates no gate-1 evid
   `test/quickstart.test.ts` against a tarball built from a copy of the checkout; the `Live demo:` line within the first 12 lines;
   issue forms with a required no-real-documents checkbox and a SECURITY.md contact link (TD-117); good-first-issue drafts.
 - A release write-up draft (D1-08), marked draft, not published.
+- Published benchmarks (owner decision, 20 Nov 2026): `docs/benchmarks/` holds one JSON file per benchmark that the README, the docs,
+  the demo or the write-up quote, 14 files in all, each with its date, commit (or how the run relates to the history: every run
+  before Sprint 7 was made on a sprint's working tree, so none recorded a hash), machine (Apple M5 Pro 48 GB), method, command and
+  the raw output copied unchanged, and an index (`docs/benchmarks/README.md`) with how to reproduce each. The two README
+  Benchmarks tables are now generated from those files (`node scripts/bench-readme.mjs`, `npm run bench:readme`), and
+  `test/bench-readme.test.ts` fails when a file is malformed or not indexed, when a table differs from the files, when a raw
+  file contradicts the sentence it feeds, or when a timing figure in the README, the docs, this changelog, the write-up draft or
+  the demo pages has no raw data behind it. Figures that no raw file backs say "raw data not kept" (the 48.1 tokens/s earlier run,
+  the 2.4 s reload after an abort, the 1.8 s reload after an unload, the 30 ms weak-key check). `pack-size.json` is a fresh
+  measurement of the tarball (`node scripts/bench-pack.mjs`, `npm run bench:pack`), and `test/pack-figure.test.ts` compares it
+  with a fresh `npm pack`. The demo's first page has a Benchmarks box that links the GitHub folder; the backend page links to it.
+  Nothing there is measured on an 8 GB laptop.
 
 ### Changed
 
@@ -55,6 +67,10 @@ not measured on 8 GB. Version decided in TD-107. Sprint 7 creates no gate-1 evid
 
 ### Fixed
 
+- Benchmark figures that did not match their raw data: the OPFS snapshot result said "83 snapshots of 64 MiB and 3 of 600 MiB"
+  (README, `docs/engine-load-retry.md`); the runs are 80 of 64 MiB (50 + 20 + 10) and 3 of 600 MiB, 83 in all. The Sprint 2 rows and
+  `docs/model-choice.md` named the machine "32 GB" (the `ramGb` the capability profile reported at that commit); it has 48 GB. The
+  "Packed tarball" row cited a `pack-check.json` that described the 0.2.0-alpha.0 tarball; it now cites a fresh measurement.
 - Fix round 1 (BUG-T2-S7-04): `release-tool sign` lists `--dir` with the same lstat check as `manifest` and `sums`; a symlink, a
   subdirectory or a FIFO, listed or extra, is `usage: not_regular_file` (exit 2) and nothing is signed.
 - Fix round 1 (BUG-T2-S7-05): files are opened `O_RDONLY | O_NONBLOCK | O_NOFOLLOW` (each flag only where the platform defines
@@ -130,7 +146,7 @@ Pro with 48 GB: not measured on 8 GB. Version decided in TD-69.
   mixed-order point, a non-canonical encoding or bytes that are not on the curve is refused with
   `weak_key_refused` BEFORE the manifest is parsed, with no option to skip it, in `verifyManifest` and in the asset
   manager's `loadManifest`, and again for the key a signature actually uses, so a Map that hides keys from its
-  iterator is still caught. 1,000 Node-generated keys are all accepted; 64 keys are checked in about 30 ms.
+  iterator is still caught. 1,000 Node-generated keys are all accepted; 64 keys are checked in about 30 ms (raw data not kept).
 - Unload that frees the model (R16, B1): `unload()` resolves only after `worker.terminate()` returned and every
   handle is released, and emits `model.unload` (adapter, model, device, host, loadId, reason `unload`, `abort`,
   `error` or `out_of_memory`; durationMs from the call to `terminate()` returning). Measured with SmolLM2-135M in

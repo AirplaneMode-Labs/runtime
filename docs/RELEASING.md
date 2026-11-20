@@ -95,8 +95,11 @@ team changes none (gh is read-only for agents).
 ### 5. Run the 8 GB runbook and fill the README cells
 
 The runbook is in `PLAN.md` (step 5): the model proof on the 8 GB Windows no-GPU laptop, then replace "not measured on 8 GB"
-in the README Benchmarks tables with the figures. Why not the team: the laptop is the owner's, and an emulated figure never
-fills a laptop cell (TD-51).
+in the README Benchmarks tables with the figures. The figures are published like every other benchmark: the raw output goes
+into a new file in `docs/benchmarks/` (date, commit, `machine.label` of the laptop as model and RAM, method, command, indexed in
+`docs/benchmarks/README.md`) and the README cell is written from that file; `scripts/bench-readme.mjs` and the 8 GB column test
+in `test/package-meta.test.ts` pin the phrase "not measured on 8 GB" today and change in the same commit. Why not the team: the
+laptop is the owner's, and an emulated figure never fills a laptop cell (TD-51).
 
 ### 6. Commit the dated CHANGELOG heading
 

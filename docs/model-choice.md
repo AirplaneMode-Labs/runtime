@@ -10,7 +10,7 @@ comes from the lab.
 ## Decision
 
 Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
-Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
+Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json).
 
 - Weights: `onnx-community/Qwen3-1.7B-ONNX@3231b522c6e703b2f9b3cd8ea27426a1289a02f2` through
   Transformers.js: WebGPU `onnx/model_q4f16.onnx` (1,426,069,098 B), WASM
@@ -29,7 +29,7 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
   dtype `q4f16`, `minProfile` WebGPU with `backendTier` `webgpu-f16`, `ramGb` 8) and
   `qwen3-1.7b.tjs-wasm-q8` (devices `wasm`, dtype `q8`, `backendTier` `wasm-simd`, `ramGb` 8). The q8
   descriptor is documented only and not run.
-- Result of the local browser smoke run (D1-09, `evidence/sprint-2/D1/hindi-smoke.json`): Qwen3-1.7B
+- Result of the local browser smoke run (D1-09, `docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json`): Qwen3-1.7B
   q4f16 **loaded in Chrome on WebGPU and answered five synthetic Hindi prompts** (one BFSI-style, an
   invented loan-statement sentence), unscored, on an Apple-silicon Mac only. The default chain selected
   the `webgpu` rung (no `forceRung`), behind the aborting network gate, with every file served from the
@@ -37,10 +37,10 @@ Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic H
   second, peak JS heap 76,495,528 B, at most 128 new tokens per prompt, temperature 0, thinking off. The outputs
   are recorded verbatim in the evidence file; **nothing was scored**, two of the five stopped at the
   128-token budget, and nothing here says the Hindi is good. The decision stays **provisional**: this is
-  one machine with 32 GB, not the 8 GB Windows laptop.
+  one machine with 48 GB, not the 8 GB Windows laptop.
 - **Finding: it only loads with `graphOptimizationLevel: 'disabled'`.** With ONNX Runtime Web's default
   graph optimisation the session cannot be created (`ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc`,
-  after about 15 s); `'basic'` fails the same way and `'disabled'` loads. The single 1.43 GB file plus
+  after 15.5 s in the first attempt, whose transcript is in the same file); `'basic'` fails the same way and `'disabled'` loads. The single 1.43 GB file plus
   its optimised copy do not fit the 4 GB WebAssembly heap. Model descriptor 0.1.0 had no field for session
   options, so the Sprint 2 adapter took `sessionOptions: { graphOptimizationLevel }` from the application.
   Model descriptor 0.2.0 (Sprint 3) carries it: the q4f16 descriptor in `docs/examples/` has

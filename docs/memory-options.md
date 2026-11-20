@@ -2,7 +2,8 @@
 
 Sprint 6, B1. Two findings that sit behind `CHANGELOG.md` and `spec/backend-adapter.md` R16 and R17. Every figure is
 from one Apple M5 Pro with 48 GB, Chrome (installed), macOS arm64, SmolLM2-135M-Instruct q4 on WebAssembly through the
-worker host. Not measured on 8 GB.
+worker host. Not measured on 8 GB. Raw data: [`benchmarks/unload-memory.json`](benchmarks/unload-memory.json) (the runs with and
+without the options, and a later run of the final tree), with the date, commit and command.
 
 ## R17: the memory options reach ONNX Runtime and change nothing
 
@@ -40,7 +41,7 @@ Same model, load then generate, then `unload()`, 3 s settle (`test/browser/model
 
 WebAssembly memory is returned to the system only by ending the worker, never by an in-worker `dispose()`: the drop is
 the worker being terminated. The cost is that the next `load()` is a first load (R19): it re-verifies, re-acquires and
-re-hashes every engine-readable file again (about 1.8 s for the dockit answer model on this Mac, TD-64).
+re-hashes every engine-readable file again (about 1.8 s for the dockit answer model on this Mac, TD-64; a dockit measurement, raw data not kept).
 
 ## The KV cache is not pre-allocated
 

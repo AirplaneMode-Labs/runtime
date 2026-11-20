@@ -55,13 +55,18 @@
           <p class="small">
             New in Sprint 3: the engine runs in a dedicated worker, so the page stays responsive
             while WebAssembly generates, and the library ends an aborted answer in about 250 ms
-            (evidence/sprint-3/D1/worker/); this page requires Trusted Types (one policy); and the
-            load timing and memory read-out below shows what the Airplane Mode DevTools panel shows.
+            (docs/benchmarks/worker-abort-long-task.json); this page requires Trusted Types (one
+            policy); and the load timing and memory read-out below shows what the Airplane Mode
+            DevTools panel shows.
+          </p>
+          <p class="small">
+            Raw benchmark files, each with its date, commit, machine and command, are listed in the
+            <a href="./index.html#benchmarks">Benchmarks box of the first page</a>.
           </p>
           <!-- prettier-ignore -->
           <p class="small">
 Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.
-Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).
+Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json).
           </p>
         </section>
 

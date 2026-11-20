@@ -74,7 +74,10 @@
     "test:install": "playwright test -c test/browser/playwright.install.config.ts",
     "models:fetch": "node test/tools/fetch-model.mjs smollm2-135m-instruct",
     "test:hindi-smoke": "playwright test -c test/browser/playwright.model.config.ts hindi-smoke",
-    "pack:check": "node scripts/pack-check.mjs"
+    "pack:check": "node scripts/pack-check.mjs",
+    "bench:readme": "node scripts/bench-readme.mjs",
+    "bench:check": "node scripts/bench-readme.mjs --check",
+    "bench:pack": "node scripts/bench-pack.mjs"
   },
   "peerDependencies": {
     "@huggingface/transformers": "4.3.1"

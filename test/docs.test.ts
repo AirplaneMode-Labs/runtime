@@ -142,7 +142,9 @@ describe('documentation hygiene', () => {
       expect(d).toContain('Qwen3-0.6B');
       expect(d).toContain('enable_thinking');
       expect(d).toContain('no independent evaluation by the lab exists');
-      expect(d).toMatch(/provisional: not yet loaded in a browser|hindi-smoke\.json/);
+      expect(d).toMatch(
+        /provisional: not yet loaded in a browser|model-hindi-smoke-qwen3-1\.7b\.json/,
+      );
       expect(d).not.toContain('PLACEHOLDER');
     });
 
@@ -197,7 +199,7 @@ describe('fix round 1: honest wording', () => {
   const MODEL_CARD =
     'Planned production model: Qwen3-1.7B (Apache-2.0), WebGPU q4f16 1.43 GB, WASM q8 1.74 GB. Provisional until the Sprint 5 measurement on an 8 GB laptop; contingency Qwen3-0.6B.';
   const LOADED_ONCE =
-    'Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (evidence/sprint-2/D1/hindi-smoke.json).';
+    'Loaded once in a browser: a local, unscored WebGPU smoke run of five synthetic Hindi prompts on an Apple-silicon Mac, which needed ONNX Runtime graph optimisation turned off (docs/benchmarks/model-hindi-smoke-qwen3-1.7b.json).';
   // Sprint 3: the worker host (default in the demo) removes both limitations; they remain true for the
   // main-thread adapter, which is what createDefaultAdapters() builds without a workerUrl.
   const POISON =
@@ -242,12 +244,13 @@ describe('fix round 1: honest wording', () => {
     expect(row).toBeDefined();
     for (const s of ['1.9 GiB', '1.6 GiB', '0.35-0.42 GiB', 'Apple-silicon'])
       expect(row, s).toContain(s);
-    expect(d).toContain('node /…/T1/runtime-legs.mjs webgpu wasm');
+    // since 20 Nov 2026 the raw files are committed under docs/benchmarks/ (owner decision on published benchmarks)
+    expect(d).toContain('node runtime-legs.mjs webgpu wasm');
     for (const s of [
-      'evidence/sprint-2/T1/runtime-legs.mjs',
-      'evidence/sprint-2/T1/legs/rep1-webgpu.json',
+      'docs/benchmarks/model-rss-smollm2.json',
+      'rep1-webgpu.json',
       'rep3-webgpu.json',
-      'evidence/sprint-2/T1/legs/rep1-wasm.json',
+      'rep1-wasm.json',
     ])
       expect(d, s).toContain(s);
     expect(d).toMatch(/\| Scenario[^\n]*\| 8 GB laptop \|/);
