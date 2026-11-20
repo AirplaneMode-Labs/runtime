@@ -28,6 +28,7 @@ demo:build`) and served under `/runtime/` by `subpath-server.mjs`, which 404s ev
 ```sh
 npm run test:demo -- tamper.spec.ts              # the Tamper lab: 13 cases, no model needed
 RUNTIME_MODEL=1 npm run test:demo -- stop.spec.ts   # the Stop button, with the SmolLM2 test model
+npm run test:demo -- non-loopback.spec.ts          # the demo on a non-loopback origin ignores ?manifest=range and refuses the test key (no model needed)
 RUNTIME_TAMPER_OUT=<dir> RUNTIME_STOP_OUT=<dir> ...  # where tamper-results.json, tamper-lab.png and stop-run.json go
 ```
 
@@ -37,7 +38,7 @@ directory, never from the working directory, so a run started from any folder wr
 repository (before fix round 2 the default was a parent-relative path and landed in the parent Projects
 folder). `test/out-dir.test.ts` pins this.
 
-`tamper.spec.ts` presses every lab button and checks the reason text against `spec/vectors/tamper/tamper.json`
+`non-loopback.spec.ts` (Sprint 7, R3) opens the built demo through a host name that is not loopback (Chrome's `--host-resolver-rules` maps `runtime-demo.example` to 127.0.0.1; the secure-context override is needed only because that name is plain http) and shows that `?manifest=range`, and parameters that look like an allow flag, change nothing, that the test hooks are absent, and that the published test key is refused with `test_key_refused`. `tamper.spec.ts` presses every lab button and checks the reason text against `spec/vectors/tamper/tamper.json`
 and `tamper-assets/expect.json`, 0 asset requests after a manifest refusal, the flip and truncated assets
 fetched exactly once with 0 bytes to a consumer and no `blob:` URL, no `tamper-base` state and no asset part in
 OPFS or IndexedDB afterwards, no request off the origin and 0 console errors. `stop.spec.ts` loads the

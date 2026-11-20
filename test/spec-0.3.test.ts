@@ -39,12 +39,12 @@ const flatTs = (s: string) => flat(s.replace(/\n\s*\*/g, ' '));
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 
 describe('spec 0.3.0: versions and wire strings', () => {
-  it('SPEC_VERSIONS and SPEC_WIRE carry the current (0.6.0) release values; the wire strings did not move', () => {
+  it('SPEC_VERSIONS and SPEC_WIRE carry the current (0.6.1) release values; the wire strings did not move', () => {
     expect(SPEC_VERSIONS).toEqual({
-      manifest: '0.1.3',
+      manifest: '0.1.4',
       capabilityProfile: '0.1.1',
-      event: '0.1.5',
-      storageApi: '0.4.0',
+      event: '0.1.6',
+      storageApi: '0.4.1',
       backendAdapter: '0.5.0',
       modelDescriptor: '0.2.1',
     });
@@ -63,9 +63,9 @@ describe('spec 0.3.0: versions and wire strings', () => {
 
   it('the event schema keeps its body and changes only its $id; the descriptor schema is 0.2.1', () => {
     const raw = readText(resolve(specDir, 'event.schema.json'));
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.5');
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.6');
     const asBefore = raw.replace(
-      'urn:airplanemode:spec:event:0.1.5',
+      'urn:airplanemode:spec:event:0.1.6',
       'urn:airplanemode:spec:event:0.1.1',
     );
     // sha256 of the Sprint 2 file (spec release 0.2.0)
@@ -523,14 +523,14 @@ describe('spec 0.3.0: backend-adapter.md rules', () => {
 });
 
 describe('spec 0.3.0: README and CHANGELOG', () => {
-  it('spec/README.md table lists the current versions (release 0.6.0)', () => {
+  it('spec/README.md table lists the current versions (release 0.6.1)', () => {
     const readme = readText(resolve(specDir, 'README.md'));
-    expect(readme).toContain('Spec release **0.6.0**');
-    expect(flat(readme)).toMatch(/\| Event\s+\| `event.schema.json`, `event.ts`\s+\| 0\.1\.5/);
+    expect(readme).toContain('Spec release **0.6.1**');
+    expect(flat(readme)).toMatch(/\| Event\s+\| `event.schema.json`, `event.ts`\s+\| 0\.1\.6/);
     expect(flat(readme)).toMatch(/\| Backend adapter\s+\|[^|]*\|\s*0\.5\.0/);
     expect(flat(readme)).toMatch(/\| Model descriptor\s+\|[^|]*\|\s*0\.2\.1/);
     expect(readme).toContain('airplanemode.model/0.2');
-    expect(readme).toContain('urn:airplanemode:spec:event:0.1.5');
+    expect(readme).toContain('urn:airplanemode:spec:event:0.1.6');
   });
 
   it('spec/CHANGELOG.md has a 0.3.0 draft section citing every finding id', () => {

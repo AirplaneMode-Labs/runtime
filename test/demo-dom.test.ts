@@ -309,8 +309,8 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     const m = /<p id="status-line"[^>]*>([\s\S]*?)<\/p>/.exec(html);
     expect(m, 'a status line').not.toBeNull();
     const line = flat(m![1]!.replace(/<[^>]+>/g, ' '));
-    expect(line.startsWith('Sprint 6 (19 Nov 2026): Working:')).toBe(true);
-    expect(line).toContain('runtime beta 0.3.0-beta.1');
+    expect(line.startsWith('Sprint 7 (20 Nov 2026): Working:')).toBe(true);
+    expect(line).toContain('runtime beta 0.3.0-beta.2');
     expect(line).toContain('not measured on 8 GB');
     expect(line).toContain('Not yet:');
     const demos = resolve(repoDir, '../site/data/demos.json');
@@ -318,8 +318,8 @@ describe('the Tamper lab (D1-03): markup and isolation', () => {
     const entry = (
       JSON.parse(readFileSync(demos, 'utf8')) as { repo: string; status: string }[]
     ).find((d) => d.repo === 'runtime');
-    // until D5 copies this lane's status-line.txt into site/data/demos.json the file carries the Sprint 5 line
-    if (entry?.status.startsWith('Sprint 6')) expect(line).toBe(flat(entry.status));
+    // until D5 copies this lane's status-line.txt into site/data/demos.json the file carries the previous line
+    if (entry?.status.startsWith('Sprint 7')) expect(line).toBe(flat(entry.status));
   });
 });
 
@@ -537,23 +537,92 @@ describe('the status line of both runtime demo pages (D1-10)', () => {
     expect(m, `${file} #${id}`).not.toBeNull();
     return flat(m![1]!.replace(/<[^>]+>/g, ' '));
   };
-  it('index.html #status-line and models.html #sprint-status carry the same Sprint 6 line, rendered as text', () => {
+  it('index.html #status-line and models.html #sprint-status carry the same Sprint 7 line, rendered as text', () => {
     const a = lineOf('demo/index.html', 'status-line');
     const b = lineOf('demo/models.html', 'sprint-status');
     expect(a).toBe(b);
-    expect(a.startsWith('Sprint 6 (19 Nov 2026): Working:')).toBe(true);
+    expect(a.startsWith('Sprint 7 (20 Nov 2026): Working:')).toBe(true);
     expect(a).toContain('Not yet:');
     expect(a).toContain('not measured on 8 GB');
     expect(a).not.toMatch(/free RAM/i);
     expect(a).toContain('weak_key_refused');
-    expect(a).toContain('Tamper lab now has fifteen cases');
+    expect(a).toContain('Tamper lab still has fifteen cases');
+    for (const word of [
+      'test_key_refused',
+      'no_trusted_key',
+      'test_key_release_id',
+      'spec release 0.6.1',
+    ])
+      expect(a, word).toContain(word);
+    // no claim the sprint cannot back: nothing is published, audited or certified
+    expect(a).not.toMatch(/\b(audited|compliant|certified)\b/i);
     for (const item of [
       'WebLLM (cut)',
       'key revocation',
       'a real signing key',
+      'a published package',
+      'reserved names',
       'a transparency log',
     ])
       expect(a, item).toContain(item);
     expect(read('demo/models.html')).toMatch(/id="sprint-status"/);
+  });
+});
+
+describe('Sprint 7 (D1-07): the demo and the release rules R3 and R4', () => {
+  const flat2 = (s: string) => s.replace(/\s+/g, ' ');
+
+  it('R4: every path that loads a manifest the page ships pins its id; only the paste path (the visitor’s own manifest) does not', () => {
+    const main = flat2(read('demo/main.ts'));
+    for (const s of [
+      "const FIXTURE_MANIFEST_ID = 'dev.airplanemode.demo.fixture'",
+      "const RANGE_MANIFEST_ID = 'dev.airplanemode.range-server'",
+      "const RFC_EXAMPLE_MANIFEST_ID = 'dev.airplanemode.examples.tiny'",
+      'manager = makeManager(pinnedId());',
+      'verifyAndReport(sourceLabel(), obj, true, url, pinnedId())',
+      'RFC_EXAMPLE_MANIFEST_ID,',
+      'verifyManifest(obj, trust, { allowTestKeys, expectId })',
+      '...(expectManifestId !== undefined ? { expectManifestId } : {})',
+    ])
+      expect(main, s).toContain(s);
+    // the pinned ids are the ids of the files the build and the test server write
+    expect(read('demo/tools/make-fixture.mjs')).toContain("id: 'dev.airplanemode.demo.fixture'");
+    expect(read('test/browser/range-server.mjs')).toContain("id: 'dev.airplanemode.range-server'");
+    expect(read('spec/examples/manifest.signed.example.json')).toContain(
+      '"id": "dev.airplanemode.examples.tiny"',
+    );
+    // the backend page already pinned the model-set id
+    expect(flat2(read('demo/backend-panel.ts'))).toContain(
+      '...(meta.manifestId ? { expectManifestId: meta.manifestId } : {})',
+    );
+  });
+
+  it('R3: no demo file reads allowTestKeys from the URL, storage or an input, and the range mode needs a loopback host', () => {
+    const files = [
+      'demo/main.ts',
+      'demo/backend-panel.ts',
+      'demo/tamper-lab.ts',
+      'demo/run-control.ts',
+    ];
+    for (const f of files) {
+      const text = read(f);
+      expect(text, f).not.toMatch(
+        /allowTestKeys\s*[:=]\s*(params|new URLSearchParams|location|localStorage|sessionStorage|document)/,
+      );
+      expect(text, f).not.toMatch(/(get|getItem)\([^)]*allow[^)]*test[^)]*\)/i);
+    }
+    const main = flat2(read('demo/main.ts'));
+    expect(main).toContain(
+      "let source: ManifestSource = rangeRequested && isLocal ? 'range' : 'fixture';",
+    );
+    expect(main).toContain("allowTestKeys: source === 'range'");
+    expect(main).toContain(
+      "const isLocal = location.hostname === '127.0.0.1' || location.hostname === 'localhost';",
+    );
+  });
+
+  it('the Sprint 7 Playwright spec for the non-loopback origin exists and is part of the demo config', () => {
+    expect(read('test/browser/non-loopback.spec.ts')).toContain('runtime-demo.example');
+    expect(read('test/browser/playwright.demo.config.ts')).toContain("'non-loopback.spec.ts'");
   });
 });

@@ -23,8 +23,8 @@ const NOT_PUBLISHED =
   "Not published yet: the npm scope @airplanemode and the PyPI and crates.io names are not reserved. The commands below were proven from locally built artifacts on macOS arm64 (an npm pack tarball installed offline into a fresh empty directory, a wheel installed into a fresh venv); publishing to the registries is the owner's step.";
 
 describe('package.json', () => {
-  it('is version 0.3.0-beta.1, public, ESM, node 22', () => {
-    expect(pkg.version).toBe('0.3.0-beta.1');
+  it('is version 0.3.0-beta.2, public, ESM, node 22', () => {
+    expect(pkg.version).toBe('0.3.0-beta.2');
     expect(pkg['name']).toBe('@airplanemode/runtime');
     expect(pkg['private']).toBe(false);
     expect(pkg['type']).toBe('module');
@@ -130,9 +130,9 @@ describe('scripts/pack-check.mjs and its allow-list', () => {
 describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
   const readme = read('README.md');
 
-  it('README Status opens with the Sprint 6 line and says beta, not tag-ready (TD-30), with the promise limited to 0.3.x', () => {
+  it('README Status opens with the Sprint 7 line and says beta, not tag-ready (TD-30), with the promise limited to 0.3.x', () => {
     const status = flat(readme.slice(readme.indexOf('## Status'), readme.indexOf('## Install')));
-    expect(status.startsWith('## Status Sprint 6 (19 Nov 2026): Working:')).toBe(true);
+    expect(status.startsWith('## Status Sprint 7 (20 Nov 2026): Working:')).toBe(true);
     expect(status).toContain('Not yet:');
     expect(status).toContain('beta, not tagged');
     expect(status).toContain('not tag-ready (TD-30)');
@@ -145,9 +145,9 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     const section = flat(readme.slice(at, readme.indexOf('\n## ', at)));
     for (const s of [
       'no breaking change within 0.3.x',
-      'storage API 0.4.0',
+      'storage API 0.4.1',
       'backend adapter 0.5.0',
-      'event 0.1.5',
+      'event 0.1.6',
       'capability profile',
       'manifest verify with expectId',
       'worker host with generate (Stop, budget) and embed',
@@ -209,12 +209,18 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     expect(readme).not.toContain('/private/tmp');
   });
 
-  it('T3-S5-14: the README states the pushed head and the red CI run, and claims no green three-OS run', () => {
+  it('T3-S5-14 (updated in Sprint 7): the README states the CI facts it read, and claims nothing green that it has not read', () => {
     const f = flat(readme);
+    // read with gh on 20 Nov 2026 (D1/partA-ci.log): the Sprint 6 head 7d3777b was green on three operating systems
     expect(f).toContain(
-      'pushed 15 Nov 2026 at 3bf53c6; CI at that head red: run 43667709960 (check windows-latest, model-wasm ubuntu-latest); open until the owner pushes the Sprint 5 fixes and reads green runs',
+      'CI status: at 7d3777b (19 Nov 2026) `check (<os>)` on all three operating systems, `model-wasm (ubuntu-latest)` and the Pages deploy were green (CI run 44580189216, pages run 44580189184)',
+    );
+    // the new job has not run on GitHub yet, and the README says so
+    expect(f).toContain(
+      "Sprint 7 adds the job `release-rehearsal (<os>)`; it first runs after the owner's next push, and nothing here claims it green until then",
     );
     expect(f).not.toMatch(/on 9 Nov 2026,? green/);
+    expect(f).not.toContain('CI at that head red: run 43667709960');
   });
 
   it('T3-S5-15: every cell of the 8 GB laptop column in the README Benchmarks tables reads exactly "not measured on 8 GB"', () => {
@@ -279,6 +285,47 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
       expect(section, id).toContain(id);
     expect(section).toContain('no tag, no publish');
     expect(log.indexOf('## [0.3.0-beta.1]')).toBeLessThan(log.indexOf('## [0.3.0-beta.0]'));
+  });
+
+  it('CHANGELOG has the 0.3.0-beta.2 section (untagged) for Sprint 7 with Added, Changed, Fixed, Security and Deferred, naming the ids and the spec release', () => {
+    const log = read('CHANGELOG.md');
+    expect(log).toContain('## [0.3.0-beta.2] - 2026-11-20 (untagged)');
+    const start = log.indexOf('## [0.3.0-beta.2]');
+    const section = log.slice(start, log.indexOf('\n## [', start + 5));
+    for (const h of ['### Added', '### Changed', '### Fixed', '### Security', '### Deferred'])
+      expect(section, h).toContain(h);
+    for (const id of [
+      'spec release 0.6.1',
+      'D1-01',
+      'D1-02',
+      'D1-03',
+      'D1-04',
+      'D1-05',
+      'D1-06',
+      'D1-07',
+      'D1-08',
+      'TD-103',
+      'TD-105',
+      'TD-106',
+      'TD-107',
+      'TD-112',
+      'TD-115',
+      'TD-116',
+      'TD-117',
+      'TD-118',
+      'TD-121',
+      'S1-127',
+      'S1-129',
+      'release-rehearsal',
+      'publish.yml',
+      'release-tool',
+      'vite 8.3.8',
+      'vitest 5.1.0',
+      'no tag, no publish',
+      'not measured on 8 GB',
+    ])
+      expect(section, id).toContain(id);
+    expect(log.indexOf('## [0.3.0-beta.2]')).toBeLessThan(log.indexOf('## [0.3.0-beta.1]'));
   });
 
   it('CHANGELOG keeps the Sprint 5 section as 0.3.0-beta.0 (untagged) with Added, Changed, Fixed and Security, naming the fixes and the spec release', () => {
@@ -372,7 +419,7 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
     }
   });
 
-  it('pack-check proves the beta: the worker-support entry, no test hook in the build, spec release 0.6.0, expectId and the weak-key refusal from the tarball', () => {
+  it('pack-check proves the beta: the worker-support entry, no test hook in the build, spec release 0.6.1, expectId and the weak-key refusal from the tarball', () => {
     const src = read('scripts/pack-check.mjs');
     for (const needle of [
       'dist/worker-support.js',
@@ -380,8 +427,8 @@ describe('README, CHANGELOG, release.md, NOTICE, ci.yml', () => {
       'test-probe',
       'expectId',
       'unexpected_id',
-      "'0.6.0'",
-      "'0.1.3'",
+      "'0.6.1'",
+      "'0.1.4'",
       "'0.5.0'",
       'weak_key_refused',
       'beta, not tagged',

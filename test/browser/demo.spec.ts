@@ -166,7 +166,7 @@ test('the Embed card embeds two sentences through the worker host with multiling
     context.on('request', (r) => requests.push(r.url()));
     await page.goto(`${BASE}models.html`);
     // the page: the Sprint 5 line (same text as the root page) and the Embed card, nothing fetched yet
-    await expect(page.locator('#sprint-status')).toContainText('Sprint 6 (19 Nov 2026)');
+    await expect(page.locator('#sprint-status')).toContainText('Sprint 7 (20 Nov 2026)');
     await expect(page.locator('#sprint-status')).toContainText('not measured on 8 GB');
     expect(
       requests.filter((u) => new URL(u).pathname.startsWith('/runtime/models/')),

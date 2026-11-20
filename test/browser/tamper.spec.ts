@@ -114,8 +114,8 @@ test('every Tamper lab case is refused with its documented reason, and nothing l
     await expect(page.locator('#build-id')).toHaveText(
       /^(Built from main at [0-9a-f]{12}|Local build [0-9a-f]{12}(-dirty)?|Local build local \(no \.git checkout\))$/,
     );
-    await expect(page.locator('#status-line')).toContainText('Sprint 6 (19 Nov 2026)');
-    await expect(page.locator('#status-line')).toContainText('runtime beta 0.3.0-beta.1');
+    await expect(page.locator('#status-line')).toContainText('Sprint 7 (20 Nov 2026)');
+    await expect(page.locator('#status-line')).toContainText('runtime beta 0.3.0-beta.2');
     await expect(page.locator('#status-line')).toContainText('not measured on 8 GB');
     await expect(page.locator('#not-yet')).toContainText(
       'WebLLM (cut; revisit after the 8 GB measurement)',

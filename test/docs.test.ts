@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { maxTokensFor } from '../demo/limits';
 import { validateModelDescriptor } from '../src/schema';
@@ -411,5 +413,349 @@ describe('D1-03: docs describe the descriptor sessionOptions', () => {
     expect(choice).toContain("sessionOptions { graphOptimizationLevel: 'disabled' }");
     expect(choice).toContain('without the application passing sessionOptions');
     expect(choice).not.toContain('the application passes it');
+  });
+});
+
+describe('Sprint 7 (D1-04, D1-06, D1-08): RELEASING.md, the live demo line, the issue forms and the write-up draft', () => {
+  const lf = (s: string) => s.replace(/\r\n?/g, '\n');
+  const flat = (s: string) => lf(s).replace(/\s+/g, ' ');
+  const releasing = lf(read('docs/RELEASING.md'));
+  const steps = [...releasing.matchAll(/^### (\d+)\. (.+)$/gm)].map(
+    (m) => [Number(m[1]), m[2]!] as const,
+  );
+
+  it('README: the Live demo line is within the first 12 lines, exactly (TD-116)', () => {
+    const head = lf(read('README.md')).split('\n').slice(0, 12);
+    expect(head).toContain('Live demo: https://airplanemode-labs.github.io/runtime/');
+  });
+
+  it('RELEASING.md has fourteen steps, in order, and each one says why the team cannot do it', () => {
+    expect(steps.map(([n]) => n)).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
+    const bodies = releasing.split(/^### \d+\. .+$/m).slice(1);
+    expect(bodies).toHaveLength(14);
+    for (const [i, b] of bodies.entries()) expect(b, `step ${i + 1}`).toMatch(/Why not the team:/);
+  });
+
+  it("public prose does not use a tester role as a subject: no 'T1 measured', 'T2 showed', 'T3's ... found' in README, CHANGELOG or docs/*.md (fix round 2 decision)", () => {
+    // Ids such as BUG-T2-S7-02 and test names are fine; only a role as the subject of a sentence is not. docs/security (the
+    // findings register) is out of scope, as in the rule's grep.
+    const files = ['README.md', 'CHANGELOG.md', 'CONTRIBUTING.md'].concat(
+      readdirSync(resolve(docsDir, 'docs'))
+        .filter((n) => n.endsWith('.md'))
+        .map((n) => `docs/${n}`),
+    );
+    // on the whitespace-flattened text, so a role at the end of one line and its verb at the start of the next is caught too
+    const role = /\bT[123](?:'s)? (?:showed|measured|found|confirmed)\b/g;
+    const hits = files.flatMap((f) =>
+      [...flat(read(f)).matchAll(role)].map((m) => `${f}: ...${m[0]}...`),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it('FINDINGS.md (BUG-T3-S7-23): the evidence-rsync.sh line numbers cited for S1-115 and S1-122 are the lines that hold the quoted text', () => {
+    // The script is in the workspace's evidence/sprint-6/, not in this repository: a lone checkout has nothing to compare with.
+    const script = resolve(workspace, 'evidence/sprint-6/architect/evidence-rsync.sh');
+    if (!existsSync(script)) return;
+    const src = lf(readFileSync(script, 'utf8')).split('\n');
+    const at = (a: number, b = a): string => src.slice(a - 1, b).join('\n');
+    const findings = flat(read('docs/security/FINDINGS.md'));
+    // [the citation as FINDINGS.md writes it, the first and last line it names, text that must be on those lines]
+    const cited: [string, number, number, string[]][] = [
+      [
+        '`evidence-rsync.sh` l.7 `ARGS=(',
+        7,
+        7,
+        ['ARGS=(-a --no-links --one-file-system --max-size=5m --prune-empty-dirs'],
+      ],
+      [
+        'l.10-11 S1-098 extras',
+        10,
+        11,
+        [
+          "'*-copy*/'",
+          "'*-head/'",
+          "'ws/'",
+          "'ws-cp/'",
+          "'red-base/'",
+          "'fresh-*/'",
+          "'dl-*'",
+          "'*.tar.gz'",
+        ],
+      ],
+      [
+        'l.13-14 the S1-115 extras',
+        13,
+        14,
+        ["'fix2-clean-*/tree/'", "'cli-root/'", "'Cargo.lock.before'"],
+      ],
+      [
+        '`evidence-rsync.sh` l.16-17 add',
+        16,
+        17,
+        [
+          "'cs-mnt/'",
+          "'cs-vol/'",
+          "'parity-cpm/'",
+          "'sdist-work/'",
+          "'__pycache__/'",
+          "'*.hex'",
+          "'*keygrep*'",
+          "'parity-1000.*'",
+        ],
+      ],
+      [
+        'and l.22 `*control-plane*.lock`',
+        22,
+        22,
+        ["'*control-plane*.lock'", "'keys1000/'", "'km/'", "'*-km/'"],
+      ],
+      ['with `--one-file-system` on l.7', 7, 7, ['--one-file-system']],
+    ];
+    for (const [phrase, a, b, needles] of cited) {
+      expect(findings, `FINDINGS.md cites "${phrase}"`).toContain(phrase);
+      for (const n of needles)
+        expect(at(a, b), `l.${a}-${b} of evidence-rsync.sh holds ${n}`).toContain(n);
+    }
+    // and no other line number is cited for this script
+    const nums = [...findings.matchAll(/evidence-rsync\.sh` l\.(\d+(?:-\d+)?)/g)].map((m) => m[1]);
+    expect(nums.sort()).toEqual(['16-17', '7']);
+  });
+
+  it('RELEASING.md step 3 (BUG-T3-S7-13): the documented base64 command turns a cp-sign key.pub into the TEST 1 publicKey of spec/vectors/release, and refuses a file without an ed25519-public line', () => {
+    // cp-sign keygen writes key.pub as '# cp-sign Ed25519 public key.' then 'ed25519-public <64 hex>' (control-plane
+    // crates/cp-sign/src/main.rs): the command must pick that line, not the first line of the file.
+    const body = releasing.split(/^### \d+\. .+$/m)[3]!;
+    const m = /^node -e '([^']*)' <KEYDIR>\/key\.pub$/m.exec(body);
+    expect(m, 'step 3 holds one node -e command that ends in <KEYDIR>/key.pub').not.toBeNull();
+    const js = m![1]!;
+    const test1Hex = 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a';
+    const vector = JSON.parse(
+      readFileSync(resolve(repoDir, 'spec/vectors/release/base/release-manifest.json'), 'utf8'),
+    ) as { signatures: { publicKey: string }[] };
+    const test1B64 = vector.signatures[0]!.publicKey;
+    expect(test1B64.startsWith('11qYAYKx')).toBe(true);
+    expect(Buffer.from(test1Hex, 'hex').toString('base64')).toBe(test1B64);
+
+    const dir = mkdtempSync(join(tmpdir(), 'rt-pubkey-'));
+    try {
+      const run = (content: string) => {
+        const file = join(dir, 'key.pub');
+        writeFileSync(file, content);
+        const r = spawnSync(process.execPath, ['-e', js, file], { encoding: 'utf8' });
+        return { status: r.status, out: r.stdout, err: r.stderr, file };
+      };
+      const ok = run(`# cp-sign Ed25519 public key.\ned25519-public ${test1Hex}\n`);
+      expect(ok.err).toBe('');
+      expect(ok.status).toBe(0);
+      expect(ok.out).toBe(`${test1B64}\n`);
+      // the same file with CRLF line endings (a Windows checkout of the notes, an editor) gives the same answer
+      const crlf = run(`# cp-sign Ed25519 public key.\r\ned25519-public ${test1Hex}\r\n`);
+      expect([crlf.status, crlf.out]).toEqual([0, `${test1B64}\n`]);
+      // no ed25519-public line (the comment line only, a secret-key file, an empty file): exit 1 and nothing on stdout
+      for (const bad of [
+        '# cp-sign Ed25519 public key.\n',
+        `# cp-sign Ed25519 secret key.\ned25519-seed ${'9d'.repeat(32)}\n`,
+        '',
+        `ed25519-publicx ${test1Hex}\n`,
+      ]) {
+        const r = run(bad);
+        expect([r.status, r.out], JSON.stringify(bad)).toEqual([1, '']);
+        expect(r.err).toContain('not a cp-sign public key file');
+      }
+      // a public line that is not exactly 32 bytes (truncated, extra, not hex) is refused too
+      for (const hex of [test1Hex.slice(0, 62), `${test1Hex}00`, 'zz'.repeat(32), '']) {
+        const r = run(`# cp-sign Ed25519 public key.\ned25519-public ${hex}\n`);
+        expect([r.status, r.out], hex).toEqual([1, '']);
+      }
+      // the command as documented, run by a shell with the placeholder replaced (POSIX only: Windows has no sh here)
+      if (process.platform !== 'win32') {
+        const file = join(dir, 'key.pub');
+        writeFileSync(file, `# cp-sign Ed25519 public key.\ned25519-public ${test1Hex}\n`);
+        const cmd = m![0]!.replace('<KEYDIR>/key.pub', `'${file.replace(/'/g, `'\\''`)}'`);
+        expect(execFileSync('sh', ['-c', cmd], { encoding: 'utf8' })).toBe(`${test1B64}\n`);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('RELEASING.md names the steps in the specified order', () => {
+    const titles = steps.map(([, t]) => t.toLowerCase());
+    const order = [
+      'reserve',
+      'generate the release key offline',
+      'commit the public key',
+      'create the `release` environment',
+      '8 gb runbook',
+      'dated changelog',
+      'dispatch the publish workflow',
+      'check the candidate',
+      'sign `release-manifest.json` offline',
+      'tag exactly',
+      'short-lived npm token',
+      'approve the deployment',
+      'revoke the token',
+      'publish the write-up',
+    ];
+    for (const [i, needle] of order.entries()) expect(titles[i], `step ${i + 1}`).toContain(needle);
+  });
+
+  it('RELEASING.md carries the exact commands: environment, reviewer, branch policy, admins, variables, secret, candidate check, signing, verification, tag, token', () => {
+    const f = releasing;
+    for (const s of [
+      'gh api -X PUT repos/AirplaneMode-Labs/runtime/environments/release',
+      '"reviewers": [{ "type": "User", "id": $OWNER_ID }]',
+      '"can_admins_bypass": false',
+      '"custom_branch_policies": true',
+      'gh api -X POST repos/AirplaneMode-Labs/runtime/environments/release/deployment-branch-policies -f name=main -f type=branch',
+      'gh variable set RELEASE_PUBLISH_ARMED --env release',
+      'gh variable set RELEASE_KEY_ID --env release',
+      'gh secret set NPM_TOKEN --env release --repo AirplaneMode-Labs/runtime',
+      'gh run view <run-id> --repo AirplaneMode-Labs/runtime --json event,headBranch,headSha,workflowName',
+      'gh workflow run publish.yml',
+      'cp-sign keygen --out <KEYDIR>',
+      'cp-sign sign --no-expiry --key <KEYDIR>/key.secret',
+      'cp-sign verify --pub <KEYDIR>/key.pub --expect-id runtime-release',
+      'node spec/tools/release-tool.mjs verify --dir verify-copy --expect-id runtime-release --trust-file docs/release-keys.json',
+      'git -C <runtime clone> tag -a v0.3.0-beta.2 <sha>',
+      'gh release create v0.3.0-beta.2',
+      'npm token revoke',
+      'gh secret delete NPM_TOKEN --env release',
+      'Granular Access Token',
+      '7 days or less',
+      'tag ruleset',
+      'private vulnerability reporting',
+      'CODEOWNERS',
+      'TD-122',
+    ])
+      expect(f, s).toContain(s);
+    // the token never appears on a command line
+    expect(f).not.toMatch(/gh secret set NPM_TOKEN[^\n]*--body/);
+    expect(f).not.toMatch(/npm_[A-Za-z0-9]{20,}/);
+  });
+
+  it("RELEASING.md never tells anyone to use a test key: '--allow-test-key' appears only after 'never'", () => {
+    for (const m of releasing.matchAll(/--allow-test-key/g)) {
+      const before = releasing.slice(Math.max(0, m.index! - 14), m.index!);
+      expect(before, `context of --allow-test-key at ${m.index}`).toMatch(/never pass `$/);
+    }
+    expect(releasing).not.toMatch(/--trust-test-key|allowTestKeys|rfc8032-1/);
+  });
+
+  it('RELEASING.md (TD-125): both variables are environment variables, set with --env release; arming is in step 12, just before the approval, and disarming follows the publish', () => {
+    const f = flat(releasing);
+    expect(f).toContain('Both variables are variables of the `release` environment');
+    expect(f).toContain('no job-level `if:` reads them');
+    expect(releasing).not.toMatch(/gh variable (set|delete) \w+ --repo/);
+    expect(releasing).not.toMatch(/gh variable (set|delete) RELEASE_\w+(?![^\n]*--env release)/);
+    const bodies = releasing.split(/^### \d+\. .+$/m).slice(1);
+    // step 4 sets the key id only: the arming variable is not set early
+    expect(bodies[3]).toContain('gh variable set RELEASE_KEY_ID --env release');
+    expect(bodies[3]).not.toContain('gh variable set RELEASE_PUBLISH_ARMED');
+    // step 12 arms, after dispatch, the candidate check, signing and the GitHub release (steps 7 to 10)
+    expect(bodies[11]).toContain('gh variable set RELEASE_PUBLISH_ARMED --env release --body true');
+    expect(bodies[11]!.indexOf('gh variable set RELEASE_PUBLISH_ARMED')).toBeLessThan(
+      bodies[11]!.indexOf('approve the `release` environment'),
+    );
+    // step 13 disarms after the publish
+    expect(bodies[12]).toContain('gh variable delete RELEASE_PUBLISH_ARMED --env release');
+  });
+
+  it('RELEASING.md (TD-121): signing uses cp-sign sign --no-expiry and the publish job refuses an expiresAt', () => {
+    const f = flat(releasing);
+    expect(f).toContain('cp-sign sign --no-expiry');
+    expect(f).toContain('refuses a manifest that carries an `expiresAt`');
+  });
+
+  it('RELEASING.md does not list a step the team could have done: no step is a build, a test or a commit of team files', () => {
+    for (const [, title] of steps)
+      expect(title.toLowerCase(), title).not.toMatch(/^(write|build|implement|document|draft)\b/);
+  });
+
+  it('issue forms: bug_report.yml has the required no-real-documents checkbox and a redaction line (TD-117)', () => {
+    const bug = lf(read('.github/ISSUE_TEMPLATE/bug_report.yml'));
+    const label =
+      'I have not attached any real, confidential or personal document (bank, legal, medical, identity). Any sample is synthetic or public.';
+    expect(bug).toContain(label);
+    expect(bug).toMatch(
+      new RegExp(`- label: ${label.replace(/[()]/g, '\\$&')}\\n\\s+required: true`),
+    );
+    expect(flat(bug)).toMatch(/redact/i);
+    expect(bug).toContain('type: checkboxes');
+    const feature = lf(read('.github/ISSUE_TEMPLATE/feature_request.yml'));
+    expect(feature).toContain(label);
+    expect(feature).toMatch(/required: true/);
+  });
+
+  it('issue forms: config.yml disables blank issues and links SECURITY.md; SECURITY.md says to report privately', () => {
+    const config = lf(read('.github/ISSUE_TEMPLATE/config.yml'));
+    expect(config).toMatch(/^blank_issues_enabled: false$/m);
+    expect(config).toContain('contact_links:');
+    expect(config).toContain('/blob/main/SECURITY.md');
+    const sec = flat(read('SECURITY.md'));
+    expect(sec).toContain('never in a public issue');
+    expect(sec).toContain('privately');
+    expect(existsSync(resolve(docsDir, 'CONTRIBUTING.md'))).toBe(true);
+    expect(flat(read('CONTRIBUTING.md'))).toContain('test/quickstart.test.ts');
+  });
+
+  it('the good-first-issue drafts for runtime (in the workspace, not in this repository) are 3 to 5 texts, none filed', () => {
+    const p = resolve(workspace, 'drafts/good-first-issues/runtime.md');
+    if (!existsSync(p)) return; // a lone checkout has no workspace: nothing to read
+    const text = lf(readFileSync(p, 'utf8'));
+    expect(text).toContain('nothing is filed');
+    const count = (text.match(/^## \d+\. /gm) ?? []).length;
+    expect(count).toBeGreaterThanOrEqual(3);
+    expect(count).toBeLessThanOrEqual(5);
+    expect(text).not.toMatch(/--allow-test-key|--trust-test-key|allowTestKeys|rfc8032|\bcurl\b/i);
+  });
+
+  describe('the write-up draft (D1-08)', () => {
+    const draft = lf(read('docs/writeup-0.3.0-beta.2-draft.md'));
+
+    it('is marked draft, not published, and says what was tried, what held up and what did not', () => {
+      expect(draft).toContain('**Draft, not published.**');
+      for (const h of ['## What was tried', '## What held up', '## What did not'])
+        expect(draft, h).toContain(h);
+      expect(draft).toContain('## On the 8 GB Windows laptop without a GPU');
+    });
+
+    it('reads "not measured on 8 GB" for the laptop and every figure sits beside a file path', () => {
+      expect(draft).toContain('not measured on 8 GB');
+      const f = flat(draft);
+      for (const fig of [
+        '4060 ms',
+        '2561 ms',
+        '2592 ms',
+        '10.9 tokens/s',
+        '26 weak-key rows',
+        '36 cases',
+        '44-id',
+      ])
+        expect(f, fig).toContain(fig);
+      // every figure line cites a committed file or a link
+      for (const fig of ['4060 ms', '2592 ms', '36 cases']) {
+        const para = draft.split('\n\n').find((p) => p.includes(fig))!;
+        expect(para, fig).toMatch(/\]\(\.\.?\/|`[a-z][^`]*\.(md|json|ts|mjs|log)`/);
+      }
+    });
+
+    it('makes no published, audited or compliant claim, and no gate-1 prediction', () => {
+      expect(draft).not.toMatch(/\b(audited|compliant|certified|guarantee[sd]?)\b/i);
+      for (const m of draft.matchAll(/published/gi)) {
+        const ctx = draft.slice(Math.max(0, m.index! - 12), m.index! + 9).toLowerCase();
+        expect(ctx, `"published" in "${ctx}"`).toMatch(
+          /not published|unpublished|be published|publish/,
+        );
+      }
+      expect(draft).not.toMatch(/\b(stars|pilots)\b[^.]*\bwill\b/i);
+    });
+
+    it('release.md closes the team rows and calls the write-up row a draft that waits on the 8 GB figure', () => {
+      const rel = flat(read('docs/release.md'));
+      expect(rel).toContain('draft exists; finishing it waits on the 8 GB figure (owner)');
+      expect(rel).toContain('## What the team closed in Sprint 7');
+      expect(rel).toContain('RELEASING.md');
+    });
   });
 });

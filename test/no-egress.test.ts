@@ -27,6 +27,10 @@ const ALLOWED: Record<string, string[]> = {
   'src/worker/egress-guard.ts': ['XMLHttpRequest', 'WebSocket', 'importScripts', 'EventSource'],
   // the worker-support guard names the same APIs: it allow-lists their URLs and calls no network function itself
   'src/worker-support.ts': ['XMLHttpRequest', 'WebSocket', 'importScripts', 'EventSource'],
+  // the bundled release tool (spec 0.6.1) carries the capability-profile schema as data, and that schema's description
+  // names navigator.userAgent and userAgentData to say the profile never holds them; no code reads either. The bundle's own
+  // allowlist (test/release-tool.test.ts) forbids fetch(, WebSocket, every network module and a dynamic import.
+  'spec/tools/release-tool.mjs': ['navigator.userAgent', 'userAgentData'],
 };
 
 function walk(dir: string): string[] {

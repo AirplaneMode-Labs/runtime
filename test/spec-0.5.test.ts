@@ -39,13 +39,13 @@ function walk(dir: string): string[] {
 }
 
 describe('spec 0.5.0: release, versions, status, wire strings, schema ids', () => {
-  it('SPEC_RELEASE and SPEC_VERSIONS carry the current (0.6.0) values; test/spec-0.6.test.ts pins them as release 0.6.0', () => {
-    expect(spec.SPEC_RELEASE).toBe('0.6.0');
+  it('SPEC_RELEASE and SPEC_VERSIONS carry the current (0.6.1) values; test/spec-0.6.1.test.ts pins them as release 0.6.1', () => {
+    expect(spec.SPEC_RELEASE).toBe('0.6.1');
     expect(spec.SPEC_VERSIONS).toEqual({
-      manifest: '0.1.3',
+      manifest: '0.1.4',
       capabilityProfile: '0.1.1',
-      event: '0.1.5',
-      storageApi: '0.4.0',
+      event: '0.1.6',
+      storageApi: '0.4.1',
       backendAdapter: '0.5.0',
       modelDescriptor: '0.2.1',
     });
@@ -68,9 +68,9 @@ describe('spec 0.5.0: release, versions, status, wire strings, schema ids', () =
     });
   });
 
-  it('a patch moves only the $id: manifest 0.1.3, event 0.1.5 and capability profile 0.1.1 (release 0.6.0); the descriptor keeps its own', () => {
-    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.3');
-    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.5');
+  it('a patch moves only the $id: manifest 0.1.4, event 0.1.6 and capability profile 0.1.1 (release 0.6.1); the descriptor keeps its own', () => {
+    expect(SCHEMAS.manifest.$id).toBe('urn:airplanemode:spec:manifest:0.1.4');
+    expect(SCHEMAS.event.$id).toBe('urn:airplanemode:spec:event:0.1.6');
     expect(SCHEMAS.capabilityProfile.$id).toBe('urn:airplanemode:spec:capability-profile:0.1.1');
     expect(SCHEMAS.modelDescriptor.$id).toBe('urn:airplanemode:spec:model-descriptor:0.2.1');
     for (const f of ['manifest.schema.json', 'event.schema.json'])
@@ -118,11 +118,11 @@ describe('spec 0.5.0: files that must not change are byte-identical to release 0
   it('manifest.schema.json and event.schema.json differ from their 0.4.0 text only in $id', () => {
     const want = new Map(golden);
     const m = text(resolve(specDir, 'manifest.schema.json')).replace(
-      'urn:airplanemode:spec:manifest:0.1.3',
+      'urn:airplanemode:spec:manifest:0.1.4',
       'urn:airplanemode:spec:manifest:0.1.1',
     );
     const e = text(resolve(specDir, 'event.schema.json')).replace(
-      'urn:airplanemode:spec:event:0.1.5',
+      'urn:airplanemode:spec:event:0.1.6',
       'urn:airplanemode:spec:event:0.1.3',
     );
     expect(sha(m)).toBe(want.get('manifest.schema.json'));
@@ -586,11 +586,11 @@ describe('spec 0.5.0: new vectors', () => {
 describe('spec 0.5.0: README, CHANGELOG and the index', () => {
   it('README lists the 0.5.0 release and versions; CHANGELOG has the [0.5.0] section', () => {
     const readme = flat(text(resolve(specDir, 'README.md')));
-    // the README now describes release 0.6.0 (test/spec-0.6.test.ts); the 0.5.0 history stays in its text
-    expect(readme).toContain('Spec release **0.6.0**');
-    expect(readme).toContain('manifest 0.1.3: published; other contracts: draft');
-    expect(readme).toContain('urn:airplanemode:spec:manifest:0.1.3');
-    expect(readme).toContain('urn:airplanemode:spec:event:0.1.5');
+    // the README now describes release 0.6.1 (test/spec-0.6.1.test.ts); the 0.5.0 history stays in its text
+    expect(readme).toContain('Spec release **0.6.1**');
+    expect(readme).toContain('manifest 0.1.4: published; other contracts: draft');
+    expect(readme).toContain('urn:airplanemode:spec:manifest:0.1.4');
+    expect(readme).toContain('urn:airplanemode:spec:event:0.1.6');
     expect(readme).toContain('Release 0.5.0 bumps the minor again');
     const log = flat(text(resolve(specDir, 'CHANGELOG.md')));
     expect(log).toContain('## [0.5.0] - 2026-11-18 (untagged)');
@@ -612,8 +612,8 @@ describe('spec 0.5.0: README, CHANGELOG and the index', () => {
 
   it('index.ts header names release 0.5.0 and every contract version', () => {
     const f = flatTs(text(resolve(specDir, 'index.ts')));
-    expect(f).toContain('spec release 0.6.0');
-    for (const v of ['manifest 0.1.3', 'event 0.1.5', 'storage API 0.4.0', 'backend adapter 0.5.0'])
+    expect(f).toContain('spec release 0.6.1');
+    for (const v of ['manifest 0.1.4', 'event 0.1.6', 'storage API 0.4.1', 'backend adapter 0.5.0'])
       expect(f, v).toContain(v);
   });
 

@@ -771,9 +771,8 @@ describe('fix round 2: the documents say it (TD-29)', () => {
 
   it('the runtime README and CHANGELOG record the round, and the README carries the Sprint 4 process sentence', () => {
     // T3-S5-14: the Sprint 4 process sentence is replaced by the factual CI status of the pushed head
-    expect(readme.replace(/\s+/g, ' ')).toContain(
-      'pushed 15 Nov 2026 at 3bf53c6; CI at that head red: run 43667709960',
-    );
+    // (updated in Sprint 7: the head read with gh on 20 Nov 2026 is the green Sprint 6 head 7d3777b)
+    expect(readme.replace(/\s+/g, ' ')).toContain('CI status: at 7d3777b (19 Nov 2026)');
     expect(runtimeChangelog).toContain('BUG-T2-S4-11');
     expect(runtimeChangelog).toContain('BUG-T2-S4-14');
     expect(runtimeChangelog).toContain('BUG-T2-S4-15');
