@@ -14,6 +14,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -31,7 +32,7 @@ import {
   TEST_KEY_VERIFY_BANNER,
 } from '../spec/release';
 import { runCli } from '../src/release/cli';
-import { readRegularFile, ReleaseStop } from '../src/release/fsutil';
+import { hashRegularFile, readRegularFile, ReleaseStop } from '../src/release/fsutil';
 import { parseReleaseKeys } from '../src/release/keys';
 import { postVerifyChecks } from '../src/release/tool';
 import { makeLink, readJson, readText, repoDir, specDir } from './helpers';
@@ -815,7 +816,12 @@ describe('release-tool: file handling (lstat, then open, then fstat)', () => {
     await expect(readRegularFile(f, 3)).rejects.toBeInstanceOf(Error);
   });
 
-  it('a file swapped for a link between the lstat and the open is caught by the identity check on the handle', async () => {
+  // The swaps below must not depend on how a filesystem hands out inode numbers. Deleting a file and creating a new one at
+  // its name is NOT a different identity on ext4 (the Linux runners): the freed inode is handed straight back, so device
+  // and inode are equal and the check cannot tell the new file from the old one (CI run 44651017065, ubuntu-latest; APFS
+  // and NTFS never reuse one that fast, which is why this passed on macOS and Windows). So the replacement is a file that
+  // already exists, and stays linked while the original goes: two live files cannot share an identity on any filesystem.
+  it('a file replaced by a different file between the lstat and the open is refused by the identity check on the handle', async () => {
     const d = fresh('race');
     const f = join(d, 'a.bin');
     const other = join(d, 'other.bin');
@@ -825,11 +831,58 @@ describe('release-tool: file handling (lstat, then open, then fstat)', () => {
       readRegularFile(f, 1024, {
         afterLstat: () => {
           rmSync(f);
-          // a different file at the same name (a new inode); on every platform this is a different identity
-          writeFileSync(f, 'a different file');
+          renameSync(other, f); // keeps other's inode, which was live next to f's
         },
       }),
     ).rejects.toMatchObject({ token: 'not_regular_file' });
+  });
+
+  it('hashRegularFile shares the same check: a different file in the lstat/open gap is refused, never hashed', async () => {
+    const d = fresh('race-hash');
+    const f = join(d, 'a.bin');
+    const other = join(d, 'other.bin');
+    writeFileSync(f, 'original');
+    writeFileSync(other, 'substitute');
+    await expect(
+      hashRegularFile(f, {
+        afterLstat: () => {
+          rmSync(f);
+          renameSync(other, f);
+        },
+      }),
+    ).rejects.toMatchObject({ token: 'not_regular_file' });
+  });
+
+  it('a file replaced by a link between the lstat and the open is refused (O_NOFOLLOW on POSIX; the identity check where a link is followed)', async () => {
+    const d = fresh('race-link');
+    const f = join(d, 'a.bin');
+    const target = join(d, 'target.bin');
+    writeFileSync(f, 'original');
+    writeFileSync(target, 'substitute');
+    await expect(
+      readRegularFile(f, 1024, {
+        afterLstat: () => {
+          rmSync(f);
+          makeLink('file', target, f); // a symlink, or a hard link where the OS refuses symlinks: both end in the same token
+        },
+      }),
+    ).rejects.toMatchObject({ token: 'not_regular_file' });
+  });
+
+  // The documented boundary (README, Limitations: "not a defence against another process that can write in the release
+  // directory while it runs"): identity is device and inode, so the check closes the swap of a file for a link or for
+  // another live file and is not a defence against a writer that keeps the inode. An in-place
+  // rewrite is that case on every platform, and it is what delete-and-recreate looks like when the filesystem reuses the
+  // inode (ext4). Pinned so that nobody "fixes" the Linux result by changing the tool: the digest check against the signed
+  // manifest, not this check, is what rejects changed content.
+  it('identity is device and inode only: a rewrite that keeps the inode is outside the check (documented limit)', async () => {
+    const d = fresh('same-inode');
+    const f = join(d, 'a.bin');
+    writeFileSync(f, 'original');
+    const bytes = await readRegularFile(f, 1024, {
+      afterLstat: () => writeFileSync(f, 'a different file'),
+    });
+    expect(bytes.toString()).toBe('a different file');
   });
 
   it('a FIFO in the directory is refused as not_regular_file (POSIX)', async () => {
