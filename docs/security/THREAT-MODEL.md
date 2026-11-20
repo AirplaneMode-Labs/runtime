@@ -739,3 +739,173 @@ volume is mounted under the tester scratch, so the copy must not cross a mount p
 remains is the owner's to prove, as in 11.3: the Windows and Linux CI legs after the push, the 8 GB laptop (not
 measured on 8 GB; the Apple M5 Pro after-run misses the TD-66 target), a real signing key and its custody, and a
 dedicated origin with response headers for any pilot.
+
+## 12. Sprint 7 update: the release path (20 November 2026)
+
+Sprint 7 adds, in runtime, localdata, pagetriage and glyphsift, an owner-run `publish.yml`, a `release-rehearsal
+(<os>)` CI job and a release manifest format (manifest 0.1.4 "Release manifests", spec 0.6.1); control-plane gains the
+cp-sign R1 to R3 rules and its own rehearsal; dockit gains a manual `bench-windows.yml`. Findings: `FINDINGS.md`,
+"Sprint 7" (S1-126 to S1-136).
+
+### 12.1 Assets and trust boundaries
+
+- **Registry identities**: `@airplanemode/*` on npm, `pagetriage` and `glyphsift` on PyPI, four crates on crates.io.
+  Not reserved yet (owner). Whoever can publish a version there reaches every integrator who installs it.
+- **The release key** (owner, offline, `cp-sign keygen`), its public half in each repository's
+  `docs/release-keys.json` (keys `[]` today), its keyId in `RELEASE_KEY_ID`. Separate from any bundle-signing key and
+  never in an application trust set (R4).
+- **Registry credentials**: `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN`, environment secrets of `release`, created per
+  release (7 days or less) and revoked after; PyPI uses trusted publishing, so the OIDC token of the publish job is
+  itself a PyPI credential.
+- **The candidate**: the files a `publish.yml` build job produces, with an unsigned manifest and `SHA256SUMS`, handed to
+  the publish job as a one-day artefact of the same run.
+- **The published RFC 8032 TEST 1 key**: public by design, used only for rehearsals, never accepted without a
+  command-line flag that a release verification refuses.
+- Boundaries: GitHub (repository write, admin, Actions, environments) → runner → registry; the owner's offline machine
+  → GitHub release asset; every artefact crosses the Actions artefact store.
+
+### 12.2 Who and what can trigger a publish
+
+| Path                                                               | Reaches a publish step?                | Why                                                                                                                                                                                          |
+| ------------------------------------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| push, pull request, fork pull request                              | No                                     | `publish.yml` has `on: workflow_dispatch` only; no `pull_request_target` or `workflow_run` exists anywhere.                                                                                  |
+| schedule, `workflow_call`, `repository_dispatch`, another workflow | No                                     | none of these triggers is declared.                                                                                                                                                          |
+| dispatch from a fork                                               | No                                     | a fork cannot dispatch a workflow in the base repository; the repository guard refuses a copy of the workflow in a fork.                                                                     |
+| dispatch on a branch other than main by a writer                   | No                                     | `github.ref == 'refs/heads/main'` on both jobs.                                                                                                                                              |
+| dispatch on main by a writer who is not the owner                  | No, while the owner keeps locks 2 to 6 | needs the owner's environment approval (2), the armed variable (3, admin-only), a manifest signed by the release key (4), the environment secret (5) and the admin-set `RELEASE_KEY_ID` (6). |
+| a commit on main that replaces `docs/release-keys.json` (S1-129)   | No                                     | lock 6 compares the committed key with the admin-set variable; owner recommended: CODEOWNERS on that file, branch protection, a `v*` tag ruleset.                                            |
+| the owner, deliberately                                            | Yes                                    | after the bindings: the tag peels to `github.sha`, the manifest version equals the package version and its id is `<package>-release`, the registry answers 404 for that version.             |
+
+An environment named in a workflow is created by GitHub on first use with no protection. Until the owner configures
+it, lock 2 is absent; locks 3, 4, 5 and 6 still hold, and each alone stops a publish.
+
+### 12.3 STRIDE: the publish workflows
+
+| Threat                                                    | Control                                                                                                                                                                 | Residual                                                                                                       |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| S: a manifest signed by another key                       | lock 4, strict release-keys parser, keyId recomputed, test and weak keys refused                                                                                        | the owner's custody of the key                                                                                 |
+| S: a rehearsal (test-key) manifest presented as a release | `--trust-file` only in a publish; `--allow-test-key` with a release id or a trust file is a usage error; R1 in both signers; publisher and test-key checks after verify | none found                                                                                                     |
+| T: candidate changed in the artefact store                | hashes and sizes against the signed manifest; `artifact_extra`; same-run download only                                                                                  | none                                                                                                           |
+| T: candidate built by a compromised dependency            | owner's pre-signing check                                                                                                                                               | independent only in runtime today (S1-135)                                                                     |
+| T: published file is not the verified file                | exact paths from the verified manifest                                                                                                                                  | glyphsift `npm publish` path resolves to GitHub (S1-130); `cargo publish` re-packages (S1-126 compare, S1-131) |
+| T: cache poisoning                                        | no cache in any rehearsal or publish job; bench restore-only with re-hash                                                                                               | setup-node auto-cache if a `packageManager` field appears (S1-133)                                             |
+| R: what was published and by whom                         | npm provenance, PyPI attestations, `attest-build-provenance` on the exact files, the signed manifest on the GitHub release                                              | crates.io has no provenance; the signed manifest covers it                                                     |
+| I: token disclosure                                       | secrets only in one step's env of the publish job, environment-scoped, short-lived; `persist-credentials: false`                                                        | third-party build code in the same job (S1-131)                                                                |
+| D: a release stalls                                       | none needed (fails closed)                                                                                                                                              | pagetriage lock 3 placement (S1-132)                                                                           |
+| E: build code gains publish rights                        | build jobs hold `contents: read` and nothing else; runtime and localdata publish jobs run no third-party package code                                                   | pagetriage and glyphsift publish jobs compile crates while holding `id-token: write` (S1-131)                  |
+
+### 12.4 Token and OIDC scopes per job
+
+| Job                                  | Token                                           | OIDC                                     | Secrets                              |
+| ------------------------------------ | ----------------------------------------------- | ---------------------------------------- | ------------------------------------ |
+| `release-rehearsal (<os>)` (5 repos) | `contents: read`, not persisted                 | none                                     | none                                 |
+| `publish.yml` build                  | `contents: read`, not persisted                 | none                                     | none                                 |
+| `publish.yml` publish                | `contents: read` (release download, tag lookup) | `id-token: write`, `attestations: write` | one registry secret per publish step |
+| `bench-windows.yml` build and bench  | `contents: read`, not persisted                 | none                                     | none                                 |
+| Pages deploy (pre-existing)          | `pages: write`                                  | `id-token: write` (deploy-pages)         | none                                 |
+
+### 12.5 The artefact digest chain
+
+build (SOURCE_DATE_EPOCH from the commit) → `release-manifest.json` (unsigned) and `SHA256SUMS` → one-day artefact →
+owner downloads, checks against an independent build where reproducible, signs offline with `cp-sign sign --no-expiry`,
+attaches to the GitHub release of `v<version>` → publish job: same-run candidate + signed manifest, verify (hashes,
+sizes, no extra file, SHA256SUMS), version, id and tag bindings, registry 404 → provenance on the exact files →
+registry. crates: a `.crate` stays in the signed set only because packaging is byte-reproducible and the publish job
+compares the re-packaged digest first (S1-126); `cargo publish` should upload without re-verifying and be compared
+against the crates.io checksum after (S1-131). Release manifests carry no `expiresAt` (TD-121): the hashes bind them to
+one version and the registries refuse a republish.
+
+### 12.6 A compromised build dependency
+
+| Where it runs                                          | What it can reach                                                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI test jobs, `release-rehearsal`, `publish.yml` build | the runner, a read-only token that is not persisted, the candidate it builds; no secret, no OIDC, no cache write that a shipping job reads                                       |
+| runtime and localdata publish jobs                     | nothing: no third-party package code runs there                                                                                                                                  |
+| pagetriage and glyphsift publish jobs                  | today: the job's OIDC token (a PyPI trusted-publishing credential), later steps through `$GITHUB_ENV`/`$GITHUB_PATH`, and `CARGO_REGISTRY_TOKEN` during `cargo publish` (S1-131) |
+| a Pages build job                                      | what the shared `airplanemode-labs.github.io` origin serves to every demo visitor, including the other demos' OPFS and IndexedDB data (pre-pilot rows 5 and 33)                  |
+| dockit `bench-windows.yml`                             | the runner and the result CSVs; the job holds nothing, the model files are re-hashed, dist is re-checked on Windows                                                              |
+
+### 12.7 Emulated results
+
+`bench-windows.yml` results are a GitHub-hosted Windows Server VM with the pwsh, node and Chrome process tree under a
+Job Object commit limit. Each row's label is built from the machine's facts, must end in `; not a laptop`, may not
+contain an 8 GB figure, and lands in separate `e2e-emulated-*` files; `laptop_8gb` stays "not measured on 8 GB" and
+TD-51 stays NOT met. A commit limit is not a physical-memory limit, and the runner may nest its own job; only the first
+dispatch shows whether Chrome's children stay in the job (`job_escapes`).
+
+### 12.8 Residual risk after Sprint 7
+
+The publish paths are sound in design and cannot fire today. Before any publish: S1-130 (High, glyphsift npm path),
+S1-131 (Medium, third-party code in the pagetriage and glyphsift publish jobs), S1-132, S1-135, and the owner's
+environment, key, names, variables and secrets. Not testable until the owner publishes: the `pypa/gh-action-pypi-publish`
+container image reference (pinned by action SHA, image by tag; T3 records it from the first publish log) and the
+real behaviour of an environment variable in a job-level `if`.
+
+### 12.9 After Sprint 7 fix round 1 (20 November 2026)
+
+What changed in the release path (`FINDINGS.md`, "Sprint 7 fix round 1 re-verification"):
+
+- **Lock 3 (TD-125), one pattern in all four `publish.yml`.** `RELEASE_PUBLISH_ARMED` and `RELEASE_KEY_ID` are
+  variables of the `release` environment. No job-level `if` reads `vars.` (a job condition is evaluated before the
+  job reaches its environment, so it could not see them); the first step after the publish job's checkout reads the
+  armed variable through step env and refuses anything but `true`, and lock 6 reads `RELEASE_KEY_ID` the same way.
+  Both run only after the owner's environment approval when lock 2 is configured, and still refuse when it is not.
+  Row "dispatch on main by a writer who is not the owner" in 12.2 is unchanged: an environment variable, like a
+  repository variable, can be set only by an admin.
+- **E and T rows of 12.3 for pagetriage and glyphsift (S1-131 closed).** Both cargo commands in the publish job run
+  `--no-verify`, so no build script or proc-macro runs where `id-token: write` and `CARGO_REGISTRY_TOKEN` exist. The
+  re-package, the digest comparison against the signed manifest and `cargo publish` are contiguous and come before
+  the PyPI container; after `cargo publish` the crates.io sparse index `cksum` is compared with the signed sha256.
+  The residual "third-party build code in the same job" in the I and E rows is gone; what remains in those jobs is
+  the repository's own scripts and pinned actions.
+- **T row "published file is not the verified file" (S1-130 closed).** Every `npm publish` argument starts with
+  `./`, a policy test in each repository refuses one that does not, and glyphsift's dry run runs the same string.
+- **12.5 digest chain, completed.** release manifests with an `expiresAt` are refused after verify in all four
+  repositories (TD-121, R5); VERSION is strict SemVer before it reaches `GITHUB_ENV`; the tag check is a unit-tested
+  guard that never reads `GITHUB_REF`. The owner's pre-signing check compares the reproducible files with an
+  independent build in all four RELEASING.md (S1-135); per-OS wheels compare only between the two CI builds.
+- **D row "a release stalls"**: the pagetriage lock-3 placement is fixed (S1-132).
+- **New residual (S1-137, Info).** The post-publish index check detects a mismatch after the crate is already on
+  crates.io, and glyphsift publishes npm before its crate comparison; RELEASING.md should say how the owner yanks,
+  deprecates, revokes and disarms.
+
+Residual risk after fix round 1: no Critical, High or Medium finding is open in the release path. The paths still
+cannot fire (no key, no token, no armed variable, environment not configured). Not testable until the owner
+publishes: the PyPI container image reference, the real crates.io index propagation time and `cksum` field, and the
+three-OS behaviour of the publish job itself; the rehearsal legs are provable only after the push.
+
+### 12.10 Sprint 7 close-out (after fix round 2 and the tester round 3 results, 20 November 2026)
+
+What the close-out adds to the release-path model (`FINDINGS.md`, "Sprint 7 close-out"):
+
+- **Two layers of control, and which one guards.** The guard is the live `publish.yml`: the six locks, the three
+  bindings, the provenance step and the exact-path publish steps. The repository's policy test is a regression
+  control: it keeps a later edit from weakening the guard without a red test. At the close-out every live
+  `publish.yml` is intact (no `continue-on-error`, no step-level `if` in a publish job, no `|| true`, no shell
+  override; the one `set +e` in localdata captures an exit code and is followed by explicit refusals). The regression
+  control is complete in runtime (17 of 17 neutralisation mutations red with the golden regenerated) and incomplete in
+  localdata, pagetriage, glyphsift and control-plane (S1-138, Low). New STRIDE row under 12.3, **T: a reviewed-looking
+  edit neutralises a lock** (for example `verify || true` or `continue-on-error: true` on lock 3). Mitigations: the
+  policy test (complete in runtime; S1-138 elsewhere), the owner's review of every commit before the push, CODEOWNERS
+  on `.github/workflows/` and `docs/release-keys.json` (recommended in RELEASING.md), and lock 2 (the owner approves
+  the waiting job and can read the run's workflow file first). Residual: Low until S1-138 is fixed.
+- **Recovery after a partial publish (S1-137 closed).** pagetriage and glyphsift RELEASING.md now say what the owner
+  does when a step fails after a registry already holds a file: disarm, record the run id, yank or deprecate, revoke
+  both tokens, never re-publish the version. glyphsift still publishes npm before its crate comparison; a refused
+  comparison leaves npm published and the recovery section applies. The reorder is Sprint 8, before any publish.
+- **Tag guard and tree objects.** runtime's tag guard peels annotated tags and compares with `github.sha`; a tag object
+  that points at a tree passes the guard but fails the next lookup, so nothing is published. Sprint 8 makes the guard
+  itself refuse a non-commit target.
+- **Owner key handling.** The key.pub to base64 command (runtime, pagetriage, localdata RELEASING.md) was run on a real
+  scratch `cp-sign keygen` output and its decoded bytes hash to `cp-sign keyid`; a wrong value cannot slip through,
+  because `release-tool verify --trust-file` refuses a keys file whose keyId does not match its publicKey
+  (`bad_release_keys`). glyphsift's RELEASING.md lacks the command (owner usability, push condition for CI).
+
+Residual risk at the end of Sprint 7: no Critical, High or Medium finding is open anywhere in the stack. The release
+paths cannot fire: no release key, no token, no armed variable, no `release` environment, no reserved name, no tag.
+Open and team-owned before the first publish: S1-138, S1-133, the glyphsift step order and the tag guard's commit
+check (pre-pilot row 38). Provable only after the push: every `release-rehearsal (<os>)` leg, the Windows junction
+refusal, the Windows wheel and CLI install checks, and the first `bench-windows` dispatch (Job Object membership,
+`job_escapes`, the 144-byte struct, PowerShell encoding). Not testable until the owner publishes: the PyPI container
+image reference, crates.io index propagation and `cksum`, and the publish job on a real runner. Emulated Windows
+figures never fill a laptop cell; TD-51 stays NOT met.

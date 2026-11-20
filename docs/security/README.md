@@ -447,3 +447,46 @@ these changes:
 | Owner push list                            | (input)            | S1's lines are rewritten one exact CI job per line (BUG-T3-S6-R3-04); the dockit `check` lines expect exactly 3 skipped in a lone checkout (BUG-T1-S6-06).                                                                                                                                                  |
 | Tag pagetriage v1.0.0                      | NO-GO              | Unchanged. pagetriage stays 0.1.0 (CHANGELOG Unreleased, TD-69). Owner rows: `docs/release.md` rows 2 (8 GB benchmark), 4 (real key, signed release manifest and artefacts), 5 (version and tag), 6 (reserved names, clean-machine install), 7 (write-up); plus the three-system read of the Sprint 6 push. |
 | Other tags, registry publishing, pilot     | NO-GO              | Unchanged: owner rows (8 GB figure, real key and custody, reserved names, clean-machine install, CI read after the push); no pilot prospect (TD-75).                                                                                                                                                        |
+
+## Sprint 7 security verdict (20 November 2026)
+
+Full reasoning and evidence: `FINDINGS.md`, "Sprint 7"; release-path threat model: `THREAT-MODEL.md` section 12.
+0 Critical; 1 High (S1-130, glyphsift `npm publish` argument resolves to a GitHub repository) and 1 Medium (S1-131,
+third-party crate build code in the pagetriage and glyphsift publish jobs), both in owner-run workflows that cannot
+fire today. Closed: S1-115, S1-122, S1-123 to S1-129.
+
+| Repo          | Push                                                          | Tag                                                     | Publish                                  |
+| ------------- | ------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------- |
+| runtime       | GO-WITH-CONDITIONS                                            | NO-GO (owner rows)                                      | NO-GO (owner rows)                       |
+| pagetriage    | GO-WITH-CONDITIONS                                            | NO-GO (owner rows; v1.0.0 "not honest" sentence stands) | NO-GO (owner rows; S1-131, S1-132 first) |
+| glyphsift     | GO-WITH-CONDITIONS (S1-130 fixed before the push if possible) | NO-GO (owner rows)                                      | NO-GO (owner rows; S1-130, S1-131 first) |
+| localdata     | GO-WITH-CONDITIONS                                            | NO-GO (owner rows)                                      | NO-GO (owner rows; S1-132, S1-135 first) |
+| dockit        | GO-WITH-CONDITIONS                                            | not published (Pages is the release)                    | n/a                                      |
+| site          | GO-WITH-CONDITIONS                                            | not published (Pages is the release)                    | n/a                                      |
+| control-plane | GO-WITH-CONDITIONS                                            | no registry release planned                             | n/a                                      |
+
+Owner rows: the 8 GB laptop figure (TD-51), the real release key and custody, reserved names, the configured `release`
+environment with `RELEASE_KEY_ID` and `RELEASE_PUBLISH_ARMED`, the environment secrets and the PyPI pending publisher,
+the tag commit and tag, the write-up. Pilot: NO-GO (no prospect, TD-75; the 8 GB figure; open pre-pilot owner rows).
+
+## Sprint 7 final security verdict (close-out, 20 November 2026; supersedes the table above)
+
+Full reasoning: `FINDINGS.md`, "Sprint 7 close-out"; `THREAT-MODEL.md` section 12.10. 0 Critical, 0 High, 0 Medium
+open. S1-130 (High) and S1-131 (Medium) were fixed in fix round 1, S1-137 in fix round 2. Open: S1-138 (Low, the
+publish policy tests in localdata, pagetriage, glyphsift and control-plane let a neutralised guard step through; the
+live files hold none) and S1-133 (Info, deferred), both before the first publish (pre-pilot row 38), neither a push
+gate.
+
+| Repo          | Push                                                                     | Tag                                                     | Publish                            |
+| ------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- | ---------------------------------- |
+| runtime       | GO-WITH-CONDITIONS                                                       | NO-GO (owner rows)                                      | NO-GO (owner rows)                 |
+| pagetriage    | GO-WITH-CONDITIONS                                                       | NO-GO (owner rows; v1.0.0 "not honest" sentence stands) | NO-GO (owner rows; S1-138)         |
+| glyphsift     | GO-WITH-CONDITIONS (`keypub-b64` block, else `release-doc.sh` red in CI) | NO-GO (owner rows)                                      | NO-GO (owner rows; S1-138, row 38) |
+| localdata     | GO-WITH-CONDITIONS (`bench-csv.mjs` l.187, else `npm run ci` red in CI)  | NO-GO (owner rows)                                      | NO-GO (owner rows; S1-138)         |
+| dockit        | GO-WITH-CONDITIONS                                                       | not published (Pages is the release)                    | n/a                                |
+| site          | GO-WITH-CONDITIONS                                                       | not published (Pages is the release)                    | n/a                                |
+| control-plane | GO-WITH-CONDITIONS                                                       | no registry release planned                             | n/a                                |
+
+Owner rows are unchanged: the 8 GB laptop figure (TD-51), the real release key and custody, reserved names, the
+configured `release` environment with `RELEASE_KEY_ID` and `RELEASE_PUBLISH_ARMED`, the environment secrets and the
+PyPI pending publisher, the tag commit and tag, the write-up. Pilot: NO-GO. Gate 1 reads 0, 0 and 0.
