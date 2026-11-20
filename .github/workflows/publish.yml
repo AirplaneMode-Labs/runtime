@@ -1,0 +1,160 @@
+name: publish
+
+# OWNER-ONLY. This workflow is never run by the team or by any agent (CLAUDE.md): nobody on the team publishes, tags or
+# creates secrets. It can only be started by hand (workflow_dispatch) on main, only in AirplaneMode-Labs/runtime, only
+# when the owner has armed it, and its publish job waits for the owner's approval of the 'release' environment. The
+# six locks and the three bindings (docs/RELEASING.md lists the owner steps in order):
+#   locks   1 dispatch on main in this repository (the job conditions)   2 the 'release' environment: the owner is the
+#           reviewer, a main-only branch policy, admins cannot bypass   3 the 'release' environment variable
+#           RELEASE_PUBLISH_ARMED, read only in a step env (the first step after checkout); no job-level if reads vars. (TD-125)
+#           4 a manifest signed by the owner, attached to the GitHub release, verified against docs/release-keys.json
+#           5 NPM_TOKEN exists only as an environment secret the owner creates for the occasion (none exists yet)
+#           6 RELEASE_KEY_ID (an environment variable, read in a step env) equals the single key in docs/release-keys.json
+#             at this commit
+#   bindings  the tag v<version> resolves to this commit; the manifest version equals the package version and its id is
+#             runtime-release; the registry does not already hold this version
+# then provenance, then the registry. No test key is ever involved: a release verification never allows one (R2).
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: build (release candidate)
+    if: github.ref == 'refs/heads/main' && github.repository == 'AirplaneMode-Labs/runtime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install from the lockfile, scripts off
+        run: npm ci --ignore-scripts
+      - name: Build
+        run: npm run build
+      - name: Pack the candidate
+        run: |
+          mkdir dist-release
+          npm pack --ignore-scripts --pack-destination dist-release
+      - name: Candidate manifest (unsigned) and SHA256SUMS
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          LICENCE=$(node -p "require('./package.json').license")
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          export SOURCE_DATE_EPOCH
+          node spec/tools/release-tool.mjs manifest --dir dist-release --id runtime-release --version "$VERSION" --licence "$LICENCE" --publisher release
+          node spec/tools/release-tool.mjs sums --dir dist-release
+      - name: Dry run of the registry step
+        run: node scripts/release/publish-dry-run.mjs
+      - name: Upload the candidate (one day)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate-runtime-${{ github.sha }}
+          path: dist-release/
+          include-hidden-files: false
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: publish (owner-approved)
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.repository == 'AirplaneMode-Labs/runtime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lock 3, the first step after checkout (the environment variable is visible only inside the job)
+        env:
+          RELEASE_PUBLISH_ARMED: ${{ vars.RELEASE_PUBLISH_ARMED }}
+        run: |
+          if [ "$RELEASE_PUBLISH_ARMED" != "true" ]; then echo "RELEASE_PUBLISH_ARMED is not true: nothing is published" >&2; exit 1; fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Download the candidate of this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate-runtime-${{ github.sha }}
+          path: candidate
+      - name: Version from the package file at this commit
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/release/publish-guard.mjs semver "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: The release key the owner set equals the single key committed here
+        env:
+          RELEASE_KEY_ID: ${{ vars.RELEASE_KEY_ID }}
+        run: node scripts/release/publish-guard.mjs key-id --keys docs/release-keys.json --id "$RELEASE_KEY_ID"
+      - name: The signed manifest from the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "v$VERSION" -p release-manifest.json --dir signed --repo "$GITHUB_REPOSITORY"
+      - name: Assemble the verify directory (the candidate files, the signed manifest, the candidate SHA256SUMS)
+        run: |
+          mkdir verify
+          for f in candidate/*; do
+            n=$(basename "$f")
+            if [ "$n" != "release-manifest.json" ]; then cp "$f" "verify/$n"; fi
+          done
+          cp signed/release-manifest.json verify/release-manifest.json
+      - name: Verify the signed manifest against the committed release key
+        run: node spec/tools/release-tool.mjs verify --dir verify --expect-id runtime-release --trust-file docs/release-keys.json
+      - name: The release manifest carries no expiresAt (TD-121, R5)
+        run: node scripts/release/publish-guard.mjs no-expiry --file verify/release-manifest.json
+      - name: The manifest version equals the package version
+        run: |
+          MANIFEST_VERSION=$(node -p "require('./verify/release-manifest.json').version")
+          if [ "$MANIFEST_VERSION" = "$VERSION" ]; then echo "manifest version $MANIFEST_VERSION"; else echo "manifest version $MANIFEST_VERSION is not package version $VERSION" >&2; exit 1; fi
+      - name: The tag v$VERSION resolves to this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/publish-guard.mjs tag --version "$VERSION" --sha "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
+      - name: The registry does not already hold this version (a 404 is the pass)
+        run: node scripts/release/publish-guard.mjs registry-absent --package @airplanemode/runtime --version "$VERSION"
+      - name: The exact tarball named by the verified manifest
+        run: |
+          TARBALL=$(node scripts/release/publish-guard.mjs tarball --manifest verify/release-manifest.json --dir verify)
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+      - name: Provenance for the verified tarball
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.TARBALL }}
+      - name: Publish the verified tarball to the registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PRE="${VERSION#*-}"
+          if [ "$PRE" = "$VERSION" ]; then
+            DIST_TAG=latest
+          else
+            ID="${PRE%%.*}"
+            case "$ID" in
+              alpha|beta|rc) DIST_TAG="$ID" ;;
+              *) echo "prerelease identifier $ID has no dist-tag" >&2; exit 1 ;;
+            esac
+          fi
+          npm publish "./$TARBALL" --provenance --access public --ignore-scripts --tag "$DIST_TAG"

@@ -81,3 +81,54 @@ jobs:
         run: google-chrome --version || { echo "Google Chrome is not installed on this runner" >&2; exit 1; }
       - name: WebAssembly leg behind the aborting network gate
         run: RUNTIME_MODEL=1 RUNTIME_MODEL_LEGS=wasm npm run test:model
+
+  # Sprint 7 (B1, B2; TD-106, TD-118). The clean-install check and the test-key release rehearsal on the SAME artefacts:
+  # npm ci --ignore-scripts, build, npm pack, install the tarball (not the source tree) into a fresh directory outside the
+  # checkout with no sibling repository, make one asserted call, then manifest, SHA256SUMS, a TEST 1 signature, the
+  # explicit-flag verification and the refusal proofs (scripts/release/rehearse.mjs). contents: read, no secret, no id-token,
+  # no cache of any kind. It publishes nothing and the artefacts are short-lived (3 days) and named as rehearsals.
+  # Proves: the Windows junction and symlink refusals, LF SHA256SUMS and the tarball install on three operating systems.
+  release-rehearsal:
+    name: release-rehearsal (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: SOURCE_DATE_EPOCH from the commit (the rehearsal is reproducible)
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+      - name: Install from the lockfile (install scripts off), so that the tests below use the locked vitest
+        shell: bash
+        run: npm ci --ignore-scripts
+      - name: Rehearsal self-test (a missing, lying or signalled tool turns the proofs red)
+        shell: bash
+        run: node scripts/release/rehearse.mjs --self-test
+      - name: Release tool vectors (the symlink and junction refusals must pass here, not skip)
+        shell: bash
+        run: npx vitest run test/release-tool.test.ts --reporter=verbose
+      - name: Release rehearsal (clean install of the tarball, then the test-key rehearsal on the same artefacts)
+        shell: bash
+        run: node scripts/release/rehearse.mjs
+      - name: Quick start (the README blocks, run against a tarball built from a copy of this checkout)
+        shell: bash
+        run: npx vitest run test/quickstart.test.ts
+      - name: Upload the rehearsal artefacts (test key, NOT A RELEASE)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: REHEARSAL-test-key-NOT-A-RELEASE-runtime-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            dist-release/
+            dist-release-report/
+          include-hidden-files: false
+          retention-days: 3
+          if-no-files-found: error
